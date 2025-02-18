@@ -3,3 +3,5 @@ openai>=0.27.0
 transformers>=4.30.0
 torch>=2.0.0  # Required for transformers
 python-dotenv>=0.19.0  # For managing environment variables
+protobuf
+sacremoses

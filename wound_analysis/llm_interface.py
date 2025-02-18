@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, AutoModelForMaskedLM
 import logging
 import torch
 
@@ -30,7 +30,14 @@ class WoundAnalysisLLM:
             # Different configuration based on model type
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
-            if model_name == "biogpt":
+            if model_name == "clinical-bert":
+                # Special handling for BERT models
+                self.model = pipeline(
+                    "fill-mask",
+                    model=self.model_path,
+                    device=device
+                )
+            elif model_name == "biogpt":
                 self.model = pipeline(
                     "text-generation",
                     model=self.model_path,
@@ -38,13 +45,10 @@ class WoundAnalysisLLM:
                     max_new_tokens=512
                 )
             else:
-                # For other models that support device mapping and 8-bit quantization
                 self.model = pipeline(
                     "text-generation",
                     model=self.model_path,
-                    torch_dtype=torch.float16,
-                    device_map="auto",
-                    load_in_8bit=True,
+                    device=device,
                     max_new_tokens=512
                 )
             logger.info(f"Successfully loaded model {model_name} on {device}")
@@ -109,22 +113,29 @@ class WoundAnalysisLLM:
         prompt = self._format_prompt(patient_data)
 
         try:
-            # Generate response with the model
-            response = self.model(
-                prompt,
-                do_sample=True,
-                temperature=0.3,
-                max_new_tokens=512,
-                num_return_sequences=1
-            )
+            if self.model_name == "clinical-bert":
+                # Special handling for BERT masked language modeling
+                # Use a simpler prompt for BERT
+                masked_text = f"The wound is [MASK]. {prompt}"
+                results = self.model(masked_text)
+                return results[0]['sequence']
+            else:
+                # Standard text generation for other models
+                response = self.model(
+                    prompt,
+                    do_sample=True,
+                    temperature=0.3,
+                    max_new_tokens=512,
+                    num_return_sequences=1
+                )
 
-            # Extract and clean the generated text
-            generated_text = response[0]['generated_text']
-            # Remove the prompt from the response if it's included
-            if generated_text.startswith(prompt):
-                generated_text = generated_text[len(prompt):].strip()
+                # Extract and clean the generated text
+                generated_text = response[0]['generated_text']
+                # Remove the prompt from the response if it's included
+                if generated_text.startswith(prompt):
+                    generated_text = generated_text[len(prompt):].strip()
 
-            return generated_text
+                return generated_text
 
         except Exception as e:
             logger.error(f"Error during analysis: {str(e)}")

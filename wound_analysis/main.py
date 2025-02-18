@@ -3,22 +3,24 @@ import argparse
 from data_processor import WoundDataProcessor
 from llm_interface import WoundAnalysisLLM
 import logging
+import pathlib
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser(description='Analyze wound care data using LLMs')
-    parser.add_argument('record_id', type=int, help='Patient record ID to analyze')
-    parser.add_argument('--model-name', type=str, default='biogpt',
+    parser.add_argument('--record-id', type=int, help='Patient record ID to analyze')
+    parser.add_argument('--model-name', type=str, default='clinical-bert',
                         choices=['falcon-7b-medical', 'llama2-medical', 'med42', 'biogpt', 'clinical-bert'],
                         help='Specific model name to use')
+    parser.add_argument('--dataset-path', type=pathlib.Path, help='path to three csv files', default=pathlib.Path('/Users/artinmajdi/Documents/GitHubs/postdoc/TDT_copilot_2'))
 
     args = parser.parse_args()
 
     try:
         # Initialize data processor
-        processor = WoundDataProcessor()
+        processor = WoundDataProcessor(args.dataset_path)
 
         # Get patient data
         logger.info(f"Processing data for patient {args.record_id}")

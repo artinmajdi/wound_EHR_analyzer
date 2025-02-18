@@ -3,16 +3,18 @@ import json
 from typing import Dict, List, Optional
 from datetime import datetime
 import logging
+import pathlib
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class WoundDataProcessor:
-    def __init__(self):
+    def __init__(self, dataset_path: pathlib.Path):
+        self.dataset_path = dataset_path
         # Load CSVs and clean column names
-        self.measurements_df = pd.read_csv('SmartBandage_measurements.csv')
-        self.wound_df = pd.read_csv('SmartBandage_wound.csv')
-        self.other_df = pd.read_csv('SmartBandage_other.csv')
+        self.measurements_df = pd.read_csv(dataset_path / 'SmartBandage_measurements.csv')
+        self.wound_df = pd.read_csv(dataset_path / 'SmartBandage_wound.csv')
+        self.other_df = pd.read_csv(dataset_path / 'SmartBandage_other.csv')
 
         # Clean column names in all dataframes
         self.measurements_df.columns = self.measurements_df.columns.str.strip()
