@@ -130,14 +130,14 @@ class WoundDataProcessor:
             # Create impedance data structure for both frequencies
             impedance_data = {
                 'high_frequency': {  # 80kHz measurements (existing data)
-                    'z': float(visit['Skin Impedance (kOhms) - Z']) if not pd.isna(visit.get('Skin Impedance (kOhms) - Z')) else None,
-                    'z_prime': float(visit["Skin Impedance (kOhms) - Z'"]) if not pd.isna(visit.get("Skin Impedance (kOhms) - Z'")) else None,
-                    'z_double_prime': float(visit["Skin Impedance (kOhms) - Z''"]) if not pd.isna(visit.get("Skin Impedance (kOhms) - Z''")) else None
+                    'Z': float(visit['Skin Impedance (kOhms) - Z']) if not pd.isna(visit.get('Skin Impedance (kOhms) - Z')) else None,
+                    'resistance': float(visit["Skin Impedance (kOhms) - Z'"]) if not pd.isna(visit.get("Skin Impedance (kOhms) - Z'")) else None,
+                    'capacitance': 1 / (2 * 3.14 * 80000 * float(visit["Skin Impedance (kOhms) - Z''"])) if not pd.isna(visit.get("Skin Impedance (kOhms) - Z''")) else None
                 },
                 'low_frequency': {  # 100Hz measurements (placeholder for new data)
-                    'z': None,  # Will be populated from new CSV columns when available
-                    'z_prime': None,
-                    'z_double_prime': None
+                    'Z': None,  # Will be populated from new CSV columns when available
+                    'resistance': None,
+                    'capacitance': None
                 }
             }
 
