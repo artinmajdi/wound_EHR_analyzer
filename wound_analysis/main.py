@@ -6,7 +6,6 @@ import logging
 import pathlib
 from datetime import datetime
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 # Create logs directory if it doesn't exist
@@ -75,48 +74,47 @@ def format_word_document(doc: Document, analysis_text: str, patient_data: dict) 
 
 def main():
     parser = argparse.ArgumentParser(description='Analyze wound care data using LLMs')
-    parser.add_argument('--record-id', type=int, default=3, help='Patient record ID to analyze')
-    parser.add_argument('--model-name', type=str, default='ai-verde', choices=['falcon-7b-medical', 'biogpt', 'clinical-bert', 'ai-verde'], help='Specific model name to use')
-    parser.add_argument('--dataset-path', type=pathlib.Path, help='path to three csv files', default=pathlib.Path('/Users/artinmajdi/Documents/GitHubs/postdoc/TDT_copilot_2/dataset'))
-    parser.add_argument('--api-key', type=str, default="sk-h8JtQkCCJUOy-TAdDxCLGw", help='API key for AI Verde model')
+    parser.add_argument('--record-id', type=int, default=7, help='Patient record ID to analyze')
+    parser.add_argument('--dataset-path', type=pathlib.Path, default='/Users/artinmajdi/Documents/GitHubs/postdoc/TDT_copilot_2/dataset', help='Path to the dataset directory containing SmartBandage-Data_for_llm.csv')
+    parser.add_argument('--output-dir', type=pathlib.Path, default=pathlib.Path(__file__).parent / 'logs', help='Directory to save output files')
+    parser.add_argument('--platform', type=str, default='ai-verde', choices=WoundAnalysisLLM.get_available_platforms(), help='LLM platform to use')
+    parser.add_argument('--api-key', type=str, default='sk-h8JtQkCCJUOy-TAdDxCLGw', help='API key for the LLM platform')
+    parser.add_argument('--model-name', type=str, default='llama-3.3-70b-fp8', help='Name of the LLM model to use')
 
     args = parser.parse_args()
 
 
-    # curl -s -L "https://llm-api.cyverse.ai" -H "Authorization: Bearer sk-h8JtQkCCJUOy-TAdDxCLGw" -H 'Content-Type: application/json' | jq
-
     try:
-        # Set API key for AI Verde if provided
+        logger.info(f"Starting analysis for patient {args.record_id}")
+
+        # Environment setup
         if args.api_key:
             os.environ["OPENAI_API_KEY"] = args.api_key
 
-        # Initialize data processor
+        # Data processing
         processor = WoundDataProcessor(args.dataset_path)
-
-        # Get patient data
-        logger.info(f"Processing data for patient {args.record_id}")
         patient_data = processor.get_patient_visits(args.record_id)
 
-        # Initialize LLM interface
-        llm = WoundAnalysisLLM(model_name=args.model_name)
+        # Analysis
+        llm = WoundAnalysisLLM(
+            platform=args.platform,
+            model_name=args.model_name
+        )
+        analysis_results = llm.analyze_patient_data(patient_data)
 
-        # Get analysis
-        logger.info("Analyzing patient data with LLM")
-        analysis = llm.analyze_patient_data(patient_data)
-
-        # Create and format Word document
+        # Report generation
         doc = Document()
-        format_word_document(doc, analysis, patient_data)
+        format_word_document(doc, analysis_results, patient_data)
         doc.save(word_filename)
-        logger.info(f"Report saved to {word_filename}")
 
-        # Print results to console
+        # Output
+        logger.info(f"Report saved: {word_filename}")
         print("\nWound Care Analysis Results:")
-        print("-" * 50)
-        print(analysis)
+        print("="* 30)
+        print(analysis_results)
 
     except Exception as e:
-        logger.error(f"Error during analysis: {str(e)}")
+        logger.error(f"Analysis failed: {e}")
         raise
 
 if __name__ == "__main__":

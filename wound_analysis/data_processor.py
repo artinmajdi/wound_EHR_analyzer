@@ -70,7 +70,7 @@ class WoundDataProcessor:
         # Medical history from individual columns
         medical_conditions = [
             'Respiratory', 'Cardiovascular', 'Gastrointestinal', 'Musculoskeletal',
-            'Endocrine/ Metabolic', 'Hematopoietic', 'Hepatic/Renal', 'Neurologic', 'Immune'
+            'Endocrine/ Metabolic', 'Hematopoietic', 'Hepatic/Renal', 'Neurologic', 'Immune', 'Hyperlipidemia', 'Hypertension'
         ]
         metadata['medical_history'] = {
             condition: patient_data[condition]
@@ -90,32 +90,40 @@ class WoundDataProcessor:
     def _get_wound_info(self, visit_data) -> Dict:
         """Get detailed wound information from a single visit row."""
         try:
+
+            def clean_field(data, field):
+                return data.get(field) if not pd.isna(data.get(field)) else None
+
+            present = clean_field(visit_data, 'Is there undermining/ tunneling?')
+
             wound_info = {
-                'location': visit_data.get('Describe the wound location') if not pd.isna(visit_data.get('Describe the wound location')) else None,
-                'type': visit_data.get('Wound Type') if not pd.isna(visit_data.get('Wound Type')) else None,
-                'current_care': visit_data.get('Current wound care') if not pd.isna(visit_data.get('Current wound care')) else None,
-                'clinical_events': visit_data.get('Clinical events') if not pd.isna(visit_data.get('Clinical events')) else None,
+                'location'       : clean_field(visit_data, 'Describe the wound location'),
+                'type'           : clean_field(visit_data, 'Wound Type'),
+                'current_care'   : clean_field(visit_data, 'Current wound care'),
+                'clinical_events': clean_field(visit_data, 'Clinical events'),
                 'undermining': {
-                    'present': visit_data.get('Is there undermining/ tunneling?') == 'Yes',
-                    'location': visit_data.get('Undermining Location Description'),
+                    'present'  : None if present is None else present == 'Yes',
+                    'location' : visit_data.get('Undermining Location Description'),
                     'tunneling': visit_data.get('Tunneling Location Description')
                 },
                 'infection': {
-                    'Infection': visit_data.get('Infection'),
-                    'Diabetic Foot Wound - WIfI Classification: foot Infection (fI)': visit_data.get('Diabetic Foot Wound - WIfI Classification: foot Infection (fI)')
+                    'status'             : clean_field(visit_data, 'Infection'),
+                    'wifi_classification': visit_data.get('Diabetic Foot Wound - WIfI Classification: foot Infection (fI)')
                 },
                 'granulation': {
-                    'coverage': visit_data.get('Granulation'),
-                    'quality': visit_data.get('Granulation Quality')
+                    'coverage': clean_field(visit_data, 'Granulation'),
+                    'quality' : clean_field(visit_data, 'Granulation Quality')
                 },
                 'necrosis': visit_data.get('Necrosis'),
                 'exudate': {
-                    'volume': visit_data.get('Exudate Volume'),
+                    'volume'   : visit_data.get('Exudate Volume'),
                     'viscosity': visit_data.get('Exudate Viscosity'),
-                    'type': visit_data.get('Exudate Type')
+                    'type'     : visit_data.get('Exudate Type')
                 }
             }
+
             return wound_info
+
         except Exception as e:
             logger.warning(f"Error getting wound info: {str(e)}")
             return {}
@@ -123,45 +131,62 @@ class WoundDataProcessor:
     def _process_visit_data(self, visit) -> Optional[Dict]:
         """Process visit measurement data from a single row."""
         try:
+
             visit_date = pd.to_datetime(visit['Visit date']).strftime('%Y-%m-%d') if not pd.isna(visit.get('Visit date')) else None
+
             if not visit_date:
                 return None
 
+            def get_float(data, key):
+                return float(data[key]) if not pd.isna(data.get(key)) else None
+
             # Create impedance data structure for both frequencies
+            impedance_imaginary = get_float(visit, "Skin Impedance (kOhms) - Z''")
+
             impedance_data = {
-                'high_frequency': {  # 80kHz measurements (existing data)
-                    'Z': float(visit['Skin Impedance (kOhms) - Z']) if not pd.isna(visit.get('Skin Impedance (kOhms) - Z')) else None,
-                    'resistance': float(visit["Skin Impedance (kOhms) - Z'"]) if not pd.isna(visit.get("Skin Impedance (kOhms) - Z'")) else None,
-                    'capacitance': 1 / (2 * 3.14 * 80000 * float(visit["Skin Impedance (kOhms) - Z''"])) if not pd.isna(visit.get("Skin Impedance (kOhms) - Z''")) else None
+                'high_frequency': {  # 80kHz measurements
+                    'Z'          : get_float(visit, 'Skin Impedance (kOhms) - Z'),
+                    'resistance' : get_float(visit, "Skin Impedance (kOhms) - Z'"),
+                    'capacitance': None if impedance_imaginary is None else 1 / (2 * 3.14 * 80000 * impedance_imaginary)
                 },
                 'low_frequency': {  # 100Hz measurements (placeholder for new data)
-                    'Z': None,  # Will be populated from new CSV columns when available
-                    'resistance': None,
+                    'Z'          : None, # Will be populated from new CSV columns when available
+                    'resistance' : None,
                     'capacitance': None
                 }
             }
 
+            wound_measurements = {
+                'length': get_float(visit, 'Length (cm)'),
+                'width' : get_float(visit, 'Width (cm)'),
+                'depth' : get_float(visit, 'Depth (cm)'),
+                'area'  : get_float(visit, 'Calculated Wound Area')
+            }
+
+            temperature_readings = {
+                'center': get_float(visit, "Center of Wound Temperature (Fahrenheit)"),
+                'edge'  : get_float(visit, "Edge of Wound Temperature (Fahrenheit)"),
+                'peri'  : get_float(visit, "Peri-wound Temperature (Fahrenheit)")
+                }
+
+            hemoglobin_types = {
+                'hemoglobin'     : 'Hemoglobin Level',
+                'oxyhemoglobin'  : 'Oxyhemoglobin Level',
+                'deoxyhemoglobin': 'Deoxyhemoglobin Level'
+            }
+
             return {
                 'visit_date': visit_date,
-                'wound_measurements': {
-                    'length': float(visit['Length (cm)']) if not pd.isna(visit.get('Length (cm)')) else None,
-                    'width': float(visit['Width (cm)']) if not pd.isna(visit.get('Width (cm)')) else None,
-                    'depth': float(visit['Depth (cm)']) if not pd.isna(visit.get('Depth (cm)')) else None,
-                    'area': float(visit['Calculated Wound Area']) if not pd.isna(visit.get('Calculated Wound Area')) else None
-                },
+                'wound_measurements': wound_measurements,
                 'sensor_data': {
-                    'oxygenation': float(visit['Oxygenation (%)']) if not pd.isna(visit.get('Oxygenation (%)')) else None,
-                    'temperature': {
-                        'center': float(visit['Center of Wound Temperature (Fahrenheit)']) if not pd.isna(visit.get('Center of Wound Temperature (Fahrenheit)')) else None,
-                        'edge': float(visit['Edge of Wound Temperature (Fahrenheit)']) if not pd.isna(visit.get('Edge of Wound Temperature (Fahrenheit)')) else None,
-                        'peri': float(visit['Peri-wound Temperature (Fahrenheit)']) if not pd.isna(visit.get('Peri-wound Temperature (Fahrenheit)')) else None
-                    },
-                    'impedance': impedance_data,
-                    'hemoglobin': float(visit['Hemoglobin Level']) if not pd.isna(visit.get('Hemoglobin Level')) else None,
-                    'oxyhemoglobin': float(visit['Oxyhemoglobin Level']) if not pd.isna(visit.get('Oxyhemoglobin Level')) else None,
-                    'deoxyhemoglobin': float(visit['Deoxyhemoglobin Level']) if not pd.isna(visit.get('Deoxyhemoglobin Level')) else None
+                    'oxygenation': get_float(visit, 'Oxygenation (%)'),
+                    'temperature': temperature_readings,
+                    'impedance'  : impedance_data,
+                    **{key: get_float(visit, value) for key, value in hemoglobin_types.items()}
                 }
             }
+
+
         except Exception as e:
             logger.warning(f"Error processing visit data: {str(e)}")
             return None
