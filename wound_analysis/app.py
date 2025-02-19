@@ -259,18 +259,12 @@ def main():
         patient_id = None
         if uploaded_file is not None:
             try:
-                # Save the uploaded file temporarily
-                temp_path = pathlib.Path("temp_dataset")
-                temp_path.mkdir(exist_ok=True)
-                temp_file = temp_path / uploaded_file.name
-                with open(temp_file, "wb") as f:
-                    f.write(uploaded_file.getvalue())
-
-                # Initialize processor with temporary file
-                st.session_state.processor = WoundDataProcessor(temp_path)
+                # Initialize processor with the main dataset folder
+                dataset_path = pathlib.Path("dataset")
+                st.session_state.processor = WoundDataProcessor(dataset_path)
 
                 # Get unique patient IDs from the data
-                df = pd.read_csv(temp_file)
+                df = pd.read_csv(dataset_path / "SmartBandage-Data_for_llm.csv")
                 patient_ids = df['Record ID'].unique()
                 patient_id = st.sidebar.selectbox("Select Patient ID", patient_ids)
 
@@ -418,11 +412,18 @@ def main():
         else:
             st.info("Please upload a CSV file and select a patient ID to begin analysis.")
     except Exception as e:
-        if "torch.classes" in str(e):
-            # Ignore PyTorch class path errors from Streamlit file watcher
+        if isinstance(e, RuntimeError) and any(x in str(e) for x in ["torch.classes", "__path__._path", "torch::class_"]):
+            # Silently ignore PyTorch class path errors from Streamlit file watcher
+            # These errors are benign and don't affect functionality
             pass
+        elif "StreamlitAPIException" in str(type(e)):
+            # Handle Streamlit-specific exceptions
+            st.error("A Streamlit error occurred. Please refresh the page and try again.")
         else:
+            # Handle all other exceptions
             st.error(f"An error occurred: {str(e)}")
+            import traceback
+            st.exception(traceback.format_exc())
 
 if __name__ == "__main__":
     main()
