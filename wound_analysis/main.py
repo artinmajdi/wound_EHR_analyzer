@@ -82,6 +82,9 @@ def main():
 
     args = parser.parse_args()
 
+
+    # curl -s -L "https://llm-api.cyverse.ai" -H "Authorization: Bearer sk-h8JtQkCCJUOy-TAdDxCLGw" -H 'Content-Type: application/json' | jq
+
     try:
         # Set API key for AI Verde if provided
         if args.api_key:

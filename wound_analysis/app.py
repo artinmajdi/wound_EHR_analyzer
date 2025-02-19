@@ -213,181 +213,209 @@ def download_word_report(report_path: str):
         st.error(f"Error preparing report download: {str(e)}")
 
 def main():
-    # Sidebar configuration
-    st.sidebar.title("Configuration")
+    # Wrap the entire main function in a try-except block to catch Streamlit file watcher errors
+    try:
+        # Sidebar configuration
+        st.sidebar.title("Configuration")
 
-    # File upload
-    uploaded_file = st.sidebar.file_uploader("Upload Patient Data (CSV)", type=['csv'])
+        # File upload
+        uploaded_file = st.sidebar.file_uploader("Upload Patient Data (CSV)", type=['csv'])
 
-    # Model selection and configuration
-    model_name = st.sidebar.selectbox(
-        "Select Analysis Model",
-        ["ai-verde", "falcon-7b-medical", "biogpt", "clinical-bert"]
-    )
+        # Platform and Model selection
+        platform_options = WoundAnalysisLLM.get_available_platforms()
+        platform = st.sidebar.selectbox(
+            "Select Platform",
+            platform_options,
+            index=platform_options.index("ai-verde"),  # Default to ai-verde
+            help="Hugging Face models are currently disabled. Please use AI Verde models."
+        )
 
-    # Model-specific configuration
-    with st.sidebar.expander("Model Configuration"):
-        api_key = st.text_input("API Key", value="sk-h8JtQkCCJUOy-TAdDxCLGw", type="password")
-        if model_name == "ai-verde":
-            base_url = st.text_input("Base URL", value="https://llm-api.cyverse.ai")
+        # If huggingface is selected, show warning and force ai-verde
+        if platform == "huggingface":
+            st.sidebar.warning("Hugging Face models are currently disabled. Please use AI Verde models.")
+            platform = "ai-verde"
 
-        if api_key:
-            os.environ["OPENAI_API_KEY"] = api_key
+        # Get available models for the selected platform
+        available_models = WoundAnalysisLLM.get_available_models(platform)
+        default_model = "llama-3.3-70b-fp8" if platform == "ai-verde" else "medalpaca-7b"
+        model_name = st.sidebar.selectbox(
+            "Select Model",
+            available_models,
+            index=available_models.index(default_model)
+        )
 
-    # Patient selection (only shown after file upload)
-    patient_id = None
-    if uploaded_file is not None:
-        # Save the uploaded file temporarily
-        temp_path = pathlib.Path("temp_dataset")
-        temp_path.mkdir(exist_ok=True)
-        temp_file = temp_path / uploaded_file.name
-        with open(temp_file, "wb") as f:
-            f.write(uploaded_file.getvalue())
+        # Model-specific configuration
+        with st.sidebar.expander("Model Configuration"):
+            api_key = st.text_input("API Key", value="sk-h8JtQkCCJUOy-TAdDxCLGw", type="password")
+            if platform == "ai-verde":
+                base_url = st.text_input("Base URL", value="https://llm-api.cyverse.ai")
 
-        # Initialize processor with temporary file
-        st.session_state.processor = WoundDataProcessor(temp_path)
+            if api_key:
+                os.environ["OPENAI_API_KEY"] = api_key
 
-        # Get unique patient IDs from the data
-        df = pd.read_csv(temp_file)
-        patient_ids = df['Record ID'].unique()
-        patient_id = st.sidebar.selectbox("Select Patient ID", patient_ids)
+        # Patient selection (only shown after file upload)
+        patient_id = None
+        if uploaded_file is not None:
+            try:
+                # Save the uploaded file temporarily
+                temp_path = pathlib.Path("temp_dataset")
+                temp_path.mkdir(exist_ok=True)
+                temp_file = temp_path / uploaded_file.name
+                with open(temp_file, "wb") as f:
+                    f.write(uploaded_file.getvalue())
 
-        # Add Run Analysis button to sidebar
-        if st.sidebar.button("Run Analysis"):
-            with st.spinner("Analyzing patient data..."):  # Fixed spinner location
-                try:
-                    # Initialize LLM and run analysis
-                    llm = WoundAnalysisLLM(model_name=model_name)
-                    patient_data = st.session_state.processor.get_patient_visits(patient_id)
-                    analysis = llm.analyze_patient_data(patient_data)
-                    # Save the report path in session state
-                    report_path = create_and_save_report(patient_data, analysis)
-                    st.session_state.analysis_complete = True
-                    st.session_state.analysis_results = analysis
-                    st.session_state.report_path = report_path
-                    st.sidebar.success("Analysis complete! View results in the Analysis tab.")
-                except Exception as e:
-                    st.sidebar.error(f"Error during analysis: {str(e)}")
+                # Initialize processor with temporary file
+                st.session_state.processor = WoundDataProcessor(temp_path)
 
-    # Main content area
-    st.title("Wound Care Analysis Dashboard")
+                # Get unique patient IDs from the data
+                df = pd.read_csv(temp_file)
+                patient_ids = df['Record ID'].unique()
+                patient_id = st.sidebar.selectbox("Select Patient ID", patient_ids)
 
-    if patient_id and st.session_state.processor:
-        try:
-            # Get patient data
-            patient_data = st.session_state.processor.get_patient_visits(patient_id)
+                # Add Run Analysis button to sidebar
+                if st.sidebar.button("Run Analysis"):
+                    with st.spinner("Analyzing patient data..."):  # Fixed spinner location
+                        try:
+                            # Initialize LLM with platform and model
+                            llm = WoundAnalysisLLM(platform=platform, model_name=model_name)
+                            patient_data = st.session_state.processor.get_patient_visits(patient_id)
+                            analysis = llm.analyze_patient_data(patient_data)
+                            # Save the report path in session state
+                            report_path = create_and_save_report(patient_data, analysis)
+                            st.session_state.analysis_complete = True
+                            st.session_state.analysis_results = analysis
+                            st.session_state.report_path = report_path
+                            st.sidebar.success("Analysis complete! View results in the Analysis tab.")
+                        except Exception as e:
+                            st.sidebar.error(f"Error during analysis: {str(e)}")
+            except Exception as e:
+                st.error(f"Error processing uploaded file: {str(e)}")
 
-            # Create tabs for different sections
-            dashboard_tab, analysis_tab = st.tabs(["Dashboard", "Analysis Results"])
+        # Main content area
+        st.title("Wound Care Analysis Dashboard")
 
-            with dashboard_tab:
-                # Display patient information in columns
-                col1, col2, col3 = st.columns(3)
+        if patient_id and st.session_state.processor:
+            try:
+                # Get patient data
+                patient_data = st.session_state.processor.get_patient_visits(patient_id)
 
-                with col1:
-                    st.subheader("Patient Demographics")
-                    metadata = patient_data['patient_metadata']
-                    st.write(f"Age: {metadata.get('age')} years")
-                    st.write(f"Sex: {metadata.get('sex')}")
-                    st.write(f"BMI: {metadata.get('bmi')}")
-                    st.write(f"Race: {metadata.get('race')}")
-                    st.write(f"Ethnicity: {metadata.get('ethnicity')}")
+                # Create tabs for different sections
+                dashboard_tab, analysis_tab = st.tabs(["Dashboard", "Analysis Results"])
 
-                with col2:
-                    st.subheader("Medical History")
-                    if metadata.get('medical_history'):
-                        for condition, status in metadata['medical_history'].items():
-                            if status and status != 'None':
-                                st.write(f"- {condition}")
+                with dashboard_tab:
+                    # Display patient information in columns
+                    col1, col2, col3 = st.columns(3)
 
-                with col3:
-                    st.subheader("Diabetes Status")
-                    diabetes = metadata.get('diabetes', {})
-                    st.write(f"Status: {diabetes.get('status')}")
-                    st.write(f"HbA1c: {diabetes.get('hemoglobin_a1c')}%")
+                    with col1:
+                        st.subheader("Patient Demographics")
+                        metadata = patient_data['patient_metadata']
+                        st.write(f"Age: {metadata.get('age')} years")
+                        st.write(f"Sex: {metadata.get('sex')}")
+                        st.write(f"BMI: {metadata.get('bmi')}")
+                        st.write(f"Race: {metadata.get('race')}")
+                        st.write(f"Ethnicity: {metadata.get('ethnicity')}")
 
-                # Charts section with dropdown
-                st.header("Wound Analysis Visualizations")
+                    with col2:
+                        st.subheader("Medical History")
+                        if metadata.get('medical_history'):
+                            for condition, status in metadata['medical_history'].items():
+                                if status and status != 'None':
+                                    st.write(f"- {condition}")
 
-                plot_type = st.selectbox(
-                    "Select Visualization",
-                    [
-                        "Wound Measurements",
-                        "Temperature",
-                        "Impedance",
-                        "Oxygenation & Hemoglobin",
-                        "Exudate Characteristics"
-                    ]
-                )
+                    with col3:
+                        st.subheader("Diabetes Status")
+                        diabetes = metadata.get('diabetes', {})
+                        st.write(f"Status: {diabetes.get('status')}")
+                        st.write(f"HbA1c: {diabetes.get('hemoglobin_a1c')}%")
 
-                if plot_type == "Wound Measurements":
-                    measurements_chart = create_wound_measurements_chart(patient_data['visits'])
-                    st.plotly_chart(measurements_chart, use_container_width=True)
-                elif plot_type == "Temperature":
-                    temperature_chart = create_temperature_chart(patient_data['visits'])
-                    st.plotly_chart(temperature_chart, use_container_width=True)
-                elif plot_type == "Impedance":
-                    impedance_chart = create_impedance_chart(patient_data['visits'])
-                    st.plotly_chart(impedance_chart, use_container_width=True)
-                elif plot_type == "Oxygenation & Hemoglobin":
-                    oxygenation_chart = create_oxygenation_chart(patient_data['visits'])
-                    st.plotly_chart(oxygenation_chart, use_container_width=True)
-                elif plot_type == "Exudate Characteristics":
-                    exudate_chart = create_exudate_chart(patient_data['visits'])
-                    st.plotly_chart(exudate_chart, use_container_width=True)
+                    # Charts section with dropdown
+                    st.header("Wound Analysis Visualizations")
 
-                # Display visit history
-                with st.expander("Visit History"):
-                    for visit in patient_data['visits']:
-                        st.subheader(f"Visit Date: {visit['visit_date']}")
+                    plot_type = st.selectbox(
+                        "Select Visualization",
+                        [
+                            "Wound Measurements",
+                            "Temperature",
+                            "Impedance",
+                            "Oxygenation & Hemoglobin",
+                            "Exudate Characteristics"
+                        ]
+                    )
 
-                        # Create three columns for visit details
-                        v_col1, v_col2, v_col3 = st.columns(3)
+                    if plot_type == "Wound Measurements":
+                        measurements_chart = create_wound_measurements_chart(patient_data['visits'])
+                        st.plotly_chart(measurements_chart, use_container_width=True)
+                    elif plot_type == "Temperature":
+                        temperature_chart = create_temperature_chart(patient_data['visits'])
+                        st.plotly_chart(temperature_chart, use_container_width=True)
+                    elif plot_type == "Impedance":
+                        impedance_chart = create_impedance_chart(patient_data['visits'])
+                        st.plotly_chart(impedance_chart, use_container_width=True)
+                    elif plot_type == "Oxygenation & Hemoglobin":
+                        oxygenation_chart = create_oxygenation_chart(patient_data['visits'])
+                        st.plotly_chart(oxygenation_chart, use_container_width=True)
+                    elif plot_type == "Exudate Characteristics":
+                        exudate_chart = create_exudate_chart(patient_data['visits'])
+                        st.plotly_chart(exudate_chart, use_container_width=True)
 
-                        with v_col1:
-                            st.write("**Wound Measurements**")
-                            measurements = visit['wound_measurements']
-                            st.write(f"Length: {measurements.get('length')} cm")
-                            st.write(f"Width: {measurements.get('width')} cm")
-                            st.write(f"Depth: {measurements.get('depth')} cm")
-                            st.write(f"Area: {measurements.get('area')} cm²")
+                    # Display visit history
+                    with st.expander("Visit History"):
+                        for visit in patient_data['visits']:
+                            st.subheader(f"Visit Date: {visit['visit_date']}")
 
-                        with v_col2:
-                            st.write("**Wound Characteristics**")
-                            wound_info = visit['wound_info']
-                            st.write(f"Location: {wound_info.get('location')}")
-                            st.write(f"Type: {wound_info.get('type')}")
+                            # Create three columns for visit details
+                            v_col1, v_col2, v_col3 = st.columns(3)
 
-                            exudate = wound_info.get('exudate', {})
-                            if exudate:
-                                st.write(f"Exudate Volume: {exudate.get('volume')}")
-                                st.write(f"Exudate Type: {exudate.get('type')}")
+                            with v_col1:
+                                st.write("**Wound Measurements**")
+                                measurements = visit['wound_measurements']
+                                st.write(f"Length: {measurements.get('length')} cm")
+                                st.write(f"Width: {measurements.get('width')} cm")
+                                st.write(f"Depth: {measurements.get('depth')} cm")
+                                st.write(f"Area: {measurements.get('area')} cm²")
 
-                        with v_col3:
-                            st.write("**Sensor Data**")
-                            sensor = visit['sensor_data']
-                            st.write(f"Oxygenation: {sensor.get('oxygenation')}%")
-                            temp = sensor.get('temperature', {})
-                            st.write(f"Temperature (Center): {temp.get('center')}°F")
-                            st.write(f"Temperature (Edge): {temp.get('edge')}°F")
+                            with v_col2:
+                                st.write("**Wound Characteristics**")
+                                wound_info = visit['wound_info']
+                                st.write(f"Location: {wound_info.get('location')}")
+                                st.write(f"Type: {wound_info.get('type')}")
 
-            with analysis_tab:
-                if st.session_state.analysis_complete and st.session_state.analysis_results:
-                    st.header("Analysis Results")
-                    st.markdown(st.session_state.analysis_results)
+                                exudate = wound_info.get('exudate', {})
+                                if exudate:
+                                    st.write(f"Exudate Volume: {exudate.get('volume')}")
+                                    st.write(f"Exudate Type: {exudate.get('type')}")
 
-                    # Add download button for the report using the saved path
-                    if hasattr(st.session_state, 'report_path'):
-                        st.subheader("Download Report")
-                        download_word_report(st.session_state.report_path)
-                else:
-                    st.info("Run the analysis from the sidebar to view results here.")
+                            with v_col3:
+                                st.write("**Sensor Data**")
+                                sensor = visit['sensor_data']
+                                st.write(f"Oxygenation: {sensor.get('oxygenation')}%")
+                                temp = sensor.get('temperature', {})
+                                st.write(f"Temperature (Center): {temp.get('center')}°F")
+                                st.write(f"Temperature (Edge): {temp.get('edge')}°F")
 
-        except Exception as e:
-            st.error(f"Error processing patient data: {str(e)}")
+                with analysis_tab:
+                    if st.session_state.analysis_complete and st.session_state.analysis_results:
+                        st.header("Analysis Results")
+                        st.markdown(st.session_state.analysis_results)
 
-    else:
-        st.info("Please upload a CSV file and select a patient ID to begin analysis.")
+                        # Add download button for the report using the saved path
+                        if hasattr(st.session_state, 'report_path'):
+                            st.subheader("Download Report")
+                            download_word_report(st.session_state.report_path)
+                    else:
+                        st.info("Run the analysis from the sidebar to view results here.")
+
+            except Exception as e:
+                st.error(f"Error processing patient data: {str(e)}")
+
+        else:
+            st.info("Please upload a CSV file and select a patient ID to begin analysis.")
+    except Exception as e:
+        if "torch.classes" in str(e):
+            # Ignore PyTorch class path errors from Streamlit file watcher
+            pass
+        else:
+            st.error(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main()

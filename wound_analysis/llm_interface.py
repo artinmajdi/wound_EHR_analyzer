@@ -14,28 +14,46 @@ from docx.shared import Inches, Pt, RGBColor
 logger = logging.getLogger(__name__)
 
 class WoundAnalysisLLM:
-    SUPPORTED_MODELS = {
-        "falcon-7b-medical": "medicalai/FalconMedicalCoder-7B",
-        "biogpt": "microsoft/BioGPT",
-        "clinical-bert": "emilyalsentzer/Bio_ClinicalBERT",
-        "ai-verde": "Meta-Llama-3.1-70B-Instruct-quantized"  # AI Verde model
+    MODEL_CATEGORIES = {
+        "huggingface": {
+            "medalpaca-7b": "medalpaca/medalpaca-7b",
+            "BioMistral-7B": "BioMistral/BioMistral-7B",
+            "ClinicalCamel-70B": "wanglab/ClinicalCamel-70B",
+        },
+        "ai-verde": {
+            # "llama-3-90b-vision": "llama-3-2-90b-vision-instruct-quantized",
+            "llama-3.3-70b-fp8": "js2/Llama-3.3-70B-Instruct-FP8-Dynamic",
+            "meta-llama-3.1-70b": "Meta-Llama-3.1-70B-Instruct-quantized",  # default
+            "deepseek-r1": "js2/DeepSeek-R1",
+            "llama-3.2-11b-vision": "Llama-3.2-11B-Vision-Instruct"
+        }
     }
 
-    def __init__(self, model_name: str = "biogpt"):
+    def __init__(self, platform: str = "ai-verde", model_name: str = "llama-3.3-70b-fp8"):
         """
         Initialize the LLM interface with HuggingFace models or AI Verde.
         Args:
-            model_name: Name of the model to use (must be one of SUPPORTED_MODELS)
+            platform: The platform to use ("huggingface" or "ai-verde")
+            model_name: Name of the model to use within the selected platform
         """
-        if model_name not in self.SUPPORTED_MODELS:
-            raise ValueError(f"Model {model_name} not supported. Choose from: {list(self.SUPPORTED_MODELS.keys())}")
+        if platform not in self.MODEL_CATEGORIES:
+            raise ValueError(f"Platform {platform} not supported. Choose from: {list(self.MODEL_CATEGORIES.keys())}")
 
+        if model_name not in self.MODEL_CATEGORIES[platform]:
+            raise ValueError(f"Model {model_name} not supported for platform {platform}. Choose from: {list(self.MODEL_CATEGORIES[platform].keys())}")
+
+        self.platform = platform
         self.model_name = model_name
-        self.model_path = self.SUPPORTED_MODELS[model_name]
+        self.model_path = self.MODEL_CATEGORIES[platform][model_name]
+        self.model = None  # Initialize as None, will be loaded on first use
+
+    def _load_model(self):
+        """Lazy loading of the model to avoid Streamlit file watcher issues"""
+        if self.model is not None:
+            return
 
         try:
-            if model_name == "ai-verde":
-                # Initialize AI Verde model through LangChain
+            if self.platform == "ai-verde":
                 if not os.getenv("OPENAI_API_KEY"):
                     raise ValueError("OPENAI_API_KEY environment variable must be set for AI Verde")
 
@@ -43,12 +61,11 @@ class WoundAnalysisLLM:
                     model=self.model_path,
                     base_url="https://llm-api.cyverse.ai"
                 )
-                logger.info(f"Successfully loaded AI Verde model {model_name}")
+                logger.info(f"Successfully loaded AI Verde model {self.model_name}")
             else:
-                # Existing HuggingFace model initialization
                 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-                if model_name == "clinical-bert":
+                if self.model_name == "clinical-bert":
                     self.model = pipeline(
                         "fill-mask",
                         model=self.model_path,
@@ -61,11 +78,23 @@ class WoundAnalysisLLM:
                         device=device,
                         max_new_tokens=512
                     )
-                logger.info(f"Successfully loaded model {model_name} on {device}")
+                logger.info(f"Successfully loaded model {self.model_name} on {device}")
 
         except Exception as e:
-            logger.error(f"Error loading model {model_name}: {str(e)}")
+            logger.error(f"Error loading model {self.model_name}: {str(e)}")
             raise
+
+    @classmethod
+    def get_available_platforms(cls) -> List[str]:
+        """Get list of supported platforms."""
+        return list(cls.MODEL_CATEGORIES.keys())
+
+    @classmethod
+    def get_available_models(cls, platform: str) -> List[str]:
+        """Get list of supported models for a specific platform."""
+        if platform not in cls.MODEL_CATEGORIES:
+            raise ValueError(f"Platform {platform} not supported")
+        return list(cls.MODEL_CATEGORIES[platform].keys())
 
     def _format_prompt(self, patient_data: Dict) -> str:
         """Format patient data into a prompt for the LLM."""
@@ -175,9 +204,12 @@ class WoundAnalysisLLM:
         Returns:
             Analysis results as string
         """
+        # Load model if not already loaded
+        self._load_model()
         prompt = self._format_prompt(patient_data)
+
         try:
-            if self.model_name == "ai-verde":
+            if self.platform == "ai-verde":
                 # Use AI Verde with system and human messages
                 messages = [
                     SystemMessage(content="You are a medical expert specializing in wound care analysis. Analyze the provided wound data and provide clinical recommendations."),
@@ -230,10 +262,6 @@ class WoundAnalysisLLM:
         except Exception as e:
             logger.error(f"Error during analysis: {str(e)}")
             raise
-
-    def get_available_models(self) -> List[str]:
-        """Get list of supported models."""
-        return list(self.SUPPORTED_MODELS.keys())
 
 def format_word_document(doc: Document, analysis_text: str, patient_data: dict, report_path: str = None) -> str:
     """
