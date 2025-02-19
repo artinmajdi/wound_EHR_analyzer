@@ -10,15 +10,22 @@ logger = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser(description='Analyze wound care data using LLMs')
-    parser.add_argument('--record-id', type=int, help='Patient record ID to analyze')
-    parser.add_argument('--model-name', type=str, default='clinical-bert',
-                        choices=['falcon-7b-medical', 'llama2-medical', 'med42', 'biogpt', 'clinical-bert'],
+    parser.add_argument('--record-id', type=int, default=3, help='Patient record ID to analyze')
+    parser.add_argument('--model-name', type=str, default='ai-verde',
+                        choices=['falcon-7b-medical', 'llama2-medical', 'biogpt', 'clinical-bert', 'ai-verde'],
                         help='Specific model name to use')
-    parser.add_argument('--dataset-path', type=pathlib.Path, help='path to three csv files', default=pathlib.Path('/Users/artinmajdi/Documents/GitHubs/postdoc/TDT_copilot_2'))
+    parser.add_argument('--dataset-path', type=pathlib.Path,
+                        help='path to three csv files',
+                        default=pathlib.Path('/Users/artinmajdi/Documents/GitHubs/postdoc/TDT_copilot_2'))
+    parser.add_argument('--api-key', type=str, default="sk-h8JtQkCCJUOy-TAdDxCLGw", help='API key for AI Verde model')
 
     args = parser.parse_args()
 
     try:
+        # Set API key for AI Verde if provided
+        if args.api_key:
+            os.environ["OPENAI_API_KEY"] = args.api_key
+
         # Initialize data processor
         processor = WoundDataProcessor(args.dataset_path)
 
