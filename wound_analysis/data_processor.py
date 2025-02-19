@@ -70,12 +70,22 @@ class WoundDataProcessor:
         # Medical history from individual columns
         medical_conditions = [
             'Respiratory', 'Cardiovascular', 'Gastrointestinal', 'Musculoskeletal',
-            'Endocrine/ Metabolic', 'Hematopoietic', 'Hepatic/Renal', 'Neurologic', 'Immune', 'Hyperlipidemia', 'Hypertension'
+            'Endocrine/ Metabolic', 'Hematopoietic', 'Hepatic/Renal', 'Neurologic', 'Immune'
         ]
+        # Get medical history from standard columns
         metadata['medical_history'] = {
             condition: patient_data[condition]
             for condition in medical_conditions if not pd.isna(patient_data.get(condition))
         }
+
+        # Check additional medical history from free text field
+        other_history = patient_data.get('Medical History (select all that apply)')
+        if not pd.isna(other_history):
+            existing_conditions = set(medical_conditions)
+            other_conditions = [cond.strip() for cond in str(other_history).split(',')]
+            other_conditions = [cond for cond in other_conditions if cond and cond not in existing_conditions]
+            if other_conditions:
+                metadata['medical_history']['other'] = ', '.join(other_conditions)
 
 
         # Diabetes information

@@ -21,6 +21,8 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = "Dashboard"
 
 def create_wound_measurements_chart(visits):
     """Create an interactive chart showing wound measurements over time."""
@@ -274,7 +276,7 @@ def main():
 
                 # Add Run Analysis button to sidebar
                 if st.sidebar.button("Run Analysis"):
-                    with st.spinner("Analyzing patient data..."):  # Fixed spinner location
+                    with st.spinner("Analyzing patient data..."):
                         try:
                             # Initialize LLM with platform and model
                             llm = WoundAnalysisLLM(platform=platform, model_name=model_name)
@@ -285,6 +287,7 @@ def main():
                             st.session_state.analysis_complete = True
                             st.session_state.analysis_results = analysis
                             st.session_state.report_path = report_path
+                            st.session_state.active_tab = "Analysis Results"  # Set active tab
                             st.sidebar.success("Analysis complete! View results in the Analysis tab.")
                         except Exception as e:
                             st.sidebar.error(f"Error during analysis: {str(e)}")
@@ -301,6 +304,10 @@ def main():
 
                 # Create tabs for different sections
                 dashboard_tab, analysis_tab = st.tabs(["Dashboard", "Analysis Results"])
+
+                # Set the active tab based on session state
+                if st.session_state.active_tab == "Analysis Results":
+                    analysis_tab.active = True
 
                 with dashboard_tab:
                     # Display patient information in columns
@@ -320,7 +327,7 @@ def main():
                         if metadata.get('medical_history'):
                             for condition, status in metadata['medical_history'].items():
                                 if status and status != 'None':
-                                    st.write(f"- {condition}")
+                                    st.write(f"- {condition}: {status}")
 
                     with col3:
                         st.subheader("Diabetes Status")

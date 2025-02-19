@@ -8,6 +8,8 @@ from datetime import datetime
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+print('------')
+
 # Create logs directory if it doesn't exist
 log_dir = pathlib.Path(__file__).parent / 'logs'
 log_dir.mkdir(exist_ok=True)
