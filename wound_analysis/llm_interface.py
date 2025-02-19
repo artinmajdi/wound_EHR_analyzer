@@ -67,17 +67,35 @@ class WoundAnalysisLLM:
         metadata = patient_data['patient_metadata']
         visits = patient_data['visits']
 
-        # Create a more structured, concise prompt
+        # Create a more detailed patient profile
         prompt = (
             "Task: Analyze wound healing progression and provide clinical recommendations.\n\n"
             "Patient Profile:\n"
             f"- {metadata.get('age', 'Unknown')}y/o {metadata.get('sex', 'Unknown')}\n"
+            f"- Race/Ethnicity: {metadata.get('race', 'Unknown')}, {metadata.get('ethnicity', 'Unknown')}\n"
             f"- BMI: {metadata.get('bmi', 'Unknown')}\n"
-            f"- Diabetes: {metadata.get('diabetes_type', 'None')}\n"
-            f"- HbA1c: {metadata.get('hemoglobin_a1c', 'Unknown')}\n\n"
-            "Visit History:\n"
+            f"- Study Cohort: {metadata.get('study_cohort', 'Unknown')}\n"
+            f"- Smoking: {metadata.get('smoking_status', 'None')}"
         )
 
+        # Add diabetes information
+        diabetes_info = metadata.get('diabetes', {})
+        if diabetes_info:
+            prompt += (
+                f"\n- Diabetes: {diabetes_info.get('status', 'None')}\n"
+                f"- HbA1c: {diabetes_info.get('hemoglobin_a1c', 'Unknown')}%"
+            )
+
+        # Add medical history if available
+        medical_history = metadata.get('medical_history', {})
+        if medical_history:
+            conditions = [cond for cond, val in medical_history.items() if val and val != 'None']
+            if conditions:
+                prompt += f"\n- Medical History: {', '.join(conditions)}"
+
+        prompt += "\n\nVisit History:\n"
+
+        # Format visit information
         for visit in visits:
             visit_date = visit.get('visit_date', 'Unknown')
             measurements = visit.get('wound_measurements', {})
@@ -90,19 +108,56 @@ class WoundAnalysisLLM:
                 f"Type: {wound_info.get('type', 'Unknown')}\n"
                 f"Size: {measurements.get('length')}cm x {measurements.get('width')}cm x {measurements.get('depth')}cm\n"
                 f"Area: {measurements.get('area')}cm²\n"
-                f"Tissue: {wound_info.get('granulation', {}).get('quality', 'Unknown')} granulation, "
-                f"coverage {wound_info.get('granulation', {}).get('coverage', 'Unknown')}\n"
-                f"Exudate: {wound_info.get('exudate', {}).get('volume', 'Unknown')} volume, "
-                f"type {wound_info.get('exudate', {}).get('type', 'Unknown')}\n"
-                f"O₂: {sensor.get('oxygenation')}%, Temp: {sensor.get('temperature', {}).get('center')}°F\n"
             )
 
+            # Add granulation information
+            granulation = wound_info.get('granulation', {})
+            if granulation:
+                prompt += f"Tissue: {granulation.get('quality', 'Unknown')}, coverage {granulation.get('coverage', 'Unknown')}\n"
+
+            # Add exudate information
+            exudate = wound_info.get('exudate', {})
+            if exudate:
+                prompt += (
+                    f"Exudate: {exudate.get('volume', 'Unknown')} volume, "
+                    f"viscosity {exudate.get('viscosity', 'Unknown')}, "
+                    f"type {exudate.get('type', 'Unknown')}\n"
+                )
+
+            # Add sensor data
+            if sensor:
+                temp = sensor.get('temperature', {})
+                impedance = sensor.get('impedance', {})
+                high_freq_imp = impedance.get('high_frequency', {})
+                low_freq_imp = impedance.get('low_frequency', {})
+
+                prompt += (
+                    f"Measurements:\n"
+                    f"- O₂: {sensor.get('oxygenation')}%\n"
+                    f"- Temperature: center {temp.get('center')}°F, edge {temp.get('edge')}°F, peri-wound {temp.get('peri')}°F\n"
+                    f"- Hemoglobin: {sensor.get('hemoglobin')}, Oxy: {sensor.get('oxyhemoglobin')}, Deoxy: {sensor.get('deoxyhemoglobin')}\n"
+                    f"- Impedance (80kHz): Z={high_freq_imp.get('z')}, Z'={high_freq_imp.get('z_prime')}, Z''={high_freq_imp.get('z_double_prime')}\n"
+                )
+
+                # Add low frequency impedance if available
+                if any(v is not None for v in low_freq_imp.values()):
+                    prompt += f"- Impedance (100Hz): Z={low_freq_imp.get('z')}, Z'={low_freq_imp.get('z_prime')}, Z''={low_freq_imp.get('z_double_prime')}\n"
+
+            # Add infection and treatment information
+            infection = wound_info.get('infection', {})
+            if infection.get('status') or infection.get('classification'):
+                prompt += f"Infection Status: {infection.get('status', 'None')}, Classification: {infection.get('classification', 'None')}\n"
+
+            if wound_info.get('current_care'):
+                prompt += f"Current Care: {wound_info.get('current_care')}\n"
+
         prompt += (
-            "\nPlease analyze:\n"
-            "1. Wound healing trajectory\n"
-            "2. Concerning patterns\n"
-            "3. Care recommendations\n"
-            "4. Complication risks\n"
+            "\nPlease provide a comprehensive analysis including:\n"
+            "1. Wound healing trajectory (analyze changes in size, exudate, and tissue characteristics)\n"
+            "2. Concerning patterns (identify any worrying trends in measurements or characteristics)\n"
+            "3. Care recommendations (based on wound type, characteristics, and healing progress)\n"
+            "4. Complication risks (assess based on patient profile and wound characteristics)\n"
+            "5. Significance of sensor measurements (interpret oxygenation, temperature, and impedance trends)\n"
         )
 
         return prompt
