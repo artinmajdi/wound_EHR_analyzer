@@ -31,6 +31,6 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--dataset-path', type=pathlib.Path, default=pathlib.Path(__file__).parent.parent / 'dataset', help='Path to the dataset directory containing SmartBandage-Data_for_llm.csv')
     parser.add_argument('--output-dir', type=pathlib.Path, default=pathlib.Path(__file__).parent.parent / 'wound_analysis/logs', help='Directory to save output files')
     parser.add_argument('--platform', type=str, default='ai-verde', choices=WoundAnalysisLLM.get_available_platforms(), help='LLM platform to use')
-    parser.add_argument('--api-key', type=str, default='sk-h10JtQkCCJUOy-TAdDxCLGw', help='API key for the LLM platform')
+    parser.add_argument('--api-key', type=str, default='sk-h8JtQkCCJUOy-TAdDxCLGw', help='API key for the LLM platform')
     parser.add_argument('--model-name', type=str, default='llama-3.3-70b-fp8', help='Name of the LLM model to use')
     return parser.parse_args()
