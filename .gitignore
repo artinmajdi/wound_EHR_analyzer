@@ -50,3 +50,4 @@ env/
 .Python
 *.pyc
 
+.DS_Store

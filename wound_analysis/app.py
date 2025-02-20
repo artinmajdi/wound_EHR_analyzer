@@ -259,13 +259,22 @@ def main():
         patient_id = None
         if uploaded_file is not None:
             try:
-                # Initialize processor with the main dataset folder
-                dataset_path = pathlib.Path("dataset")
+                # Create a temporary dataset directory using absolute path
+                dataset_path = pathlib.Path(__file__).resolve().parent / "dataset"
+                dataset_path.mkdir(parents=True, exist_ok=True)
+
+                # Save the uploaded file using absolute path
+                temp_csv_path = dataset_path / "SmartBandage-Data_for_llm.csv"
+                temp_csv_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(temp_csv_path, 'wb') as f:
+                    f.write(uploaded_file.getvalue())
+
+                # Initialize processor with the absolute dataset path
                 st.session_state.processor = WoundDataProcessor(dataset_path)
 
-                # Get unique patient IDs from the data
-                df = pd.read_csv(dataset_path / "SmartBandage-Data_for_llm.csv")
-                patient_ids = df['Record ID'].unique()
+                # Use the uploaded file directly for patient IDs
+                df = pd.read_csv(uploaded_file)
+                patient_ids = sorted(df['Record ID'].unique())
                 patient_id = st.sidebar.selectbox("Select Patient ID", patient_ids)
 
                 # Add Run Analysis button to sidebar
