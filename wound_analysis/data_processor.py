@@ -155,24 +155,33 @@ class WoundDataProcessor:
 			return float(data[key]) if not pd.isna(data.get(key)) else None
 
 		df = self.process_impedance_sweep_xlsx(record_id=record_id)
-		if (df is not None) and (visit_date in df['Visit date'].values):
-			pass
-
-		# Create impedance data structure for both frequencies
-		impedance_imaginary = get_float(visit, "Skin Impedance (kOhms) - Z''")
 
 		impedance_data = {
-			'high_frequency': {  # 80kHz measurements
-				'Z'          : get_float(visit, 'Skin Impedance (kOhms) - Z'),
-				'resistance' : get_float(visit, "Skin Impedance (kOhms) - Z'"),
-				'capacitance': None if impedance_imaginary is None else 1 / (2 * 3.14 * 80000 * impedance_imaginary)
-			},
-			'low_frequency': {  # 100Hz measurements (placeholder for new data)
-				'Z'          : None, # Will be populated from new CSV columns when available
-				'resistance' : None,
-				'capacitance': None
-			}
+			'high_frequency': {'Z': None, 'resistance': None, 'capacitance': None},
+			'low_frequency' : {'Z': None, 'resistance': None, 'capacitance': None}
 		}
+
+		if df is not None and visit_date in df['Visit date'].values:
+			# Filter data for this visit date
+			visit_df = df[df['Visit date'] == visit_date]
+
+			# Get high frequency (100kHz) data
+			high_freq = visit_df[visit_df['frequency'] == '100000'].iloc[0] if not visit_df[visit_df['frequency'] == '100000'].empty else None
+			if high_freq is not None:
+				impedance_data['high_frequency'] = {
+					'Z': high_freq['Z'],
+					'resistance': high_freq['Z_prime'],
+					'capacitance': None if high_freq['Z_double_prime'] is None else 1 / (2 * 3.14 * 100000 * high_freq['Z_double_prime'])
+				}
+
+			# Get low frequency (100Hz) data
+			low_freq = visit_df[visit_df['frequency'] == '100'].iloc[0] if not visit_df[visit_df['frequency'] == '100'].empty else None
+			if low_freq is not None:
+				impedance_data['low_frequency'] = {
+					'Z': low_freq['Z'],
+					'resistance': low_freq['Z_prime'],
+					'capacitance': None if low_freq['Z_double_prime'] is None else 1 / (2 * 3.14 * 100 * low_freq['Z_double_prime'])
+				}
 
 		wound_measurements = {
 			'length': get_float(visit, 'Length (cm)'),
@@ -233,7 +242,8 @@ class WoundDataProcessor:
 			'Z': [],
 			'Z_prime': [],
 			'Z_double_prime': [],
-			'visit_number': []
+			'visit_number': [],
+			'visit_date': []
 		}
 
 		# Load Excel file
@@ -271,6 +281,7 @@ class WoundDataProcessor:
 				data['Z_prime'].append(freq_rows[freq]["Z' / Ohm"])
 				data['Z_double_prime'].append(freq_rows[freq]["-Z'' / Ohm"])
 				data['visit_number'].append(visit_number)
+				data['visit_date'].append(visit_date)
 
 		if not data['visit_number']:
 			logger.warning("No valid impedance data found in any sheet")
@@ -279,7 +290,7 @@ class WoundDataProcessor:
 		# Create DataFrame
 		df = pd.DataFrame({
 			'visit_number': data['visit_number'],
-			'Visit date': visit_date,
+			'Visit date': data['visit_date'],
 			'frequency': ['100', '100000'] * (len(data['visit_number']) // 2),
 			'Z': data['Z'],
 			'Z_prime': data['Z_prime'],
