@@ -154,34 +154,46 @@ class WoundDataProcessor:
 		def get_float(data, key):
 			return float(data[key]) if not pd.isna(data.get(key)) else None
 
-		df = self.process_impedance_sweep_xlsx(record_id=record_id)
+		def get_impedance_data():
 
-		impedance_data = {
-			'high_frequency': {'Z': None, 'resistance': None, 'capacitance': None},
-			'low_frequency' : {'Z': None, 'resistance': None, 'capacitance': None}
-		}
+			impedance_data = {
+				'high_frequency': {'Z': None, 'resistance': None, 'capacitance': None},
+				'low_frequency' : {'Z': None, 'resistance': None, 'capacitance': None}
+			}
 
-		if df is not None and visit_date in df['Visit date'].values:
-			# Filter data for this visit date
-			visit_df = df[df['Visit date'] == visit_date]
+			def extract_impedance_data(freq_data, frquency):
+				if freq_data is not None:
+					return {
+						'Z': freq_data['Z'],
+						'resistance': freq_data['Z_prime'],
+						'capacitance': None if freq_data['Z_double_prime'] is None else 1 / (2 * 3.14 * frquency * freq_data['Z_double_prime'])
+					}
+				return {'Z': None, 'resistance': None, 'capacitance': None}
 
-			# Get high frequency (100kHz) data
-			high_freq = visit_df[visit_df['frequency'] == '100000'].iloc[0] if not visit_df[visit_df['frequency'] == '100000'].empty else None
-			if high_freq is not None:
-				impedance_data['high_frequency'] = {
-					'Z': high_freq['Z'],
-					'resistance': high_freq['Z_prime'],
-					'capacitance': None if high_freq['Z_double_prime'] is None else 1 / (2 * 3.14 * 100000 * high_freq['Z_double_prime'])
+			df = self.process_impedance_sweep_xlsx(record_id=record_id)
+
+			if df is not None and visit_date in df['Visit date'].values:
+				# Filter data for this visit date
+				visit_df = df[df['Visit date'] == visit_date]
+
+				# Get high frequency (100kHz) data and low frequency (100Hz) data
+				high_freq = visit_df[visit_df['frequency'] == '100000'].iloc[0] if not visit_df[visit_df['frequency'] == '100000'].empty else None
+				low_freq  = visit_df[visit_df['frequency'] == '100'].iloc[0] if not visit_df[visit_df['frequency'] == '100'].empty else None
+
+				impedance_data['high_frequency'] = extract_impedance_data(high_freq, 100000)
+				impedance_data['low_frequency']  = extract_impedance_data(low_freq, 100)
+
+			else:
+				# Get impedance data from visit parameters
+				high_freq = {
+					'Z'             : get_float(visit, 'Skin Impedance (kOhms) - Z'),
+					'Z_prime'       : get_float(visit, "Skin Impedance (kOhms) - Z'"),
+					'Z_double_prime': get_float(visit, 'Skin Impedance (kOhms) - Z"')
 				}
 
-			# Get low frequency (100Hz) data
-			low_freq = visit_df[visit_df['frequency'] == '100'].iloc[0] if not visit_df[visit_df['frequency'] == '100'].empty else None
-			if low_freq is not None:
-				impedance_data['low_frequency'] = {
-					'Z': low_freq['Z'],
-					'resistance': low_freq['Z_prime'],
-					'capacitance': None if low_freq['Z_double_prime'] is None else 1 / (2 * 3.14 * 100 * low_freq['Z_double_prime'])
-				}
+				impedance_data['high_frequency'] = extract_impedance_data(high_freq, 80000)
+
+			return impedance_data
 
 		wound_measurements = {
 			'length': get_float(visit, 'Length (cm)'),
@@ -208,7 +220,7 @@ class WoundDataProcessor:
 			'sensor_data': {
 				'oxygenation': get_float(visit, 'Oxygenation (%)'),
 				'temperature': temperature_readings,
-				'impedance'  : impedance_data,
+				'impedance'  : get_impedance_data(),
 				**{key: get_float(visit, value) for key, value in hemoglobin_types.items()}
 			}
 		}

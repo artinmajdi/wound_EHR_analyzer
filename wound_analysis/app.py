@@ -89,26 +89,84 @@ def create_impedance_chart(visits):
     high_freq_z = []
     high_freq_r = []
     high_freq_c = []
+    low_freq_z = []
+    low_freq_r = []
+    low_freq_c = []
 
     for visit in visits:
         date = visit['visit_date']
-        imp_data = visit['sensor_data']['impedance']['high_frequency']
+        sensor_data = visit.get('sensor_data', {})
+        impedance_data = sensor_data.get('impedance', {})
+
         dates.append(date)
-        high_freq_z.append(imp_data.get('Z', None))
-        high_freq_r.append(imp_data.get('resistance', None))
-        high_freq_c.append(imp_data.get('capacitance', None))
+
+        # High frequency data (80kHz)
+        high_freq = impedance_data.get('high_frequency', {})
+        try:
+            z_val = float(high_freq.get('Z')) if high_freq.get('Z') not in (None, '') else None
+            r_val = float(high_freq.get('resistance')) if high_freq.get('resistance') not in (None, '') else None
+            c_val = float(high_freq.get('capacitance')) if high_freq.get('capacitance') not in (None, '') else None
+
+            high_freq_z.append(z_val)
+            high_freq_r.append(r_val)
+            high_freq_c.append(c_val)
+        except (ValueError, TypeError):
+            high_freq_z.append(None)
+            high_freq_r.append(None)
+            high_freq_c.append(None)
+
+        # Low frequency data (100Hz)
+        low_freq = impedance_data.get('low_frequency', {})
+        try:
+            z_val = float(low_freq.get('Z')) if low_freq.get('Z') not in (None, '') else None
+            r_val = float(low_freq.get('resistance')) if low_freq.get('resistance') not in (None, '') else None
+            c_val = float(low_freq.get('capacitance')) if low_freq.get('capacitance') not in (None, '') else None
+
+            low_freq_z.append(z_val)
+            low_freq_r.append(r_val)
+            low_freq_c.append(c_val)
+        except (ValueError, TypeError):
+            low_freq_z.append(None)
+            low_freq_r.append(None)
+            low_freq_c.append(None)
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=dates, y=high_freq_z, name='|Z| (kΩ)', mode='lines+markers'))
-    fig.add_trace(go.Scatter(x=dates, y=high_freq_r, name="Resistance (kΩ)", mode='lines+markers'))
-    fig.add_trace(go.Scatter(x=dates, y=high_freq_c, name="Capacitance", mode='lines+markers'))
+
+    # Create subplots for different parameters
+    parameters = {
+        'Z': {'high': high_freq_z, 'low': low_freq_z, 'title': '|Z|'},
+        'R': {'high': high_freq_r, 'low': low_freq_r, 'title': 'Resistance'},
+        'C': {'high': high_freq_c, 'low': low_freq_c, 'title': 'Capacitance'}
+    }
+
+    # Add traces for each parameter
+    for param_name, param_data in parameters.items():
+        if any(x is not None for x in param_data['high']):
+            fig.add_trace(go.Scatter(
+                x=dates,
+                y=param_data['high'],
+                name=f'{param_data["title"]} (80kHz)',
+                mode='lines+markers'
+            ))
+        if any(x is not None for x in param_data['low']):
+            fig.add_trace(go.Scatter(
+                x=dates,
+                y=param_data['low'],
+                name=f'{param_data["title"]} (100Hz)',
+                mode='lines+markers',
+                line=dict(dash='dash')
+            ))
 
     fig.update_layout(
         title='Impedance Measurements Over Time',
         xaxis_title='Visit Date',
-        yaxis_title='Impedance',
-        hovermode='x unified'
+        yaxis_title='Impedance Values',
+        hovermode='x unified',
+        showlegend=True,
+        height=600,
+        yaxis=dict(type='log'),  # Use log scale for better visualization
     )
+
     return fig
 
 def create_oxygenation_chart(visits):
@@ -123,10 +181,16 @@ def create_oxygenation_chart(visits):
         date = visit['visit_date']
         sensor_data = visit['sensor_data']
         dates.append(date)
-        oxygenation.append(sensor_data.get('oxygenation', None))
-        hemoglobin.append(100 * sensor_data.get('hemoglobin', None))
-        oxyhemoglobin.append(100 * sensor_data.get('oxyhemoglobin', None))
-        deoxyhemoglobin.append(100 * sensor_data.get('deoxyhemoglobin', None))
+        oxygenation.append(sensor_data.get('oxygenation'))
+
+        # Handle None values for hemoglobin measurements
+        hb = sensor_data.get('hemoglobin')
+        oxyhb = sensor_data.get('oxyhemoglobin')
+        deoxyhb = sensor_data.get('deoxyhemoglobin')
+
+        hemoglobin.append(100 * hb if hb is not None else None)
+        oxyhemoglobin.append(100 * oxyhb if oxyhb is not None else None)
+        deoxyhemoglobin.append(100 * deoxyhb if deoxyhb is not None else None)
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=dates, y=oxygenation, name='Oxygenation (%)', mode='lines+markers'))
