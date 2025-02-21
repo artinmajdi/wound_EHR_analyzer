@@ -7,6 +7,7 @@ import pathlib
 import re
 from docx import Document
 from llm_interface import format_word_document
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,16 +34,13 @@ class WoundDataProcessor:
 
 			visits_data = []
 			for _, visit in patient_data.iterrows():
-				# try:
+
 				if pd.isna(visit.get('Skipped Visit?')) or visit['Skipped Visit?'] != 'Yes':
 					visit_data = self._process_visit_data(visit=visit, record_id=record_id)
 					if visit_data:
 						wound_info = self._get_wound_info(visit)
 						visit_data['wound_info'] = wound_info
 						visits_data.append(visit_data)
-				# except Exception as e:
-				# 	logger.warning(f"Error processing visit data: {str(e)}")
-				# 	continue
 
 			return {
 				'patient_metadata': metadata,
@@ -144,11 +142,10 @@ class WoundDataProcessor:
 
 	def _process_visit_data(self, visit, record_id: int) -> Optional[Dict]:
 		"""Process visit measurement data from a single row."""
-		# try:
-
 		visit_date = pd.to_datetime(visit['Visit date']).strftime('%m-%d-%Y') if not pd.isna(visit.get('Visit date')) else None
 
 		if not visit_date:
+			logger.warning("Missing visit date")
 			return None
 
 		def get_float(data, key):
@@ -157,41 +154,46 @@ class WoundDataProcessor:
 		def get_impedance_data():
 
 			impedance_data = {
-				'high_frequency': {'Z': None, 'resistance': None, 'capacitance': None},
-				'low_frequency' : {'Z': None, 'resistance': None, 'capacitance': None}
+				'high_frequency': {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None},
+				'center_frequency': {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None},
+				'low_frequency': {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None}
 			}
 
-			def extract_impedance_data(freq_data, frquency):
+			def transform_impedance_data(freq_data, frequency):
 				if freq_data is not None:
 					return {
 						'Z': freq_data['Z'],
 						'resistance': freq_data['Z_prime'],
-						'capacitance': None if freq_data['Z_double_prime'] is None else 1 / (2 * 3.14 * frquency * freq_data['Z_double_prime'])
+						'capacitance': None if freq_data['Z_double_prime'] is None else 1 / (2 * 3.14 * frequency * freq_data['Z_double_prime']),
+						'frequency': frequency
 					}
-				return {'Z': None, 'resistance': None, 'capacitance': None}
+				return {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None}
 
-			df = self.process_impedance_sweep_xlsx(record_id=record_id)
+			df = self.process_impedance_sweep_xlsx(record_id=record_id, visit_date_being_processed=visit_date)
 
-			if df is not None and visit_date in df['Visit date'].values:
-				# Filter data for this visit date
+			if df is not None:
+				# Get data for this visit date
 				visit_df = df[df['Visit date'] == visit_date]
 
-				# Get high frequency (100kHz) data and low frequency (100Hz) data
-				high_freq = visit_df[visit_df['frequency'] == '100000'].iloc[0] if not visit_df[visit_df['frequency'] == '100000'].empty else None
-				low_freq  = visit_df[visit_df['frequency'] == '100'].iloc[0] if not visit_df[visit_df['frequency'] == '100'].empty else None
+				if not visit_df.empty:
+					# Get data for all three frequencies using the index
+					high_freq   = visit_df[visit_df.index == 'highest_freq'].iloc[0] if not visit_df[visit_df.index == 'highest_freq'].empty else None
+					center_freq = visit_df[visit_df.index == 'center_freq'].iloc[0] if not visit_df[visit_df.index == 'center_freq'].empty else None
+					low_freq    = visit_df[visit_df.index == 'lowest_freq'].iloc[0] if not visit_df[visit_df.index == 'lowest_freq'].empty else None
 
-				impedance_data['high_frequency'] = extract_impedance_data(high_freq, 100000)
-				impedance_data['low_frequency']  = extract_impedance_data(low_freq, 100)
+					impedance_data['high_frequency']   = transform_impedance_data(high_freq, float(high_freq['frequency']) if high_freq is not None else None)
+					impedance_data['center_frequency'] = transform_impedance_data(center_freq, float(center_freq['frequency']) if center_freq is not None else None)
+					impedance_data['low_frequency']    = transform_impedance_data(low_freq, float(low_freq['frequency']) if low_freq is not None else None)
 
 			else:
-				# Get impedance data from visit parameters
+				# Get impedance data from visit parameters if no sweep data
 				high_freq = {
-					'Z'             : get_float(visit, 'Skin Impedance (kOhms) - Z'),
-					'Z_prime'       : get_float(visit, "Skin Impedance (kOhms) - Z'"),
+					'Z': get_float(visit, 'Skin Impedance (kOhms) - Z'),
+					'Z_prime': get_float(visit, "Skin Impedance (kOhms) - Z'"),
 					'Z_double_prime': get_float(visit, 'Skin Impedance (kOhms) - Z"')
 				}
 
-				impedance_data['high_frequency'] = extract_impedance_data(high_freq, 80000)
+				impedance_data['high_frequency'] = transform_impedance_data(high_freq, 80000)
 
 			return impedance_data
 
@@ -225,89 +227,83 @@ class WoundDataProcessor:
 			}
 		}
 
-
-		# except Exception as e:
-		# 	logger.warning(f"Error processing visit data: {str(e)}")
-		# 	return None
-
-	def process_impedance_sweep_xlsx(self, record_id: int) -> Optional[pd.DataFrame]:
+	def process_impedance_sweep_xlsx(self, record_id: int, visit_date_being_processed) -> Optional[pd.DataFrame]:
 		"""
 		Process impedance data from an Excel file for a specific record ID.
-		Always skips the first row of each Excel sheet.
 
 		Args:
-			path (pathlib.Path): Path to the directory containing the Excel file
-			record_id (int): Patient record ID
+			record_id (int): The patient record ID
 
 		Returns:
-			Optional[pd.DataFrame]: DataFrame containing impedance measurements for each visit,
-									or None if file doesn't exist
+			Optional[pd.DataFrame]: DataFrame containing processed impedance data, or None if processing fails
 		"""
 		# try:
-		xlsx_path = self.dataset_path / f"palmsense files Jan 2025/{record_id}.xlsx"
-		if not xlsx_path.exists():
-			# logger.warning(f"No Excel file found for record {record_id}")
+		# Find the Excel file for this record
+		excel_file = self.dataset_path / f'palmsense files Jan 2025/{record_id}.xlsx'
+		if not excel_file.exists():
 			return None
 
-		# Initialize lists to store data
-		data = {
-			'Z': [],
-			'Z_prime': [],
-			'Z_double_prime': [],
-			'visit_number': [],
-			'visit_date': []
-		}
+		# Read all sheets from the Excel file
+		xl = pd.ExcelFile(excel_file)
 
-		# Load Excel file
-		xlsx = pd.ExcelFile(xlsx_path)
+		# Process each sheet (visit date)
+		dfs = []
+		for sheet_name in xl.sheet_names:
 
-		# Process each sheet
-		for sheet_name in xlsx.sheet_names:
-			# Extract visit number from sheet name
+			# Extract visit date from filename
 			match = re.search(rf"{record_id}_visit_(\d+)_(\d+)-(\d+)-(\d+)", sheet_name)
 			if not match:
-				continue
-			visit_number = int(match.group(1))
-			visit_date = f"{match.group(2)}-{match.group(3)}-{match.group(4)}"
+				logger.warning(f"Could not extract visit date from filename: {sheet_name}")
+				return None
+			visit_number = match.group(1)
+			visit_date = datetime.strptime(f"{match.group(2)}/{match.group(3)}/{match.group(4)}", "%m/%d/%Y").strftime('%m-%d-%Y')
 
-			# Read sheet, skipping the first row
-			df = pd.read_excel(xlsx, sheet_name=sheet_name, skiprows=1)
-
-			# Find rows with frequencies 100 Hz and 100000 Hz
-			freq_rows = {}
-			for freq in [100, 100000]:
-				matching_rows = df[df['freq / Hz'] == freq]
-				if len(matching_rows) > 0:
-					freq_rows[freq] = matching_rows.iloc[-1]
-				else:
-					logger.warning(f"No data found for frequency {freq}Hz in visit {visit_number}")
-					continue
-
-			# Skip if we don't have both frequencies
-			if len(freq_rows) != 2:
+			if visit_date != visit_date_being_processed:
 				continue
 
-			# Add data for this visit
-			for freq in [100, 100000]:
-				data['Z'].append(freq_rows[freq]['Z / Ohm'])
-				data['Z_prime'].append(freq_rows[freq]["Z' / Ohm"])
-				data['Z_double_prime'].append(freq_rows[freq]["-Z'' / Ohm"])
-				data['visit_number'].append(visit_number)
-				data['visit_date'].append(visit_date)
+			# Read the sheet
+			df = pd.read_excel(excel_file, sheet_name=sheet_name, skiprows=1)
 
-		if not data['visit_number']:
-			logger.warning("No valid impedance data found in any sheet")
+			# Clean column names and select relevant columns
+			df.columns = df.columns.str.strip()
+
+			# Get only the bottom half of the dataframe
+			half_point = len(df) // 2
+			df_bottom = df.iloc[half_point:]
+
+			# Find frequencies of interest in the bottom half
+			lowest_freq = df_bottom['freq / Hz'].min()
+			highest_freq = df_bottom['freq / Hz'].max()
+
+			# Calculate the difference between Z' and -Z" and find where it's minimum
+			# df_bottom['z_diff'] = abs(df_bottom["Z' / Ohm"] - df_bottom["-Z'' / Ohm"])
+			center_freq = df_bottom.loc[df_bottom['neg. Phase / °'].idxmax(), 'freq / Hz']
+
+			# Get data for these three frequencies
+			freq_data = []
+			for freq_type, freq in [('lowest_freq', lowest_freq), ('center_freq', center_freq), ('highest_freq', highest_freq)]:
+				row = df_bottom[df_bottom['freq / Hz'] == freq].iloc[0]
+				freq_data.append({
+					'Visit date': visit_date,
+					'Visit number': visit_number,
+					'frequency': str(freq),
+					'Z': row["Z / Ohm"],
+					'Z_prime': row["Z' / Ohm"],
+					'Z_double_prime': row["-Z'' / Ohm"],
+					'neg. Phase / °': row["neg. Phase / °"],
+					'index': freq_type
+				})
+
+			dfs.extend(freq_data)
+
+		if not dfs:
 			return None
 
-		# Create DataFrame
-		df = pd.DataFrame({
-			'visit_number': data['visit_number'],
-			'Visit date': data['visit_date'],
-			'frequency': ['100', '100000'] * (len(data['visit_number']) // 2),
-			'Z': data['Z'],
-			'Z_prime': data['Z_prime'],
-			'Z_double_prime': data['Z_double_prime']
-		})
+		# Create DataFrame from processed data
+		df = pd.DataFrame(dfs).set_index('index')
+
+		# Convert Visit date to datetime and format
+		df['Visit date'] = pd.to_datetime(df['Visit date']).dt.strftime('%m-%d-%Y')
 
 		return df
 
@@ -331,5 +327,3 @@ class WoundDataProcessor:
 		except Exception as e:
 			logger.error(f"Error saving report: {str(e)}")
 			raise
-
-

@@ -86,12 +86,11 @@ def create_temperature_chart(visits):
 def create_impedance_chart(visits):
     """Create an interactive chart showing impedance measurements over time."""
     dates = []
-    high_freq_z = []
-    high_freq_r = []
-    high_freq_c = []
-    low_freq_z = []
-    low_freq_r = []
-    low_freq_c = []
+    high_freq_z, high_freq_r, high_freq_c = [], [], []
+    center_freq_z, center_freq_r, center_freq_c = [], [], []
+    low_freq_z, low_freq_r, low_freq_c = [], [], []
+
+    high_freq_val, center_freq_val, low_freq_val = None, None, None
 
     for visit in visits:
         date = visit['visit_date']
@@ -100,12 +99,15 @@ def create_impedance_chart(visits):
 
         dates.append(date)
 
-        # High frequency data (80kHz)
+        # Process high frequency data
         high_freq = impedance_data.get('high_frequency', {})
         try:
             z_val = float(high_freq.get('Z')) if high_freq.get('Z') not in (None, '') else None
             r_val = float(high_freq.get('resistance')) if high_freq.get('resistance') not in (None, '') else None
             c_val = float(high_freq.get('capacitance')) if high_freq.get('capacitance') not in (None, '') else None
+
+            if high_freq.get('frequency'):
+                high_freq_val = high_freq.get('frequency')
 
             high_freq_z.append(z_val)
             high_freq_r.append(r_val)
@@ -115,12 +117,33 @@ def create_impedance_chart(visits):
             high_freq_r.append(None)
             high_freq_c.append(None)
 
-        # Low frequency data (100Hz)
+        # Process center frequency data
+        center_freq = impedance_data.get('center_frequency', {})
+        try:
+            z_val = float(center_freq.get('Z')) if center_freq.get('Z') not in (None, '') else None
+            r_val = float(center_freq.get('resistance')) if center_freq.get('resistance') not in (None, '') else None
+            c_val = float(center_freq.get('capacitance')) if center_freq.get('capacitance') not in (None, '') else None
+
+            if center_freq.get('frequency'):
+                center_freq_val = center_freq.get('frequency')
+
+            center_freq_z.append(z_val)
+            center_freq_r.append(r_val)
+            center_freq_c.append(c_val)
+        except (ValueError, TypeError):
+            center_freq_z.append(None)
+            center_freq_r.append(None)
+            center_freq_c.append(None)
+
+        # Process low frequency data
         low_freq = impedance_data.get('low_frequency', {})
         try:
             z_val = float(low_freq.get('Z')) if low_freq.get('Z') not in (None, '') else None
             r_val = float(low_freq.get('resistance')) if low_freq.get('resistance') not in (None, '') else None
             c_val = float(low_freq.get('capacitance')) if low_freq.get('capacitance') not in (None, '') else None
+
+            if low_freq.get('frequency'):
+                low_freq_val = low_freq.get('frequency')
 
             low_freq_z.append(z_val)
             low_freq_r.append(r_val)
@@ -132,30 +155,76 @@ def create_impedance_chart(visits):
 
     fig = go.Figure()
 
-    # Create subplots for different parameters
-    parameters = {
-        'Z': {'high': high_freq_z, 'low': low_freq_z, 'title': '|Z|'},
-        'R': {'high': high_freq_r, 'low': low_freq_r, 'title': 'Resistance'},
-        'C': {'high': high_freq_c, 'low': low_freq_c, 'title': 'Capacitance'}
-    }
+    # Format frequency labels
+    high_freq_label = f"{float(high_freq_val):.0f}Hz" if high_freq_val else "High Freq"
+    center_freq_label = f"{float(center_freq_val):.0f}Hz" if center_freq_val else "Center Freq"
+    low_freq_label = f"{float(low_freq_val):.0f}Hz" if low_freq_val else "Low Freq"
 
-    # Add traces for each parameter
-    for param_name, param_data in parameters.items():
-        if any(x is not None for x in param_data['high']):
-            fig.add_trace(go.Scatter(
-                x=dates,
-                y=param_data['high'],
-                name=f'{param_data["title"]} (80kHz)',
-                mode='lines+markers'
-            ))
-        if any(x is not None for x in param_data['low']):
-            fig.add_trace(go.Scatter(
-                x=dates,
-                y=param_data['low'],
-                name=f'{param_data["title"]} (100Hz)',
-                mode='lines+markers',
-                line=dict(dash='dash')
-            ))
+    # Add high frequency traces
+    if any(x is not None for x in high_freq_z):
+        fig.add_trace(go.Scatter(
+            x=dates, y=high_freq_z,
+            name=f'|Z| ({high_freq_label})',
+            mode='lines+markers'
+        ))
+    if any(x is not None for x in high_freq_r):
+        fig.add_trace(go.Scatter(
+            x=dates, y=high_freq_r,
+            name=f'Resistance ({high_freq_label})',
+            mode='lines+markers'
+        ))
+    if any(x is not None for x in high_freq_c):
+        fig.add_trace(go.Scatter(
+            x=dates, y=high_freq_c,
+            name=f'Capacitance ({high_freq_label})',
+            mode='lines+markers'
+        ))
+
+    # Add center frequency traces
+    if any(x is not None for x in center_freq_z):
+        fig.add_trace(go.Scatter(
+            x=dates, y=center_freq_z,
+            name=f'|Z| ({center_freq_label})',
+            mode='lines+markers',
+            line=dict(dash='dot')
+        ))
+    if any(x is not None for x in center_freq_r):
+        fig.add_trace(go.Scatter(
+            x=dates, y=center_freq_r,
+            name=f'Resistance ({center_freq_label})',
+            mode='lines+markers',
+            line=dict(dash='dot')
+        ))
+    if any(x is not None for x in center_freq_c):
+        fig.add_trace(go.Scatter(
+            x=dates, y=center_freq_c,
+            name=f'Capacitance ({center_freq_label})',
+            mode='lines+markers',
+            line=dict(dash='dot')
+        ))
+
+    # Add low frequency traces
+    if any(x is not None for x in low_freq_z):
+        fig.add_trace(go.Scatter(
+            x=dates, y=low_freq_z,
+            name=f'|Z| ({low_freq_label})',
+            mode='lines+markers',
+            line=dict(dash='dash')
+        ))
+    if any(x is not None for x in low_freq_r):
+        fig.add_trace(go.Scatter(
+            x=dates, y=low_freq_r,
+            name=f'Resistance ({low_freq_label})',
+            mode='lines+markers',
+            line=dict(dash='dash')
+        ))
+    if any(x is not None for x in low_freq_c):
+        fig.add_trace(go.Scatter(
+            x=dates, y=low_freq_c,
+            name=f'Capacitance ({low_freq_label})',
+            mode='lines+markers',
+            line=dict(dash='dash')
+        ))
 
     fig.update_layout(
         title='Impedance Measurements Over Time',

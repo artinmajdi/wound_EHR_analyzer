@@ -163,6 +163,7 @@ class WoundAnalysisLLM:
                 temp = sensor.get('temperature', {})
                 impedance = sensor.get('impedance', {})
                 high_freq_imp = impedance.get('high_frequency', {})
+                center_freq_imp = impedance.get('center_frequency', {})
                 low_freq_imp = impedance.get('low_frequency', {})
 
                 prompt += (
@@ -170,12 +171,17 @@ class WoundAnalysisLLM:
                     f"- O₂: {sensor.get('oxygenation')}%\n"
                     f"- Temperature: center {temp.get('center')}°F, edge {temp.get('edge')}°F, peri-wound {temp.get('peri')}°F\n"
                     f"- Hemoglobin: {sensor.get('hemoglobin')}, Oxy: {sensor.get('oxyhemoglobin')}, Deoxy: {sensor.get('deoxyhemoglobin')}\n"
-                    f"- Impedance (80kHz): |Z|={high_freq_imp.get('Z')}, resistance={high_freq_imp.get('resistance')}, capacitance={high_freq_imp.get('capacitance')}\n"
                 )
 
-                # Add low frequency impedance if available
-                if any(v is not None for v in low_freq_imp.values()):
-                    prompt += f"- Impedance (100Hz): |Z|={low_freq_imp.get('Z')}, resistance={low_freq_imp.get('resistance')}, capacitance={low_freq_imp.get('capacitance')}\n"
+                # Add all three frequency impedance measurements
+                if high_freq_imp and any(v is not None for v in high_freq_imp.values()):
+                    prompt += f"- High Frequency Impedance ({high_freq_imp.get('frequency', '80kHz')}): |Z|={high_freq_imp.get('Z')}, resistance={high_freq_imp.get('resistance')}, capacitance={high_freq_imp.get('capacitance')}\n"
+
+                if center_freq_imp and any(v is not None for v in center_freq_imp.values()):
+                    prompt += f"- Center Frequency Impedance ({center_freq_imp.get('frequency', '40kHz')}): |Z|={center_freq_imp.get('Z')}, resistance={center_freq_imp.get('resistance')}, capacitance={center_freq_imp.get('capacitance')}\n"
+
+                if low_freq_imp and any(v is not None for v in low_freq_imp.values()):
+                    prompt += f"- Low Frequency Impedance ({low_freq_imp.get('frequency', '100Hz')}): |Z|={low_freq_imp.get('Z')}, resistance={low_freq_imp.get('resistance')}, capacitance={low_freq_imp.get('capacitance')}\n"
 
             # Add infection and treatment information
             infection = wound_info.get('infection', {})
