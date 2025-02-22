@@ -284,7 +284,7 @@ class Visualizer:
                 "Outlier Threshold",
                 min_value=0.0,
                 max_value=0.5,
-                value=0.1,
+                value=0.0,
                 step=0.01,
                 help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
             )
