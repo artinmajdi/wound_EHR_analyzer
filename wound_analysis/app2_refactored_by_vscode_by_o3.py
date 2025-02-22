@@ -34,22 +34,21 @@ class DataManager:
     @st.cache_data
     def load_data() -> Optional[pd.DataFrame]:
         """Load and preprocess the wound healing data."""
-        # try:
         df = pd.read_csv(Config.DATA_PATH)
         df = DataManager._preprocess_data(df)
         return df
-        # except Exception as e:
-        #     st.error(f"Error loading data: {e}")
-        #     return DataManager._generate_mock_data()
 
     @staticmethod
     def _preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
         """Clean and preprocess the loaded data."""
+        # Make a copy to avoid modifying the cached data
+        df = df.copy()
+
         df.columns = df.columns.str.strip()
         # Fill missing Visit Number with 1 before converting to int
         df['Visit Number'] = df['Event Name'].str.extract(r'Visit (\d+)').fillna(1).astype(int)
         df = DataManager._calculate_healing_rates(df)
-        df = DataManager._create_derived_features(df)
+        df = DataManager._create_derived_features(df.copy())  # Pass a copy to ensure modifications stick
         return df
 
     @staticmethod
@@ -84,14 +83,18 @@ class DataManager:
     @staticmethod
     def _create_derived_features(df: pd.DataFrame) -> pd.DataFrame:
         """Create additional derived features from the data."""
+        import numpy as np
+
+        # Make a copy to avoid modifying the cached data
+        df = df.copy()
 
         # Temperature gradients
-        if all(col in df.columns for col in ['Center of Wound Temperature (Fahrenheit)',
-                                            'Edge of Wound Temperature (Fahrenheit)',
-                                            'Peri-wound Temperature (Fahrenheit)']):
+        if all(col in df.columns for col in [   'Center of Wound Temperature (Fahrenheit)',
+                                                'Edge of Wound Temperature (Fahrenheit)',
+                                                'Peri-wound Temperature (Fahrenheit)']):
             df['Center-Edge Temp Gradient'] = df['Center of Wound Temperature (Fahrenheit)'] - df['Edge of Wound Temperature (Fahrenheit)']
-            df['Edge-Peri Temp Gradient'] = df['Edge of Wound Temperature (Fahrenheit)'] - df['Peri-wound Temperature (Fahrenheit)']
-            df['Total Temp Gradient'] = df['Center of Wound Temperature (Fahrenheit)'] - df['Peri-wound Temperature (Fahrenheit)']
+            df['Edge-Peri Temp Gradient']   = df['Edge of Wound Temperature (Fahrenheit)']   - df['Peri-wound Temperature (Fahrenheit)']
+            df['Total Temp Gradient']       = df['Center of Wound Temperature (Fahrenheit)'] - df['Peri-wound Temperature (Fahrenheit)']
 
         # BMI categories
         if 'BMI' in df.columns:
@@ -110,19 +113,57 @@ class DataManager:
                 lambda x: (x - x.min()).dt.days
             )
 
-            # Calculate healing rate (change in wound area per day)
-            df['Healing Rate'] = df.groupby('Record ID')['Calculated Wound Area'].transform(
-                lambda x: x.diff() / df.loc[x.index, 'Days_Since_First_Visit'].diff()
-            )
+            # Initialize columns with explicit dtypes
+            df['Healing Rate'] = pd.Series(0.0, index=df.index, dtype=float)
+            df['Estimated_Days_To_Heal'] = pd.Series(np.nan, index=df.index, dtype=float)
+            df['Overall_Improvement'] = pd.Series(np.nan, index=df.index, dtype=str)
 
-            # Calculate average healing rate for each patient
-            df['Average Healing Rate'] = df.groupby('Record ID')['Healing Rate'].transform('mean')
+            # Calculate healing rate and improvement for each patient
+            for patient_id in df['Record ID'].unique():
+                patient_data = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
 
-            # Identify if wound is improving (negative healing rate = improvement)
-            df['Is Improving'] = df['Healing Rate'].apply(lambda x: 'Yes' if x < 0 else 'No' if x > 0 else 'Unchanged')
+                if len(patient_data) >= 2:
+                    # Get first and last measurements
+                    first_visit = patient_data.iloc[0]
+                    last_visit = patient_data.iloc[-1]
 
-            return df
-        return pd.DataFrame()
+                    # Calculate overall healing rate
+                    days_diff = last_visit['Days_Since_First_Visit'] - first_visit['Days_Since_First_Visit']
+                    area_diff = last_visit['Calculated Wound Area'] - first_visit['Calculated Wound Area']
+
+                    if days_diff > 0:
+                        healing_rate = area_diff / days_diff
+                        # Apply this rate to all patient's records
+                        df.loc[patient_data.index, 'Healing Rate'] = healing_rate
+
+                        # Mark improvement based on healing rate
+                        if healing_rate < 0:  # Negative rate means wound is getting smaller
+                            df.loc[last_visit.name, 'Overall_Improvement'] = 'Yes'
+                        else:
+                            df.loc[last_visit.name, 'Overall_Improvement'] = 'No'
+
+                        # Estimate days to heal if wound is improving
+                        if healing_rate < 0:  # Wound is improving
+                            # Calculate remaining days based on current healing rate
+                            latest_area = last_visit['Calculated Wound Area']
+                            if latest_area > 0 and abs(healing_rate) > 0:  # Ensure valid division
+                                days_to_heal = latest_area / abs(healing_rate)
+                                if days_to_heal > 0:  # Ensure positive estimate
+                                    total_estimated_days = last_visit['Days_Since_First_Visit'] + days_to_heal
+                                    # Only set if the estimate is reasonable (e.g., less than 2 years)
+                                    if total_estimated_days > 0 and total_estimated_days < 730:  # 730 days = 2 years
+                                        # Use loc to ensure the column is created
+                                        df.loc[patient_data.index, 'Estimated_Days_To_Heal'] = float(total_estimated_days)
+
+            # Calculate average healing rate
+            avg_rates = df.groupby('Record ID')['Healing Rate'].mean()
+            df['Average Healing Rate'] = df['Record ID'].map(avg_rates)
+
+            # Ensure the column exists with proper type
+            if 'Estimated_Days_To_Heal' not in df.columns:
+                df['Estimated_Days_To_Heal'] = np.nan
+
+        return df
 
     @staticmethod
     def get_patient_data(df: pd.DataFrame, patient_id: int) -> pd.DataFrame:
@@ -204,6 +245,155 @@ class Visualizer:
         return Visualizer._create_all_patients_plot(df)
 
     @staticmethod
+    def _remove_outliers(df: pd.DataFrame, column: str, quantile_threshold: float = 0.1) -> pd.DataFrame:
+        """Remove outliers using quantile thresholds and z-score validation.
+
+        Args:
+            df: DataFrame containing the data
+            column: Column name to check for outliers
+            quantile_threshold: Value between 0 and 0.5 for quantile-based filtering (0 = no filtering)
+        """
+        if quantile_threshold <= 0 or len(df) < 3:  # Not enough data points or no filtering requested
+            return df
+
+        Q1 = df[column].quantile(quantile_threshold)
+        Q3 = df[column].quantile(1 - quantile_threshold)
+        IQR = Q3 - Q1
+
+        if IQR == 0:  # All values are the same
+            return df
+
+        lower_bound = max(0, Q1 - 1.5 * IQR)  # Ensure non-negative values
+        upper_bound = Q3 + 1.5 * IQR
+
+        # Calculate z-scores for additional validation
+        z_scores = abs((df[column] - df[column].mean()) / df[column].std())
+
+        # Combine IQR and z-score methods
+        mask = (df[column] >= lower_bound) & (df[column] <= upper_bound) & (z_scores <= 3)
+
+        return df[mask].copy()
+
+    @staticmethod
+    def _create_all_patients_plot(df: pd.DataFrame) -> go.Figure:
+        """Create wound area plot for all patients."""
+        # Add outlier threshold control
+        col1, col2 = st.columns([4, 1])
+        with col2:
+            outlier_threshold = st.number_input(
+                "Outlier Threshold",
+                min_value=0.0,
+                max_value=0.5,
+                value=0.1,
+                step=0.01,
+                help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
+            )
+
+        fig = go.Figure()
+
+        # Get the filtered data for y-axis limits
+        all_wound_areas_df = pd.DataFrame({'wound_area': df['Calculated Wound Area'].dropna()})
+        filtered_df = Visualizer._remove_outliers(all_wound_areas_df, 'wound_area', outlier_threshold)
+
+        # Set y-axis limits based on filtered data
+        lower_bound = 0
+        upper_bound = (filtered_df['wound_area'].max() if outlier_threshold > 0 else all_wound_areas_df['wound_area'].max()) * 1.05
+
+        # Store patient statistics for coloring
+        patient_stats = []
+
+        for pid in df['Record ID'].unique():
+            patient_df = df[df['Record ID'] == pid].copy()
+            patient_df['Days_Since_First_Visit'] = (pd.to_datetime(patient_df['Visit date']) - pd.to_datetime(patient_df['Visit date']).min()).dt.days
+
+            # Remove NaN values
+            patient_df = patient_df.dropna(subset=['Days_Since_First_Visit', 'Calculated Wound Area'])
+
+            if not patient_df.empty:
+                # Calculate healing rate for this patient
+                if len(patient_df) >= 2:
+                    first_area = patient_df.loc[patient_df['Days_Since_First_Visit'].idxmin(), 'Calculated Wound Area']
+                    last_area = patient_df.loc[patient_df['Days_Since_First_Visit'].idxmax(), 'Calculated Wound Area']
+                    total_days = patient_df['Days_Since_First_Visit'].max()
+
+                    if total_days > 0:
+                        healing_rate = (first_area - last_area) / total_days
+                        patient_stats.append({
+                            'pid': pid,
+                            'healing_rate': healing_rate,
+                            'initial_area': first_area
+                        })
+
+                fig.add_trace(go.Scatter(
+                    x=patient_df['Days_Since_First_Visit'],
+                    y=patient_df['Calculated Wound Area'],
+                    mode='lines+markers',
+                    name=f'Patient {pid}',
+                    hovertemplate=(
+                        'Day: %{x}<br>'
+                        'Area: %{y:.1f} cm²<br>'
+                        '<extra>Patient %{text}</extra>'
+                    ),
+                    text=[str(pid)] * len(patient_df),
+                    line=dict(width=2),
+                    marker=dict(size=8)
+                ))
+
+        # Update layout with improved styling
+        fig.update_layout(
+            title=dict(
+                text="Wound Area Progression - All Patients (Outliers Removed)",
+                font=dict(size=20)
+            ),
+            xaxis=dict(
+                title="Days Since First Visit",
+                title_font=dict(size=14),
+                gridcolor='lightgray',
+                showgrid=True
+            ),
+            yaxis=dict(
+                title="Wound Area (cm²)",
+                title_font=dict(size=14),
+                range=[lower_bound, upper_bound],
+                gridcolor='lightgray',
+                showgrid=True
+            ),
+            hovermode='closest',
+            showlegend=True,
+            legend=dict(
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.02,
+                bgcolor="rgba(255, 255, 255, 0.8)",
+                bordercolor="lightgray",
+                borderwidth=1
+            ),
+            margin=dict(l=60, r=120, t=50, b=50),
+            plot_bgcolor='white'
+        )
+
+        # Update annotation text based on outlier threshold
+        annotation_text = (
+            "Note: No outliers removed" if outlier_threshold == 0 else
+            f"Note: Outliers removed using combined IQR and z-score methods<br>"
+            f"Threshold: {outlier_threshold:.2f} quantile"
+        )
+
+        fig.add_annotation(
+            text=annotation_text,
+            xref="paper", yref="paper",
+            x=0.99, y=0.02,
+            showarrow=False,
+            font=dict(size=10, color="gray"),
+            xanchor="right",
+            yanchor="bottom",
+            align="right"
+        )
+
+        return fig
+
+    @staticmethod
     def _create_single_patient_plot(df: pd.DataFrame, patient_id: int) -> go.Figure:
         """Create wound area plot for a single patient."""
         patient_df = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
@@ -240,7 +430,6 @@ class Visualizer:
                 ))
 
             # Calculate and display healing rate
-            # try:
             total_days = patient_df['Days_Since_First_Visit'].max()
             if total_days > 0:
                 first_area = patient_df.loc[patient_df['Days_Since_First_Visit'].idxmin(), 'Calculated Wound Area']
@@ -250,12 +439,6 @@ class Visualizer:
                 healing_rate_text = f"Healing Rate: {healing_rate:.2f} cm²/day<br> {healing_status}"
             else:
                 healing_rate_text = "Insufficient time between measurements for healing rate calculation"
-
-            # except Exception as e:
-            #     healing_rate_text = "Could not calculate healing rate due to data issues"
-
-            # healing_rate = -z[0]  # Negative of slope (positive means healing)
-
 
             fig.add_annotation(
                 x=0.02,
@@ -272,31 +455,6 @@ class Visualizer:
 
         fig.update_layout(
             title=f"Wound Area Progression - Patient {patient_id}",
-            xaxis_title="Days Since First Visit",
-            yaxis_title="Wound Area (cm²)",
-            hovermode='x unified',
-            showlegend=True
-        )
-        return fig
-
-    @staticmethod
-    def _create_all_patients_plot(df: pd.DataFrame) -> go.Figure:
-        """Create wound area plot for all patients."""
-        fig = go.Figure()
-
-        for pid in df['Record ID'].unique()[:10]:  # Limit to first 10 patients for clarity
-            patient_df = df[df['Record ID'] == pid].sort_values('Days_Since_First_Visit')
-
-            fig.add_trace(go.Scatter(
-                x=patient_df['Days_Since_First_Visit'],
-                y=patient_df['Calculated Wound Area'],
-                mode='lines+markers',
-                name=f'Patient {pid}',
-                line=dict(dash='solid')
-            ))
-
-        fig.update_layout(
-            title="Wound Area Progression - All Patients",
             xaxis_title="Days Since First Visit",
             yaxis_title="Wound Area (cm²)",
             hovermode='x unified',
@@ -790,19 +948,64 @@ class Dashboard:
         """Render statistics for all patients."""
         st.subheader("Population Statistics")
 
-        col1, col2, col3 = st.columns(3)
+        # Display wound area progression for all patients
+        st.plotly_chart(
+            self.visualizer.create_wound_area_plot(df),
+            use_container_width=True
+        )
+
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            avg_healing_time = df.groupby('Record ID')['Days_Since_First_Visit'].max().mean()
-            st.metric("Average Treatment Duration", f"{avg_healing_time:.1f} days")
+            # Calculate average days in study (actual duration so far)
+            avg_days_in_study = df.groupby('Record ID')['Days_Since_First_Visit'].max().mean()
+            st.metric("Average Days in Study", f"{avg_days_in_study:.1f} days")
 
         with col2:
-            avg_healing_rate = df['Healing Rate'].mean()
-            st.metric("Average Healing Rate", f"{abs(avg_healing_rate):.2f} cm²/day")
+            try:
+                # Calculate average estimated treatment duration for improving wounds
+                estimated_days = df.groupby('Record ID')['Estimated_Days_To_Heal'].mean()
+                valid_estimates = estimated_days[estimated_days.notna()]
+                if len(valid_estimates) > 0:
+                    avg_estimated_duration = valid_estimates.mean()
+                    st.metric("Est. Treatment Duration", f"{avg_estimated_duration:.1f} days")
+                else:
+                    st.metric("Est. Treatment Duration", "N/A")
+            except (KeyError, AttributeError):
+                st.metric("Est. Treatment Duration", "N/A")
 
         with col3:
-            improvement_rate = (df['Is Improving'] == 'Yes').mean() * 100
-            st.metric("Improvement Rate", f"{improvement_rate:.1f}%")
+            # Calculate average healing rate excluding zeros and infinite values
+            healing_rates = df['Healing Rate']
+            valid_rates = healing_rates[(healing_rates != 0) & (np.isfinite(healing_rates))]
+            avg_healing_rate = valid_rates.mean() if len(valid_rates) > 0 else 0
+            st.metric("Average Healing Rate", f"{abs(avg_healing_rate):.2f} cm²/day")
+
+        with col4:
+            try:
+                # Calculate improvement rate using only the last visit for each patient
+                if 'Overall_Improvement' not in df.columns:
+                    df['Overall_Improvement'] = np.nan
+
+                # Get the last visit for each patient and calculate improvement rate
+                last_visits = df.groupby('Record ID').agg({
+                    'Overall_Improvement': 'last',
+                    'Healing Rate': 'last'
+                })
+
+                # Calculate improvement rate from patients with valid improvement status
+                valid_improvements = last_visits['Overall_Improvement'].dropna()
+                if len(valid_improvements) > 0:
+                    improvement_rate = (valid_improvements == 'Yes').mean() * 100
+                    print(f"\nImprovement Status:")
+                    print(valid_improvements.value_counts())
+                    print(f"\nImprovement rate: {improvement_rate:.1f}%")
+                    st.metric("Improvement Rate", f"{improvement_rate:.1f}%")
+                else:
+                    st.metric("Improvement Rate", "N/A")
+            except Exception as e:
+                st.metric("Improvement Rate", "N/A")
+                print(f"Error calculating improvement rate: {e}")
 
     def _render_patient_overview(self, df: pd.DataFrame, patient_id: int) -> None:
         """Render overview for a specific patient."""
