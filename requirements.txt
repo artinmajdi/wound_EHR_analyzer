@@ -1,4 +1,4 @@
-pandas>=1.5.0
+pandas>=2.0.0
 openai>=0.27.0
 transformers>=4.30.0
 torch>=2.0.0  # Required for transformers
@@ -8,4 +8,6 @@ sacremoses
 streamlit>=1.30.0
 plotly>=5.18.0  # For interactive charts
 pillow>=10.0.0  # For image handling
-python-docx>=1.0.0  # For Word document handling
+python-docx>=0.8.11  # For Word document handling
+numpy>=1.24.0
+scipy>=1.11.0

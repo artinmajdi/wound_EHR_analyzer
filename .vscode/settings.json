@@ -17,5 +17,6 @@
     "github.copilot.chat.enableUserPreferences": true,
     "github.copilot.chat.generateTests.codeLens": true,
     "github.copilot.chat.languageContext.typescript.enabled": true,
-    "github.copilot.chat.search.semanticTextResults": true
+    "github.copilot.chat.search.semanticTextResults": true,
+    "explorer.excludeGitIgnore": false
 }
