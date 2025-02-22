@@ -18,6 +18,10 @@ from docx import Document
 import base64
 from data_processor import WoundDataProcessor
 from llm_interface import WoundAnalysisLLM, format_word_document
+# import pdb  # Debug mode disabled
+
+# Debug mode disabled
+# st.set_option('client.showErrorDetails', True)
 
 @dataclass
 class Config:
@@ -25,18 +29,29 @@ class Config:
     PAGE_TITLE: str = "VSCODE - O3"
     PAGE_ICON: str = "🩹"
     LAYOUT: str = "wide"
-    DATA_PATH: pathlib.Path = pathlib.Path(__file__).parent / "dataset" / "SmartBandage-Data_for_llm.csv"
+    DATA_PATH: Optional[pathlib.Path] = None
 
 class DataManager:
     """Handles data loading, processing and manipulation."""
 
     @staticmethod
     @st.cache_data
-    def load_data() -> Optional[pd.DataFrame]:
-        """Load and preprocess the wound healing data."""
-        df = pd.read_csv(Config.DATA_PATH)
+    def load_data(uploaded_file) -> Optional[pd.DataFrame]:
+        """Load and preprocess the wound healing data from an uploaded CSV file. Returns None if no file is provided."""
+
+        if uploaded_file is None:
+            return None
+
+        # try:
+        # Debug mode disabled
+        df = pd.read_csv(uploaded_file)
+        # pdb.set_trace()  # Debugger will stop here
         df = DataManager._preprocess_data(df)
         return df
+        # except Exception as e:
+        #     st.error(f"Error loading data: {str(e)}")
+        #     print(f"Detailed error: {e}")  # This will show in the terminal
+        #     return None
 
     @staticmethod
     def _preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -47,37 +62,69 @@ class DataManager:
         df.columns = df.columns.str.strip()
         # Fill missing Visit Number with 1 before converting to int
         df['Visit Number'] = df['Event Name'].str.extract(r'Visit (\d+)').fillna(1).astype(int)
+        df = DataManager._create_derived_features(df)  # Pass a copy to ensure modifications stick
         df = DataManager._calculate_healing_rates(df)
-        df = DataManager._create_derived_features(df.copy())  # Pass a copy to ensure modifications stick
         return df
 
     @staticmethod
     def _calculate_healing_rates(df: pd.DataFrame) -> pd.DataFrame:
         """Calculate healing rates for each patient visit."""
-        healing_rates = []
+        # Constants
+        MAX_TREATMENT_DAYS = 730  # 2 years in days
+        MIN_WOUND_AREA = 0
 
+        def calculate_patient_healing_metrics(patient_data: pd.DataFrame) -> tuple[float, bool, float]:
+            """Calculate healing rate and estimated days for a patient.
+
+            Returns:
+                tuple: (healing_rate, is_improving, estimated_days_to_heal)
+            """
+            if len(patient_data) < 2:
+                return 0.0, False, np.nan
+
+            first_visit = patient_data.iloc[0]
+            last_visit = patient_data.iloc[-1]
+
+            days_elapsed = last_visit['Days_Since_First_Visit'] - first_visit['Days_Since_First_Visit']
+            if days_elapsed <= 0:
+                return 0.0, False, np.nan
+
+            area_change = last_visit['Calculated Wound Area'] - first_visit['Calculated Wound Area']
+            healing_rate = area_change / days_elapsed
+            is_improving = healing_rate < 0
+
+            estimated_days = np.nan
+            if is_improving:
+                current_area = last_visit['Calculated Wound Area']
+                if current_area > MIN_WOUND_AREA:
+                    healing_speed = abs(healing_rate)
+                    if healing_speed > 0:
+                        days_to_heal = current_area / healing_speed
+                        total_days = last_visit['Days_Since_First_Visit'] + days_to_heal
+                        if 0 < total_days < MAX_TREATMENT_DAYS:
+                            estimated_days = float(total_days)
+
+            return healing_rate, is_improving, estimated_days
+
+        # Process each patient's data
         for patient_id in df['Record ID'].unique():
-            patient_data = df[df['Record ID'] == patient_id].sort_values('Visit Number')
-            for _, row in patient_data.iterrows():
-                if row['Visit Number'] == 1:
-                    healing_rates.append(0)
-                else:
-                    prev_visits = patient_data[patient_data['Visit Number'] < row['Visit Number']]
-                    prev_visit = prev_visits[prev_visits['Visit Number'] == prev_visits['Visit Number'].max()]
+            patient_data = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
 
-                    if len(prev_visit) > 0 and 'Calculated Wound Area' in df.columns:
-                        prev_area = prev_visit['Calculated Wound Area'].values[0]
-                        curr_area = row['Calculated Wound Area']
+            healing_rate, is_improving, estimated_days = calculate_patient_healing_metrics(patient_data)
 
-                        if prev_area > 0 and not pd.isna(prev_area) and not pd.isna(curr_area):
-                            healing_rate = (prev_area - curr_area) / prev_area * 100
-                            healing_rates.append(healing_rate)
-                        else:
-                            healing_rates.append(0)
-                    else:
-                        healing_rates.append(0)
+            # Update patient records
+            df.loc[patient_data.index, 'Healing Rate (%)'] = healing_rate
+            df.loc[patient_data.iloc[-1].name, 'Overall_Improvement'] = 'Yes' if is_improving else 'No'
+            if not np.isnan(estimated_days):
+                df.loc[patient_data.index, 'Estimated_Days_To_Heal'] = estimated_days
 
-        df['Healing Rate (%)'] = healing_rates[:len(df)]
+        # Calculate and store average healing rates
+        df['Average Healing Rate (%)'] = df.groupby('Record ID')['Healing Rate (%)'].transform('mean')
+
+        # Ensure estimated days column exists
+        if 'Estimated_Days_To_Heal' not in df.columns:
+            df['Estimated_Days_To_Heal'] = pd.Series(np.nan, index=df.index, dtype=float)
+
         return df
 
     @staticmethod
@@ -85,16 +132,17 @@ class DataManager:
         """Create additional derived features from the data."""
         import numpy as np
 
-        # Make a copy to avoid modifying the cached data
-        df = df.copy()
+        # # Make a copy to avoid modifying the cached data
+        # df = df.copy()
 
         # Temperature gradients
-        if all(col in df.columns for col in [   'Center of Wound Temperature (Fahrenheit)',
-                                                'Edge of Wound Temperature (Fahrenheit)',
-                                                'Peri-wound Temperature (Fahrenheit)']):
-            df['Center-Edge Temp Gradient'] = df['Center of Wound Temperature (Fahrenheit)'] - df['Edge of Wound Temperature (Fahrenheit)']
-            df['Edge-Peri Temp Gradient']   = df['Edge of Wound Temperature (Fahrenheit)']   - df['Peri-wound Temperature (Fahrenheit)']
-            df['Total Temp Gradient']       = df['Center of Wound Temperature (Fahrenheit)'] - df['Peri-wound Temperature (Fahrenheit)']
+        center = 'Center of Wound Temperature (Fahrenheit)'
+        edge   = 'Edge of Wound Temperature (Fahrenheit)'
+        peri   = 'Peri-wound Temperature (Fahrenheit)'
+        if all(col in df.columns for col in [center, edge, peri]):
+            df['Center-Edge Temp Gradient'] = df[center] - df[edge]
+            df['Edge-Peri Temp Gradient']   = df[edge]   - df[peri]
+            df['Total Temp Gradient']       = df[center] - df[peri]
 
         # BMI categories
         if 'BMI' in df.columns:
@@ -114,54 +162,9 @@ class DataManager:
             )
 
             # Initialize columns with explicit dtypes
-            df['Healing Rate'] = pd.Series(0.0, index=df.index, dtype=float)
+            df['Healing Rate (%)'] = pd.Series(0.0, index=df.index, dtype=float)
             df['Estimated_Days_To_Heal'] = pd.Series(np.nan, index=df.index, dtype=float)
             df['Overall_Improvement'] = pd.Series(np.nan, index=df.index, dtype=str)
-
-            # Calculate healing rate and improvement for each patient
-            for patient_id in df['Record ID'].unique():
-                patient_data = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
-
-                if len(patient_data) >= 2:
-                    # Get first and last measurements
-                    first_visit = patient_data.iloc[0]
-                    last_visit = patient_data.iloc[-1]
-
-                    # Calculate overall healing rate
-                    days_diff = last_visit['Days_Since_First_Visit'] - first_visit['Days_Since_First_Visit']
-                    area_diff = last_visit['Calculated Wound Area'] - first_visit['Calculated Wound Area']
-
-                    if days_diff > 0:
-                        healing_rate = area_diff / days_diff
-                        # Apply this rate to all patient's records
-                        df.loc[patient_data.index, 'Healing Rate'] = healing_rate
-
-                        # Mark improvement based on healing rate
-                        if healing_rate < 0:  # Negative rate means wound is getting smaller
-                            df.loc[last_visit.name, 'Overall_Improvement'] = 'Yes'
-                        else:
-                            df.loc[last_visit.name, 'Overall_Improvement'] = 'No'
-
-                        # Estimate days to heal if wound is improving
-                        if healing_rate < 0:  # Wound is improving
-                            # Calculate remaining days based on current healing rate
-                            latest_area = last_visit['Calculated Wound Area']
-                            if latest_area > 0 and abs(healing_rate) > 0:  # Ensure valid division
-                                days_to_heal = latest_area / abs(healing_rate)
-                                if days_to_heal > 0:  # Ensure positive estimate
-                                    total_estimated_days = last_visit['Days_Since_First_Visit'] + days_to_heal
-                                    # Only set if the estimate is reasonable (e.g., less than 2 years)
-                                    if total_estimated_days > 0 and total_estimated_days < 730:  # 730 days = 2 years
-                                        # Use loc to ensure the column is created
-                                        df.loc[patient_data.index, 'Estimated_Days_To_Heal'] = float(total_estimated_days)
-
-            # Calculate average healing rate
-            avg_rates = df.groupby('Record ID')['Healing Rate'].mean()
-            df['Average Healing Rate'] = df['Record ID'].map(avg_rates)
-
-            # Ensure the column exists with proper type
-            if 'Estimated_Days_To_Heal' not in df.columns:
-                df['Estimated_Days_To_Heal'] = np.nan
 
         return df
 
@@ -195,8 +198,8 @@ class DataManager:
                 })
         df = pd.DataFrame(rows)
         df['Visit Number'] = df['Event Name'].str.extract(r'Visit (\d+)').fillna(1).astype(int)
-        df = DataManager._calculate_healing_rates(df)
         df = DataManager._create_derived_features(df)
+        df = DataManager._calculate_healing_rates(df)
         return df
 
 class SessionStateManager:
@@ -525,34 +528,40 @@ class Dashboard:
             layout=self.config.LAYOUT
         )
         SessionStateManager.initialize()
-        self._create_llm_sidebar()
+        self._create_left_sidebar()
 
-    def load_data(self) -> Optional[pd.DataFrame]:
+    def load_data(self, uploaded_file) -> Optional[pd.DataFrame]:
         """Load and prepare data for the dashboard."""
-        return self.data_manager.load_data()
+        return self.data_manager.load_data(uploaded_file)
 
     def run(self) -> None:
         """Run the main dashboard application."""
         self.setup()
-        df = self.load_data()
+        if not self.uploaded_file:
+            st.info("Please upload a CSV file to proceed.")
+            return
 
-        if df is not None:
-            # Header
-            st.title(self.config.PAGE_TITLE)
+        df = self.load_data(self.uploaded_file)
+        if df is None:
+            st.error("Failed to load data. Please check the CSV file.")
+            return
 
-            # Patient selection
-            patient_ids = sorted(df['Record ID'].unique())
-            patient_options = ["All Patients"] + [f"Patient {id:03d}" for id in patient_ids]
-            selected_patient = st.selectbox("Select Patient", patient_options)
+        # Header
+        st.title(self.config.PAGE_TITLE)
 
-            # Create tabs
-            self._create_dashboard_tabs(df, selected_patient)
+        # Patient selection
+        patient_ids = sorted(df['Record ID'].unique())
+        patient_options = ["All Patients"] + [f"Patient {id:03d}" for id in patient_ids]
+        selected_patient = st.selectbox("Select Patient", patient_options)
 
-            # Footer
-            self._add_footer()
+        # Create tabs
+        self._create_dashboard_tabs(df, selected_patient)
 
-            # Additional sidebar info
-            self._create_sidebar()
+        # Footer
+        self._add_footer()
+
+        # Additional sidebar info
+        self._create_sidebar()
 
     def _create_dashboard_tabs(self, df: pd.DataFrame, selected_patient: str) -> None:
         """Create and manage dashboard tabs."""
@@ -636,11 +645,12 @@ class Dashboard:
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("Impedance Components Over Time")
-                avg_impedance = df.groupby('Visit Number')[['Skin Impedance (kOhms) - Z', "Skin Impedance (kOhms) - Z'", "Skin Impedance (kOhms) - Z''"]].mean().reset_index()
+                avg_impedance = df.groupby('Visit Number')[["Skin Impedance (kOhms) - Z", "Skin Impedance (kOhms) - Z'", "Skin Impedance (kOhms) - Z''"]].mean().reset_index()
+
                 fig1 = px.line(
                     avg_impedance,
                     x='Visit Number',
-                    y=['Skin Impedance (kOhms) - Z', "Skin Impedance (kOhms) - Z'", "Skin Impedance (kOhms) - Z''"],
+                    y=["Skin Impedance (kOhms) - Z", "Skin Impedance (kOhms) - Z'", "Skin Impedance (kOhms) - Z''"],
                     title="Average Impedance Components by Visit",
                     markers=True
                 )
@@ -648,11 +658,11 @@ class Dashboard:
                 st.plotly_chart(fig1, use_container_width=True)
             with col2:
                 st.subheader("Impedance by Wound Type")
-                avg_by_type = df.groupby('Wound Type')['Skin Impedance (kOhms) - Z'].mean().reset_index()
+                avg_by_type = df.groupby('Wound Type')["Skin Impedance (kOhms) - Z"].mean().reset_index()
                 fig2 = px.bar(
                     avg_by_type,
                     x='Wound Type',
-                    y='Skin Impedance (kOhms) - Z',
+                    y="Skin Impedance (kOhms) - Z",
                     title="Average Impedance by Wound Type",
                     color='Wound Type'
                 )
@@ -897,8 +907,7 @@ class Dashboard:
         """Add footer information."""
         st.markdown("---")
         st.markdown("""
-        **Note:** This dashboard loads data from 'dataset/SmartBandage-Data_for_llm.csv'.
-        If the file cannot be loaded, the dashboard will fall back to simulated data.
+        **Note:** This dashboard loads data from a user-uploaded CSV file.
         """)
 
     def _create_sidebar(self) -> None:
@@ -915,32 +924,38 @@ class Dashboard:
             - Patient risk factors
             """)
 
-    def _create_llm_sidebar(self) -> None:
+    def _create_left_sidebar(self) -> None:
         """Create sidebar components specific to LLM configuration."""
+
         with st.sidebar:
             st.subheader("Model Configuration")
+
             self.uploaded_file = st.file_uploader("Upload Patient Data (CSV)", type=['csv'])
+            # print('uploaded file type', type(self.uploaded_file))
             platform_options = WoundAnalysisLLM.get_available_platforms()
-            self.llm_platform = st.selectbox(
-                "Select Platform",
-                platform_options,
+
+            self.llm_platform = st.selectbox( "Select Platform", platform_options,
                 index=platform_options.index("ai-verde") if "ai-verde" in platform_options else 0,
                 help="AI Verde models are recommended."
             )
+
             if self.llm_platform == "huggingface":
                 st.warning("Hugging Face models are currently disabled. Please use AI Verde models.")
                 self.llm_platform = "ai-verde"
+
             available_models = WoundAnalysisLLM.get_available_models(self.llm_platform)
             default_model = "llama-3.3-70b-fp8" if self.llm_platform == "ai-verde" else "medalpaca-7b"
-            self.llm_model = st.selectbox(
-                "Select Model",
-                available_models,
+            self.llm_model = st.selectbox( "Select Model", available_models,
                 index=available_models.index(default_model) if default_model in available_models else 0
             )
+
             with st.expander("Advanced Model Settings"):
+
                 api_key = st.text_input("API Key", value="", type="password")
+
                 if api_key:
                     os.environ["OPENAI_API_KEY"] = api_key
+
                 if self.llm_platform == "ai-verde":
                     base_url = st.text_input("Base URL", value="https://llm-api.cyverse.ai")
 
@@ -976,7 +991,7 @@ class Dashboard:
 
         with col3:
             # Calculate average healing rate excluding zeros and infinite values
-            healing_rates = df['Healing Rate']
+            healing_rates = df['Healing Rate (%)']
             valid_rates = healing_rates[(healing_rates != 0) & (np.isfinite(healing_rates))]
             avg_healing_rate = valid_rates.mean() if len(valid_rates) > 0 else 0
             st.metric("Average Healing Rate", f"{abs(avg_healing_rate):.2f} cm²/day")
@@ -990,19 +1005,17 @@ class Dashboard:
                 # Get the last visit for each patient and calculate improvement rate
                 last_visits = df.groupby('Record ID').agg({
                     'Overall_Improvement': 'last',
-                    'Healing Rate': 'last'
+                    'Healing Rate (%)': 'last'
                 })
 
                 # Calculate improvement rate from patients with valid improvement status
                 valid_improvements = last_visits['Overall_Improvement'].dropna()
                 if len(valid_improvements) > 0:
                     improvement_rate = (valid_improvements == 'Yes').mean() * 100
-                    print(f"\nImprovement Status:")
-                    print(valid_improvements.value_counts())
-                    print(f"\nImprovement rate: {improvement_rate:.1f}%")
                     st.metric("Improvement Rate", f"{improvement_rate:.1f}%")
                 else:
                     st.metric("Improvement Rate", "N/A")
+
             except Exception as e:
                 st.metric("Improvement Rate", "N/A")
                 print(f"Error calculating improvement rate: {e}")
