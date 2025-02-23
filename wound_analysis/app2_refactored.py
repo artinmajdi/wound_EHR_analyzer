@@ -104,7 +104,7 @@ class DataManager:
 				else:
 					# Find the most recent previous visit
 					prev_visits = patient_data[patient_data['Visit Number'] < row['Visit Number']]
-					prev_visit = prev_visits[prev_visits['Visit Number'] == prev_visits['Visit Number'].max()]
+					prev_visit  = prev_visits[prev_visits['Visit Number'] == prev_visits['Visit Number'].max()]
 
 					if len(prev_visit) > 0 and 'Calculated Wound Area' in patient_data.columns:
 						prev_area = prev_visit['Calculated Wound Area'].values[0]
@@ -451,7 +451,7 @@ class Visualizer:
 		# Update layout with improved styling
 		fig.update_layout(
 			title=dict(
-				text="Wound Area Progression - All Patients (Outliers Removed)",
+				text="Wound Area Progression - All Patients",
 				font=dict(size=20)
 			),
 			xaxis=dict(
@@ -596,6 +596,9 @@ class Visualizer:
 			hovermode='x unified',
 			showlegend=True
 		)
+
+
+
 		return fig
 
 	@staticmethod
@@ -1552,6 +1555,16 @@ class Dashboard:
 			- Patient risk factors
 			""")
 
+			st.header("Statistical Methods")
+			st.write("""
+			The visualization is supported by these statistical approaches:
+			- Longitudinal analysis of healing trajectories
+			- Risk factor significance assessment
+			- Comparative analysis across wound types
+			""")
+			# - Correlation analysis between measurements and outcomes
+
+
 	def _create_left_sidebar(self) -> None:
 		"""Create sidebar components specific to LLM configuration."""
 
@@ -1649,11 +1662,21 @@ class Dashboard:
 				print(f"Error calculating improvement rate: {e}")
 
 	def _render_patient_overview(self, df: pd.DataFrame, patient_id: int) -> None:
+
 		"""Render overview for a specific patient."""
+
+		def get_metric_value(metric_name: str) -> str:
+			# Check for None, nan, empty string, whitespace, and string 'nan'
+			if metric_name is None or str(metric_name).lower().strip() in ['', 'nan', 'none']:
+				return '---'
+			return str(metric_name)
+
+
 		patient_df = DataManager.get_patient_data(df, patient_id)
 		if patient_df.empty:
 			st.error("No data available for this patient.")
 			return
+
 		patient_data = patient_df.iloc[0]
 
 		metadata = DataManager._extract_patient_metadata(patient_data)
@@ -1681,8 +1704,8 @@ class Dashboard:
 				for condition, status in active_conditions.items():
 					st.write(f"{condition}: {status}")
 
-			smoking     = patient_data.get("Smoking status", "N/A")
-			med_history = patient_data.get("Medical History (select all that apply)", "N/A")
+			smoking     = get_metric_value(patient_data.get("Smoking status"))
+			med_history = get_metric_value(patient_data.get("Medical History (select all that apply)"))
 
 			st.write("Smoking Status:", "Yes" if smoking == "Current" else "No")
 			st.write("Hypertension:", "Yes" if "Cardiovascular" in str(med_history) else "No")
@@ -1690,18 +1713,88 @@ class Dashboard:
 
 		with col3:
 			st.subheader("Diabetes Status")
+			st.write(f"Status: {get_metric_value(patient_data.get('Diabetes?'))}")
+			st.write(f"HbA1c: {get_metric_value(patient_data.get('Hemoglobin A1c (%)'))}%")
+			st.write(f"A1c available: {get_metric_value(patient_data.get('A1c  available within the last 3 months?'))}")
 
-			# Diabetes information
-			diabetes = {
-				'status': patient_data.get('Diabetes?'),
-				'hemoglobin_a1c': patient_data.get('Hemoglobin A1c (%)'),
-				'a1c_available': patient_data.get('A1c  available within the last 3 months?')
-			}
 
-			st.write(f"Status: {diabetes.get('status')}")
-			st.write(f"HbA1c: {diabetes.get('hemoglobin_a1c')}%")
-			st.write(f"A1c available: {diabetes.get('a1c_available')}")
+		st.title("Wound Details (present at 1st visit)")
+		patient_data = self.data_processor.get_patient_visits(record_id=patient_id)
+		wound_info = patient_data['visits'][0]['wound_info']
 
+		# Create columns for wound details
+		col1, col2 = st.columns(2)
+
+		with col1:
+			st.subheader("Basic Information")
+			st.markdown(f"**Location:** {get_metric_value(wound_info.get('location'))}")
+			st.markdown(f"**Type:** {get_metric_value(wound_info.get('type'))}")
+			st.markdown(f"**Current Care:** {get_metric_value(wound_info.get('current_care'))}")
+			st.markdown(f"**Clinical Events:** {get_metric_value(wound_info.get('clinical_events'))}")
+
+		with col2:
+			st.subheader("Wound Characteristics")
+
+			# Infection information in an info box
+			with st.container():
+				infection = wound_info.get('infection')
+				if 'Status' in infection and not (infection['Status'] is None or str(infection['Status']).lower().strip() in ['', 'nan', 'none']):
+					st.markdown("**Infection**")
+					st.info(
+						f"Status: {get_metric_value(infection.get('status'))}\n\n"
+						f"WIfI Classification: {get_metric_value(infection.get('wifi_classification'))}"
+					)
+
+			# Granulation information in a success box
+			with st.container():
+				granulation = wound_info.get('granulation')
+				if not (granulation is None or str(granulation).lower().strip() in ['', 'nan', 'none']):
+					st.markdown("**Granulation**")
+					st.success(
+						f"Coverage: {get_metric_value(granulation.get('coverage'))}\n\n"
+						f"Quality: {get_metric_value(granulation.get('quality'))}"
+					)
+
+			# necrosis information in a warning box
+			with st.container():
+				necrosis = wound_info.get('necrosis')
+				if not (necrosis is None or str(necrosis).lower().strip() in ['', 'nan', 'none']):
+					st.markdown("**Necrosis**")
+					st.warning(f"**Necrosis Present:** {necrosis}")
+
+		# Create a third section for undermining details
+		st.subheader("Undermining Details")
+		undermining = wound_info.get('undermining', {})
+		cols = st.columns(3)
+
+
+
+		with cols[0]:
+			st.metric("Present", get_metric_value(undermining.get('present')))
+		with cols[1]:
+			st.metric("Location", get_metric_value(undermining.get('location')))
+		with cols[2]:
+			st.metric("Tunneling", get_metric_value(undermining.get('tunneling')))
+
+
+		# wound_info = {
+		# 	'location'       : clean_field(visit_data, 'Describe the wound location'),
+		# 	'type'           : clean_field(visit_data, 'Wound Type'),
+		# 	'current_care'   : clean_field(visit_data, 'Current wound care'),
+		# 	'clinical_events': clean_field(visit_data, 'Clinical events'),
+		# 	'undermining': {
+		# 		'present'  : None if present is None else present == 'Yes',
+		# 		'location' : visit_data.get('Undermining Location Description'),
+		# 		'tunneling': visit_data.get('Tunneling Location Description')
+		# 	},
+		# 	'infection': {
+		# 		'status'             : clean_field(visit_data, 'Infection'),
+		# 		'wifi_classification': visit_data.get('Diabetic Foot Wound - WIfI Classification: foot Infection (fI)')
+		# 	},
+		# 	'granulation': {
+		# 		'coverage': clean_field(visit_data, 'Granulation'),
+		# 		'quality' : clean_field(visit_data, 'Granulation Quality')
+		# 	},
 
 def main():
 	"""Main application entry point."""
