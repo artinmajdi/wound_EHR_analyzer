@@ -6,11 +6,10 @@ from datetime import datetime
 import pathlib
 import os
 from data_processor import WoundDataProcessor
-from llm_interface import WoundAnalysisLLM
+from llm_interface import WoundAnalysisLLM, create_and_save_report, download_word_report
 import base64
 from io import BytesIO
 from docx import Document
-from llm_interface import format_word_document
 
 st.set_page_config(page_title="Wound Analysis Dashboard", layout="wide", page_icon="🏥")
 
@@ -327,25 +326,7 @@ def create_exudate_chart(visits):
     )
     return fig
 
-def create_and_save_report(patient_data: dict, analysis_results: str) -> str:
-    """Create and save the analysis report as a Word document."""
-    doc = Document()
-    report_path = format_word_document(doc, analysis_results, patient_data)
-    return report_path
 
-def download_word_report(report_path: str):
-    """Create a download link for the Word report."""
-    try:
-        with open(report_path, 'rb') as f:
-            bytes_data = f.read()
-            st.download_button(
-                label="Download Full Report (DOCX)",
-                data=bytes_data,
-                file_name=os.path.basename(report_path),
-                mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-            )
-    except Exception as e:
-        st.error(f"Error preparing report download: {str(e)}")
 
 def main():
     # Wrap the entire main function in a try-except block to catch Streamlit file watcher errors
@@ -544,7 +525,7 @@ def main():
                         # Add download button for the report using the saved path
                         if hasattr(st.session_state, 'report_path'):
                             st.subheader("Download Report")
-                            download_word_report(st.session_state.report_path)
+                            download_word_report(st=st, report_path=st.session_state.report_path)
                     else:
                         st.info("Run the analysis from the sidebar to view results here.")
 

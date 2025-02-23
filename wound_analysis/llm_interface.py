@@ -269,7 +269,28 @@ class WoundAnalysisLLM:
             logger.error(f"Error during analysis: {str(e)}")
             raise
 
-def format_word_document(doc: Document, analysis_text: str, patient_data: dict, report_path: str = None) -> str:
+def create_and_save_report(patient_data: dict, analysis_results: str) -> str:
+    """Create and save the analysis report as a Word document."""
+    doc = Document()
+    report_path = format_word_document(doc=doc, analysis_results=analysis_results, patient_data=patient_data)
+    return report_path
+
+
+def download_word_report(st, report_path: str):
+    """Create a download link for the Word report."""
+    try:
+        with open(report_path, 'rb') as f:
+            bytes_data = f.read()
+            st.download_button(
+                label="Download Full Report (DOCX)",
+                data=bytes_data,
+                file_name=os.path.basename(report_path),
+                mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            )
+    except Exception as e:
+        st.error(f"Error preparing report download: {str(e)}")
+
+def format_word_document(doc: Document, analysis_results: str, patient_data: dict, report_path: str = None) -> str:
     """
     Format the analysis results in a professional Word document layout.
     Returns the path to the saved document.
@@ -298,7 +319,7 @@ def format_word_document(doc: Document, analysis_text: str, patient_data: dict, 
     doc.add_heading('Analysis Results', level=1)
 
     # Split analysis into sections and format them
-    sections = analysis_text.split('\n\n')
+    sections = analysis_results.split('\n\n')
     for section in sections:
         if section.strip():
             if '**' in section:  # Handle markdown-style headers

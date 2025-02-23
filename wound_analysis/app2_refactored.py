@@ -17,7 +17,7 @@ from typing import Optional, Dict, List, Tuple, Any
 from docx import Document
 import base64
 from data_processor import WoundDataProcessor
-from llm_interface import WoundAnalysisLLM, format_word_document
+from llm_interface import WoundAnalysisLLM, create_and_save_report, download_word_report
 import pdb  # Debug mode disabled
 
 # Debug mode disabled
@@ -318,25 +318,30 @@ class SessionStateManager:
 		if 'report_path' not in st.session_state:
 			st.session_state.report_path = None
 
-class DocumentHandler:
-	"""Handles document generation and downloads."""
+# class DocumentHandler:
+# 	"""Handles document generation and downloads."""
 
-	@staticmethod
-	def create_report(patient_data: Dict, analysis_results: str) -> str:
-		"""Create and save analysis report."""
-		doc = Document()
-		format_word_document(doc, patient_data, analysis_results)
-		report_path = "wound_analysis_report.docx"
-		doc.save(report_path)
-		return report_path
+# 	@staticmethod
+# 	def create_and_save_report(patient_data: dict, analysis_results: str) -> str:
+# 		"""Create and save analysis report."""
+# 		doc = Document()
+# 		report_path = format_word_document(doc, patient_data, analysis_results)
+# 		return report_path
 
-	@staticmethod
-	def get_download_link(report_path: str) -> str:
-		"""Generate download link for the report."""
-		with open(report_path, "rb") as file:
-			bytes_data = file.read()
-		b64_data = base64.b64encode(bytes_data).decode()
-		return f'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,{b64_data}'
+# 	@staticmethod
+# 	def download_word_report(report_path: str) -> str:
+# 		"""Create a download link for the Word report."""
+# 		try:
+# 			with open(report_path, 'rb') as f:
+# 				bytes_data = f.read()
+# 				st.download_button(
+# 					label="Download Full Report (DOCX)",
+# 					data=bytes_data,
+# 					file_name=os.path.basename(report_path),
+# 					mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+# 				)
+# 		except Exception as e:
+# 			st.error(f"Error preparing report download: {str(e)}")
 
 class Visualizer:
 	"""Handles data visualization."""
@@ -973,7 +978,7 @@ class Dashboard:
 		self.config = Config()
 		self.data_manager = DataManager()
 		self.visualizer = Visualizer()
-		self.doc_handler = DocumentHandler()
+		# self.doc_handler = DocumentHandler()
 		self.risk_analyzer = RiskAnalyzer()
 		# LLM configuration placeholders
 		self.llm_platform = None
@@ -1051,7 +1056,7 @@ class Dashboard:
 		with tabs[5]:
 			self._risk_factors_tab(df, selected_patient)
 		with tabs[6]:
-			self._llm_analysis_tab(df, selected_patient)
+			self._llm_analysis_tab(selected_patient)
 
 	def _overview_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""Render the overview tab."""
@@ -1494,7 +1499,7 @@ class Dashboard:
 
 				st.markdown(f"**Estimated Healing Time:** {est_healing_weeks:.1f} weeks")
 
-	def _llm_analysis_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
+	def _llm_analysis_tab(self, selected_patient: str) -> None:
 		"""Render the LLM analysis tab."""
 		st.header("LLM Analysis")
 		if selected_patient == "All Patients":
@@ -1503,13 +1508,21 @@ class Dashboard:
 			st.subheader("LLM-Powered Wound Analysis")
 			if self.uploaded_file is not None:
 				if st.button("Run Analysis", key="run_analysis"):
-					# Placeholder for LLM analysis logic
-					st.success("LLM analysis complete. (Placeholder result)")
+
+					# Initialize LLM with platform and model
+					llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
+					patient_data = self.data_processor.get_patient_visits(record_id=int(selected_patient.split(" ")[1]))
+					analysis = llm.analyze_patient_data(patient_data)
+					st.success("LLM analysis complete.")
+					st.header("Analysis Results")
+					st.markdown(analysis)
+
+					# Save the report path in session state
+					report_path = create_and_save_report(patient_data=patient_data,analysis_results=analysis)
+
 					# Example: save report and provide download link
-					patient_data = DataManager.get_patient_data(df, int(selected_patient.split(" ")[1])).iloc[0].to_dict()
-					report_path = self.doc_handler.create_report(patient_data, "Analysis result goes here")
-					download_link = self.doc_handler.get_download_link(report_path)
-					st.markdown(f"Download Report: [Click Here]({download_link})")
+					download_word_report(st=st, report_path=report_path)
+					# st.markdown(f"Download Report: [Click Here]({download_link})")
 			else:
 				st.warning("Please upload a patient data file from the sidebar to enable LLM analysis.")
 
@@ -1546,7 +1559,7 @@ class Dashboard:
 
 			self.llm_platform = st.selectbox( "Select Platform", platform_options,
 				index=platform_options.index("ai-verde") if "ai-verde" in platform_options else 0,
-				help="AI Verde models are recommended."
+				help="Hugging Face models are currently disabled. Please use AI Verde models."
 			)
 
 			if self.llm_platform == "huggingface":
@@ -1561,7 +1574,7 @@ class Dashboard:
 
 			with st.expander("Advanced Model Settings"):
 
-				api_key = st.text_input("API Key", value="", type="password")
+				api_key = st.text_input("API Key", value="sk-h8JtQkCCJUOy-TAdDxCLGw", type="password")
 
 				if api_key:
 					os.environ["OPENAI_API_KEY"] = api_key
