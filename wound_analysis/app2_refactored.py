@@ -1129,7 +1129,11 @@ class Dashboard:
 			temp_df['Visit date'] = pd.to_datetime(temp_df['Visit date']).dt.strftime('%m-%d-%Y')
 
 			# Remove skipped visits
-			temp_df = temp_df[temp_df['Skipped Visit?'] != 'Yes']
+			# temp_df = temp_df[temp_df['Skipped Visit?'] != 'Yes']
+
+			temp_df['Calculated Wound Area'] = temp_df['Calculated Wound Area'].fillna(temp_df['Calculated Wound Area'].mean())
+
+			temp_df = temp_df.dropna(subset=['Center of Wound Temperature (Fahrenheit)', 'Edge of Wound Temperature (Fahrenheit)', 'Peri-wound Temperature (Fahrenheit)'])
 
 			# Create derived variables for temperature if they exist
 			if all(col in temp_df.columns for col in ['Center of Wound Temperature (Fahrenheit)', 'Edge of Wound Temperature (Fahrenheit)', 'Peri-wound Temperature (Fahrenheit)']):
