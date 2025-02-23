@@ -1595,104 +1595,174 @@ class Dashboard:
 		if selected_patient == "All Patients":
 			risk_tab1, risk_tab2, risk_tab3 = st.tabs(["Diabetes", "Smoking", "BMI"])
 
+			valid_df = df.dropna(subset=['Healing Rate (%)', 'Visit Number']).copy()
+
+			for col in ['Diabetes?', 'Smoking status', 'BMI']:
+				# Add consistent diabetes status for each patient
+				first_diabetes_status = valid_df.groupby('Record ID')[col].first()
+				valid_df[col] = valid_df['Record ID'].map(first_diabetes_status)
+
+			valid_df['Healing_Color'] = valid_df['Healing Rate (%)'].apply(
+				lambda x: 'green' if x < 0 else 'red'
+			)
+
 			with risk_tab1:
-				# Compare healing rates by diabetes status
-				diab_healing = df.groupby(['Diabetes?', 'Visit Number'])['Healing Rate (%)'].mean().reset_index()
-				diab_healing = diab_healing[diab_healing['Visit Number'] > 1]  # Exclude first visit
 
-				fig = px.line(
-					diab_healing,
-					x='Visit Number',
-					y='Healing Rate (%)',
-					color='Diabetes?',
-					title="Average Healing Rate by Diabetes Status",
-					markers=True
-				)
-				fig.update_layout( xaxis_title="Visit Number", yaxis_title="Average Healing Rate (%)" )
-				st.plotly_chart(fig, use_container_width=True)
+				st.subheader("Impact of Diabetes on Wound Healing")
 
-				# Compare impedance by diabetes status
-				diab_imp = df.groupby('Diabetes?')['Skin Impedance (kOhms) - Z'].mean().reset_index()
+				# Ensure diabetes status is consistent for each patient
+				valid_df['Diabetes?'] = valid_df['Diabetes?'].fillna('No')
+				# Compare average healing rates by diabetes status
+				diab_stats = valid_df.groupby('Diabetes?').agg({
+					'Healing Rate (%)': ['mean', 'count', 'std']
+				}).round(2)
 
-				fig = px.bar(
-					diab_imp,
+				# Create a box plot for healing rates with color coding
+				fig1 = px.box(
+					valid_df,
 					x='Diabetes?',
-					y='Skin Impedance (kOhms) - Z',
-					color='Diabetes?',
-					title="Average Impedance by Diabetes Status"
+					y='Healing Rate (%)',
+					title="Healing Rate Distribution by Diabetes Status",
+					color='Healing_Color',
+					color_discrete_map={'green': 'green', 'red': 'red'},
+					points='all'
 				)
-				fig.update_layout(xaxis_title="Diabetes Status", yaxis_title="Average Impedance Z (kOhms)")
-				st.plotly_chart(fig, use_container_width=True)
+				fig1.update_layout(
+					xaxis_title="Diabetes Status",
+					yaxis_title="Healing Rate (%)",
+					showlegend=True,
+					legend_title="Wound Status",
+					legend={'traceorder': 'reversed'}
+				)
+				# Update legend labels
+				fig1.for_each_trace(lambda t: t.update(name='Improving' if t.name == 'green' else 'Worsening'))
+				st.plotly_chart(fig1, use_container_width=True)
+
+				# Display statistics
+				st.write("**Statistical Summary:**")
+				for status in diab_stats.index:
+					stats = diab_stats.loc[status]
+					improvement_rate = (valid_df[valid_df['Diabetes?'] == status]['Healing Rate (%)'] < 0).mean() * 100
+					st.write(f"- {status}: Average Healing Rate = {stats[('Healing Rate (%)', 'mean')]}% "
+							f"(n={int(stats[('Healing Rate (%)', 'count')])}, "
+							f"SD={stats[('Healing Rate (%)', 'std')]}, "
+							f"Improvement Rate={improvement_rate:.1f}%)")
+
+				# Compare wound types distribution
+				wound_diab = pd.crosstab(valid_df['Diabetes?'], valid_df['Wound Type'], normalize='index') * 100
+				fig2 = px.bar(
+					wound_diab.reset_index().melt(id_vars='Diabetes?', var_name='Wound Type', value_name='Percentage'),
+					x='Diabetes?',
+					y='Percentage',
+					color='Wound Type',
+					title="Wound Type Distribution by Diabetes Status",
+					labels={'Percentage': 'Percentage of Wounds (%)'}
+				)
+				st.plotly_chart(fig2, use_container_width=True)
 
 			with risk_tab2:
-				smoke_healing = df.groupby(['Smoking status', 'Visit Number'])['Healing Rate (%)'].mean().reset_index()
-				smoke_healing = smoke_healing[smoke_healing['Visit Number'] > 1]
-				fig_line = px.line(
-					smoke_healing,
-					x='Visit Number',
-					y='Healing Rate (%)',
-					color='Smoking status',
-					title="Average Healing Rate by Smoking Status",
-					markers=True
-				)
-				fig_line.update_layout(xaxis_title="Visit Number", yaxis_title="Average Healing Rate (%)")
-				st.plotly_chart(fig_line, use_container_width=True)
+				st.subheader("Impact of Smoking on Wound Healing")
 
-				smoke_wound = pd.crosstab(df['Smoking status'], df['Wound Type'])
-				smoke_wound_pct = smoke_wound.div(smoke_wound.sum(axis=1), axis=0) * 100
-				fig_bar2 = px.bar(
-					smoke_wound_pct.reset_index().melt(id_vars='Smoking status', var_name='Wound Type', value_name='Percentage'),
+				# Clean smoking status
+				valid_df['Smoking status'] = valid_df['Smoking status'].fillna('Never')
+
+				# Create healing rate distribution by smoking status with color coding
+				fig1 = px.box(
+					valid_df,
+					x='Smoking status',
+					y='Healing Rate (%)',
+					title="Healing Rate Distribution by Smoking Status",
+					color='Healing_Color',
+					color_discrete_map={'green': 'green', 'red': 'red'},
+					points='all'
+				)
+				fig1.update_layout(
+					showlegend=True,
+					legend_title="Wound Status",
+					legend={'traceorder': 'reversed'}
+				)
+				# Update legend labels
+				fig1.for_each_trace(lambda t: t.update(name='Improving' if t.name == 'green' else 'Worsening'))
+				st.plotly_chart(fig1, use_container_width=True)
+
+				# Calculate and display statistics
+				smoke_stats = valid_df.groupby('Smoking status').agg({
+					'Healing Rate (%)': ['mean', 'count', 'std']
+				}).round(2)
+
+				st.write("**Statistical Summary:**")
+				for status in smoke_stats.index:
+					stats = smoke_stats.loc[status]
+					improvement_rate = (valid_df[valid_df['Smoking status'] == status]['Healing Rate (%)'] < 0).mean() * 100
+					st.write(f"- {status}: Average Healing Rate = {stats[('Healing Rate (%)', 'mean')]}% "
+							f"(n={int(stats[('Healing Rate (%)', 'count')])}, "
+							f"SD={stats[('Healing Rate (%)', 'std')]}, "
+							f"Improvement Rate={improvement_rate:.1f}%)")
+
+				# Wound type distribution by smoking status
+				wound_smoke = pd.crosstab(valid_df['Smoking status'], valid_df['Wound Type'], normalize='index') * 100
+				fig2 = px.bar(
+					wound_smoke.reset_index().melt(id_vars='Smoking status', var_name='Wound Type', value_name='Percentage'),
 					x='Smoking status',
 					y='Percentage',
 					color='Wound Type',
-					title="Distribution of Wound Types by Smoking Status",
-					barmode='stack'
+					title="Wound Type Distribution by Smoking Status",
+					labels={'Percentage': 'Percentage of Wounds (%)'}
 				)
-				fig_bar2.update_layout(xaxis_title="Smoking Status", yaxis_title="Percentage (%)")
-				st.plotly_chart(fig_bar2, use_container_width=True)
+				st.plotly_chart(fig2, use_container_width=True)
 
 			with risk_tab3:
-				df_temp = df.copy()
+				st.subheader("Impact of BMI on Wound Healing")
+
 				# Create BMI categories
-				df_temp['BMI Category'] = pd.cut(
-					df_temp['BMI'],
-					bins=[0, 18.5, 25, 30, 35, 100],
-					labels=['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II-III']
-				)
+				bins = [0, 18.5, 24.9, 29.9, float('inf')]
+				labels = ['Underweight', 'Normal', 'Overweight', 'Obese']
+				valid_df['BMI Category'] = pd.cut(valid_df['BMI'], bins=bins, labels=labels)
 
-				# Compare healing rates by BMI category
-				bmi_healing = df_temp.groupby(['BMI Category', 'Visit Number'])['Healing Rate (%)'].mean().reset_index()
-				bmi_healing = bmi_healing[bmi_healing['Visit Number'] > 1]  # Exclude first visit
-
-				fig = px.line(
-					bmi_healing,
-					x='Visit Number',
+				# Create healing rate distribution by BMI category with color coding
+				fig1 = px.box(
+					valid_df,
+					x='BMI Category',
 					y='Healing Rate (%)',
-					color='BMI Category',
-					title="Average Healing Rate by BMI Category",
-					markers=True
+					title="Healing Rate Distribution by BMI Category",
+					color='Healing_Color',
+					color_discrete_map={'green': 'green', 'red': 'red'},
+					points='all'
 				)
-				fig.update_layout(
-					xaxis_title="Visit Number",
-					yaxis_title="Average Healing Rate (%)"
+				fig1.update_layout(
+					showlegend=True,
+					legend_title="Wound Status",
+					legend={'traceorder': 'reversed'}
 				)
-				st.plotly_chart(fig, use_container_width=True)
+				# Update legend labels
+				fig1.for_each_trace(lambda t: t.update(name='Improving' if t.name == 'green' else 'Worsening'))
+				st.plotly_chart(fig1, use_container_width=True)
 
-				# Scatter plot of BMI vs. healing rate
-				fig = px.scatter(
-					df_temp[df_temp['Healing Rate (%)'] > 0],  # Exclude first visits
-					x='BMI',
-					y='Healing Rate (%)',
-					color='Diabetes?',
-					size='Calculated Wound Area',
-					hover_data=['Record ID', 'Event Name', 'Wound Type'],
-					title="BMI vs. Healing Rate"
+				# Calculate and display statistics
+				bmi_stats = valid_df.groupby('BMI Category').agg({
+					'Healing Rate (%)': ['mean', 'count', 'std']
+				}).round(2)
+
+				st.write("**Statistical Summary:**")
+				for category in bmi_stats.index:
+					stats = bmi_stats.loc[category]
+					improvement_rate = (valid_df[valid_df['BMI Category'] == category]['Healing Rate (%)'] < 0).mean() * 100
+					st.write(f"- {category}: Average Healing Rate = {stats[('Healing Rate (%)', 'mean')]}% "
+							f"(n={int(stats[('Healing Rate (%)', 'count')])}, "
+							f"SD={stats[('Healing Rate (%)', 'std')]}, "
+							f"Improvement Rate={improvement_rate:.1f}%)")
+
+				# Wound type distribution by BMI category
+				wound_bmi = pd.crosstab(valid_df['BMI Category'], valid_df['Wound Type'], normalize='index') * 100
+				fig2 = px.bar(
+					wound_bmi.reset_index().melt(id_vars='BMI Category', var_name='Wound Type', value_name='Percentage'),
+					x='BMI Category',
+					y='Percentage',
+					color='Wound Type',
+					title="Wound Type Distribution by BMI Category",
+					labels={'Percentage': 'Percentage of Wounds (%)'}
 				)
-				fig.update_layout(
-					xaxis_title="BMI",
-					yaxis_title="Healing Rate (% reduction per visit)"
-				)
-				st.plotly_chart(fig, use_container_width=True)
+				st.plotly_chart(fig2, use_container_width=True)
 		else:
 			# For individual patient
 			df_temp = df[df['Record ID'] == int(selected_patient.split(" ")[1])].copy()
