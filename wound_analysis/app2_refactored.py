@@ -18,10 +18,10 @@ from docx import Document
 import base64
 from data_processor import WoundDataProcessor
 from llm_interface import WoundAnalysisLLM, format_word_document
-# import pdb  # Debug mode disabled
+import pdb  # Debug mode disabled
 
 # Debug mode disabled
-# st.set_option('client.showErrorDetails', True)
+st.set_option('client.showErrorDetails', True)
 
 @dataclass
 class Config:
@@ -52,10 +52,17 @@ class DataManager:
 	@staticmethod
 	def _preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
 		"""Clean and preprocess the loaded data."""
+
 		# Make a copy to avoid modifying the cached data
-		df = df.copy()
+		# df = df.copy()
+
+
 
 		df.columns = df.columns.str.strip()
+
+		# Filter out skipped visits
+		df = df[df['Skipped Visit?'] != 'Yes']
+
 		# Fill missing Visit Number with 1 before converting to int
 		df['Visit Number'] = df['Event Name'].str.extract(r'Visit (\d+)').fillna(1).astype(int)
 
@@ -79,48 +86,75 @@ class DataManager:
 		MAX_TREATMENT_DAYS = 730  # 2 years in days
 		MIN_WOUND_AREA = 0
 
-		def calculate_patient_healing_metrics(patient_data: pd.DataFrame) -> tuple[float, bool, float]:
+
+		def calculate_patient_healing_metrics(patient_data: pd.DataFrame) -> tuple[list, bool, float]:
 			"""Calculate healing rate and estimated days for a patient.
 
 			Returns:
-				tuple: (healing_rate, is_improving, estimated_days_to_heal)
+				tuple: (healing_rates, is_improving, estimated_days_to_heal)
 			"""
 			if len(patient_data) < 2:
-				return 0.0, False, np.nan
+				return [0.0], False, np.nan
 
-			first_visit = patient_data.iloc[0]
-			last_visit = patient_data.iloc[-1]
+			# 3. Calculate healing rate (% change in wound area per visit)
+			healing_rates = []
+			for i, row in patient_data.iterrows():
+				if row['Visit Number'] == 1 or len(patient_data[patient_data['Visit Number'] < row['Visit Number']]) == 0:
+					healing_rates.append(0)  # No healing rate for first visit
+				else:
+					# Find the most recent previous visit
+					prev_visits = patient_data[patient_data['Visit Number'] < row['Visit Number']]
+					prev_visit = prev_visits[prev_visits['Visit Number'] == prev_visits['Visit Number'].max()]
 
-			days_elapsed = last_visit['Days_Since_First_Visit'] - first_visit['Days_Since_First_Visit']
-			if days_elapsed <= 0:
-				return 0.0, False, np.nan
+					if len(prev_visit) > 0 and 'Calculated Wound Area' in patient_data.columns:
+						prev_area = prev_visit['Calculated Wound Area'].values[0]
+						curr_area = row['Calculated Wound Area']
 
-			area_change = last_visit['Calculated Wound Area'] - first_visit['Calculated Wound Area']
-			healing_rate = area_change / days_elapsed
-			is_improving = healing_rate < 0
+						# Check for valid values to avoid division by zero
+						if prev_area > 0 and not pd.isna(prev_area) and not pd.isna(curr_area):
+							healing_rate = (prev_area - curr_area) / prev_area * 100  # Percentage decrease
+							healing_rates.append(healing_rate)
+						else:
+							healing_rates.append(0)
+					else:
+						healing_rates.append(0)
 
+			# Calculate average healing rate and determine if improving
+			valid_rates = [rate for rate in healing_rates if rate > 0]
+			avg_healing_rate = np.mean(valid_rates) if valid_rates else 0
+			is_improving = avg_healing_rate > 0
+
+			# Calculate estimated days to heal based on the latest wound area and average healing rate
 			estimated_days = np.nan
-			if is_improving:
+			if is_improving and len(patient_data) > 0:
+				last_visit = patient_data.iloc[-1]
 				current_area = last_visit['Calculated Wound Area']
-				if current_area > MIN_WOUND_AREA:
-					healing_speed = abs(healing_rate)
-					if healing_speed > 0:
-						days_to_heal = current_area / healing_speed
+
+				if current_area > MIN_WOUND_AREA and avg_healing_rate > 0:
+					# Convert percentage rate to area change per day
+					daily_healing_rate = (avg_healing_rate / 100) * current_area
+					if daily_healing_rate > 0:
+						days_to_heal = current_area / daily_healing_rate
 						total_days = last_visit['Days_Since_First_Visit'] + days_to_heal
 						if 0 < total_days < MAX_TREATMENT_DAYS:
 							estimated_days = float(total_days)
 
-			return healing_rate, is_improving, estimated_days
+			return healing_rates, is_improving, estimated_days
 
 		# Process each patient's data
 		for patient_id in df['Record ID'].unique():
 			patient_data = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
 
-			healing_rate, is_improving, estimated_days = calculate_patient_healing_metrics(patient_data)
+			healing_rates, is_improving, estimated_days = calculate_patient_healing_metrics(patient_data)
 
-			# Update patient records
-			df.loc[patient_data.index, 'Healing Rate (%)'] = healing_rate
+			# Update patient records with healing rates
+			for i, (idx, row) in enumerate(patient_data.iterrows()):
+				if i < len(healing_rates):
+					df.loc[idx, 'Healing Rate (%)'] = healing_rates[i]
+
+			# Update the last visit with overall improvement status
 			df.loc[patient_data.iloc[-1].name, 'Overall_Improvement'] = 'Yes' if is_improving else 'No'
+
 			if not np.isnan(estimated_days):
 				df.loc[patient_data.index, 'Estimated_Days_To_Heal'] = estimated_days
 
@@ -160,7 +194,7 @@ class DataManager:
 
 		if df is not None and not df.empty:
 			# Convert Visit date to datetime if not already
-			df['Visit date'] = pd.to_datetime(df['Visit date']).dt.strftime('%m-%d-%Y')
+			df['Visit date'] = pd.to_datetime(df['Visit date'])#.dt.strftime('%m-%d-%Y')
 
 			# Calculate days since first visit for each patient
 			df['Days_Since_First_Visit'] = df.groupby('Record ID')['Visit date'].transform(
@@ -891,7 +925,6 @@ class Visualizer:
 		)
 		return fig
 
-
 class RiskAnalyzer:
 	"""Handles risk analysis and assessment."""
 
@@ -1025,7 +1058,7 @@ class Dashboard:
 		st.header("Overview")
 
 		if selected_patient == "All Patients":
-			self._render_overview_stats(df)
+			self._render_tab_all_patients(df)
 		else:
 			patient_id = int(selected_patient.split(" ")[1])
 			self._render_patient_overview(df, patient_id)
@@ -1041,16 +1074,16 @@ class Dashboard:
 			# Scatter plot: Impedance vs Healing Rate
 			# Filter out NaN values and rows where Healing Rate is 0
 			valid_df = df[df['Healing Rate (%)'] > 0].copy()
-
+			# pdb.set_trace()  # Breakpoint
 			# Handle NaN values in the size column (Calculated Wound Area)
-			valid_df['Calculated Wound Area'] = valid_df['Calculated Wound Area'].fillna(valid_df['Calculated Wound Area'].mean())
+			# valid_df['Calculated Wound Area'] = valid_df['Calculated Wound Area'].fillna(valid_df['Calculated Wound Area'].mean())
 
 			# Ensure all numeric columns are clean
-			for col in ['Skin Impedance (kOhms) - Z', 'Healing Rate (%)', 'Calculated Wound Area']:
-				valid_df[col] = pd.to_numeric(valid_df[col], errors='coerce')
+			# for col in ['Skin Impedance (kOhms) - Z', 'Healing Rate (%)', 'Calculated Wound Area']:
+			# 	valid_df[col] = pd.to_numeric(valid_df[col], errors='coerce')
 
 			# Remove any remaining rows with NaN values
-			valid_df = valid_df.dropna(subset=['Skin Impedance (kOhms) - Z', 'Healing Rate (%)', 'Calculated Wound Area'])
+			# valid_df = valid_df.dropna(subset=['Skin Impedance (kOhms) - Z', 'Healing Rate (%)', 'Calculated Wound Area'])
 
 			if not valid_df.empty:
 				fig = px.scatter(
@@ -1536,7 +1569,7 @@ class Dashboard:
 				if self.llm_platform == "ai-verde":
 					base_url = st.text_input("Base URL", value="https://llm-api.cyverse.ai")
 
-	def _render_overview_stats(self, df: pd.DataFrame) -> None:
+	def _render_tab_all_patients(self, df: pd.DataFrame) -> None:
 		"""Render statistics for all patients."""
 		st.subheader("Population Statistics")
 
@@ -1570,7 +1603,7 @@ class Dashboard:
 			# Calculate average healing rate excluding zeros and infinite values
 			healing_rates = df['Healing Rate (%)']
 			valid_rates = healing_rates[(healing_rates != 0) & (np.isfinite(healing_rates))]
-			avg_healing_rate = valid_rates.mean() if len(valid_rates) > 0 else 0
+			avg_healing_rate = np.mean(valid_rates) if len(valid_rates) > 0 else 0
 			st.metric("Average Healing Rate", f"{abs(avg_healing_rate):.2f} cm²/day")
 
 		with col4:
