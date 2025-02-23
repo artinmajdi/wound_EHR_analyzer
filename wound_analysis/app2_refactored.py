@@ -1055,7 +1055,7 @@ class Dashboard:
 		with tabs[3]:
 			self._oxygenation_tab(df, selected_patient)
 		with tabs[4]:
-			self._exudate_tab(selected_patient)
+			self._exudate_tab(df, selected_patient)
 		with tabs[5]:
 			self._risk_factors_tab(df, selected_patient)
 		with tabs[6]:
@@ -1306,18 +1306,287 @@ class Dashboard:
 			st.plotly_chart(fig_bar, use_container_width=True)
 			st.plotly_chart(fig_line, use_container_width=True)
 
-	def _exudate_tab(self, selected_patient: str) -> None:
+	def _exudate_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""Render the exudate analysis tab."""
-		st.header("Exudate Characteristics Over Time")
+		st.header("Exudate Analysis")
 
 		if selected_patient == "All Patients":
-			pass
+			# Create a copy of the dataframe for exudate analysis
+			exudate_df = df.copy()
 
+			# Define exudate columns
+			exudate_cols = ['Exudate Volume', 'Exudate Viscosity', 'Exudate Type']
+
+			# Drop rows with missing exudate data
+			exudate_df = exudate_df.dropna(subset=exudate_cols)
+
+			# Create numerical mappings for volume and viscosity
+			level_mapping = {
+				'Low': 1,
+				'Medium': 2,
+				'High': 3
+			}
+
+			# Convert volume and viscosity to numeric values
+			exudate_df['Volume_Numeric'] = exudate_df['Exudate Volume'].map(level_mapping)
+			exudate_df['Viscosity_Numeric'] = exudate_df['Exudate Viscosity'].map(level_mapping)
+
+			if not exudate_df.empty:
+				# Create two columns for volume and viscosity analysis
+				col1, col2 = st.columns(2)
+
+				with col1:
+					st.subheader("Volume Analysis")
+					# Calculate correlation between volume and healing rate
+					valid_df = exudate_df.dropna(subset=['Volume_Numeric', 'Healing Rate (%)'])
+					if len(valid_df) > 1:
+						r, p = stats.pearsonr(valid_df['Volume_Numeric'], valid_df['Healing Rate (%)'])
+						p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
+						st.info(f"Volume correlation vs Healing Rate: r = {r:.2f} (p {p_formatted})")
+
+					# Boxplot of exudate volume by wound type
+					fig_vol = px.box(
+						exudate_df,
+						x='Wound Type',
+						y='Exudate Volume',
+						title="Exudate Volume by Wound Type",
+						points="all"
+					)
+					fig_vol.update_layout(
+						xaxis_title="Wound Type",
+						yaxis_title="Exudate Volume",
+						showlegend=True
+					)
+					st.plotly_chart(fig_vol, use_container_width=True)
+
+				with col2:
+					st.subheader("Viscosity Analysis")
+					# Calculate correlation between viscosity and healing rate
+					valid_df = exudate_df.dropna(subset=['Viscosity_Numeric', 'Healing Rate (%)'])
+					if len(valid_df) > 1:
+						r, p = stats.pearsonr(valid_df['Viscosity_Numeric'], valid_df['Healing Rate (%)'])
+						p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
+						st.info(f"Viscosity correlation vs Healing Rate: r = {r:.2f} (p {p_formatted})")
+
+					# Boxplot of exudate viscosity by wound type
+					fig_visc = px.box(
+						exudate_df,
+						x='Wound Type',
+						y='Exudate Viscosity',
+						title="Exudate Viscosity by Wound Type",
+						points="all"
+					)
+					fig_visc.update_layout(
+						xaxis_title="Wound Type",
+						yaxis_title="Exudate Viscosity",
+						showlegend=True
+					)
+					st.plotly_chart(fig_visc, use_container_width=True)
+
+				# Create scatter plot matrix for volume, viscosity, and healing rate
+				st.subheader("Relationship Analysis")
+				fig_scatter = px.scatter(
+					exudate_df,
+					x='Volume_Numeric',
+					y='Healing Rate (%)',
+					color='Wound Type',
+					size='Calculated Wound Area',
+					hover_data=['Record ID', 'Event Name', 'Exudate Volume', 'Exudate Viscosity', 'Exudate Type'],
+					title="Exudate Characteristics vs. Healing Rate"
+				)
+				fig_scatter.update_layout(
+					xaxis_title="Exudate Volume (1=Low, 2=Medium, 3=High)",
+					yaxis_title="Healing Rate (% reduction per visit)"
+				)
+				st.plotly_chart(fig_scatter, use_container_width=True)
+
+				# Display distribution of exudate types
+				st.subheader("Exudate Type Distribution")
+				col1, col2 = st.columns(2)
+
+				with col1:
+					# Distribution by wound type
+					type_by_wound = pd.crosstab(exudate_df['Wound Type'], exudate_df['Exudate Type'])
+					fig_type = px.bar(
+						type_by_wound,
+						title="Exudate Types by Wound Category",
+						barmode='group'
+					)
+					st.plotly_chart(fig_type, use_container_width=True)
+
+				with col2:
+					# Overall distribution
+					type_counts = exudate_df['Exudate Type'].value_counts()
+					fig_pie = px.pie(
+						values=type_counts.values,
+						names=type_counts.index,
+						title="Overall Distribution of Exudate Types"
+					)
+					st.plotly_chart(fig_pie, use_container_width=True)
+
+			else:
+				st.warning("No valid exudate data available for analysis.")
 		else:
 			visits = self.data_processor.get_patient_visits(record_id=int(selected_patient.split(" ")[1]))['visits']
 
+			# Display the exudate chart
 			fig = Visualizer.create_exudate_chart(visits)
 			st.plotly_chart(fig, use_container_width=True)
+
+			df_temp = df[df['Record ID'] == int(selected_patient.split(" ")[1])].copy()
+
+			# Clinical interpretation section
+			st.subheader("Clinical Interpretation of Exudate Characteristics")
+
+			# Create tabs for each visit
+			visit_tabs = st.tabs([visit.get('visit_date', 'N/A') for visit in visits])
+
+			# Process each visit in its corresponding tab
+			for tab, visit in zip(visit_tabs, visits):
+				with tab:
+					col1, col2 = st.columns(2)
+
+					with col1:
+						st.markdown("### Volume Analysis")
+						volume = visit['wound_info']['exudate'].get('volume', 'N/A')
+						st.write(f"**Current Level:** {volume}")
+
+						# Volume interpretation
+						if volume == 'High':
+							st.info("""
+							**High volume exudate** is common in:
+							- Chronic venous leg ulcers
+							- Dehisced surgical wounds
+							- Inflammatory ulcers
+							- Burns
+
+							This may indicate active inflammation or healing processes.
+							""")
+						elif volume == 'Low':
+							st.info("""
+							**Low volume exudate** is typical in:
+							- Necrotic wounds
+							- Ischaemic/arterial wounds
+							- Neuropathic diabetic foot ulcers
+
+							Monitor for signs of insufficient moisture.
+							""")
+
+					with col2:
+						st.markdown("### Viscosity Analysis")
+						viscosity = visit['wound_info']['exudate'].get('viscosity', 'N/A')
+						st.write(f"**Current Level:** {viscosity}")
+
+						# Viscosity interpretation
+						if viscosity == 'High':
+							st.warning("""
+							**High viscosity** (thick) exudate may indicate:
+							- High protein content
+							- Possible infection
+							- Inflammatory processes
+							- Presence of necrotic material
+
+							Consider reassessing treatment approach.
+							""")
+						elif viscosity == 'Low':
+							st.info("""
+							**Low viscosity** (thin) exudate may suggest:
+							- Low protein content
+							- Possible venous condition
+							- Potential malnutrition
+							- Presence of fistulas
+
+							Monitor fluid balance and nutrition.
+							""")
+
+					# Exudate Type Analysis
+					st.markdown("### Type Analysis")
+					exudate_type_str = visit['wound_info']['exudate'].get('type', 'N/A')
+
+					if exudate_type_str != 'N/A':
+						# Split types and strip whitespace
+						exudate_types = [t.strip() for t in exudate_type_str.split(',')]
+						st.write(f"**Current Types:** {exudate_type_str}")
+					else:
+						exudate_types = ['N/A']
+						st.write("**Current Type:** N/A")
+
+					# Type interpretation
+					type_info = {
+						'Serous': {
+							'description': 'Straw-colored, clear, thin',
+							'indication': 'Normal healing process',
+							'severity': 'info'
+						},
+						'Serosanguineous': {
+							'description': 'Pink or light red, thin',
+							'indication': 'Presence of blood cells in early healing',
+							'severity': 'info'
+						},
+						'Sanguineous': {
+							'description': 'Red, thin',
+							'indication': 'Active bleeding or trauma',
+							'severity': 'warning'
+						},
+						'Seropurulent': {
+							'description': 'Cloudy, milky, or creamy',
+							'indication': 'Possible early infection or inflammation',
+							'severity': 'warning'
+						},
+						'Purulent': {
+							'description': 'Yellow, tan, or green, thick',
+							'indication': 'Active infection present',
+							'severity': 'error'
+						}
+					}
+
+					# Process each exudate type
+					highest_severity = 'info'  # Track highest severity for overall implications
+					for exudate_type in exudate_types:
+						if exudate_type in type_info:
+							info = type_info[exudate_type]
+							message = f"""
+							**Type: {exudate_type}**
+							**Description:** {info['description']}
+							**Clinical Indication:** {info['indication']}
+							"""
+							if info['severity'] == 'error':
+								st.error(message)
+								highest_severity = 'error'
+							elif info['severity'] == 'warning' and highest_severity != 'error':
+								st.warning(message)
+								highest_severity = 'warning'
+							else:
+								st.info(message)
+
+					# Overall Clinical Assessment based on multiple types
+					if len(exudate_types) > 1 and 'N/A' not in exudate_types:
+						st.markdown("#### Overall Clinical Assessment")
+						if highest_severity == 'error':
+							st.error("⚠️ Multiple exudate types present with signs of infection. Immediate clinical attention recommended.")
+						elif highest_severity == 'warning':
+							st.warning("⚠️ Mixed exudate characteristics suggest active wound processes. Close monitoring required.")
+						else:
+							st.info("Multiple exudate types present. Continue regular monitoring of wound progression.")
+
+					# Treatment Implications
+					st.markdown("### Treatment Implications")
+					implications = []
+
+					# Combine volume and viscosity for treatment recommendations
+					if volume == 'High' and viscosity == 'High':
+						implications.append("- Consider highly absorbent dressings")
+						implications.append("- More frequent dressing changes may be needed")
+						implications.append("- Monitor for maceration of surrounding tissue")
+					elif volume == 'Low' and viscosity == 'Low':
+						implications.append("- Use moisture-retentive dressings")
+						implications.append("- Protect wound bed from desiccation")
+						implications.append("- Consider hydrating dressings")
+
+					if implications:
+						st.write("**Recommended Actions:**")
+						for imp in implications:
+							st.write(imp)
 
 	def _risk_factors_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""Render the risk factors analysis tab."""
