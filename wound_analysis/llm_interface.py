@@ -514,7 +514,7 @@ def download_word_report(st, report_path: str):
     except Exception as e:
         st.error(f"Error preparing report download: {str(e)}")
 
-def format_word_document(doc: Document, analysis_results: str, patient_metadata: dict, report_path: str = None) -> str:
+def format_word_document(doc: Document, analysis_results: str, patient_metadata: dict=None, report_path: str = None) -> str:
     """
     Format the analysis results in a professional Word document layout.
     Returns the path to the saved document.
@@ -523,20 +523,21 @@ def format_word_document(doc: Document, analysis_results: str, patient_metadata:
     title = doc.add_heading('Wound Care Analysis Report', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Add patient information section
-    doc.add_heading('Patient Information', level=1)
-    patient_info = doc.add_paragraph()
-    patient_info.add_run('Patient Demographics:\n').bold = True
-    patient_info.add_run(f"Age: {patient_metadata.get('age', 'Unknown')} years\n")
-    patient_info.add_run(f"Sex: {patient_metadata.get('sex', 'Unknown')}\n")
-    patient_info.add_run(f"BMI: {patient_metadata.get('bmi', 'Unknown')}\n")
+    if patient_metadata is not None:
+        # Add patient information section
+        doc.add_heading('Patient Information', level=1)
+        patient_info = doc.add_paragraph()
+        patient_info.add_run('Patient Demographics:\n').bold = True
+        patient_info.add_run(f"Age: {patient_metadata.get('age', 'Unknown')} years\n")
+        patient_info.add_run(f"Sex: {patient_metadata.get('sex', 'Unknown')}\n")
+        patient_info.add_run(f"BMI: {patient_metadata.get('bmi', 'Unknown')}\n")
 
-    # Add diabetes information
-    diabetes_info = doc.add_paragraph()
-    diabetes_info.add_run('Diabetes Status:\n').bold = True
-    if 'diabetes' in patient_metadata:
-        diabetes_info.add_run(f"Type: {patient_metadata['diabetes'].get('status', 'Unknown')}\n")
-        diabetes_info.add_run(f"HbA1c: {patient_metadata['diabetes'].get('hemoglobin_a1c', 'Unknown')}%\n")
+        # Add diabetes information
+        diabetes_info = doc.add_paragraph()
+        diabetes_info.add_run('Diabetes Status:\n').bold = True
+        if 'diabetes' in patient_metadata:
+            diabetes_info.add_run(f"Type: {patient_metadata['diabetes'].get('status', 'Unknown')}\n")
+            diabetes_info.add_run(f"HbA1c: {patient_metadata['diabetes'].get('hemoglobin_a1c', 'Unknown')}%\n")
 
     # Add analysis section
     doc.add_heading('Analysis Results', level=1)

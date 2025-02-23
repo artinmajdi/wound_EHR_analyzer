@@ -1175,6 +1175,35 @@ class Dashboard:
 				temp_df['Edge-Peri Gradient'] = temp_df[temp_cols[1]] - temp_df[temp_cols[2]]
 				temp_df['Total Gradient'] = temp_df[temp_cols[0]] - temp_df[temp_cols[2]]
 
+
+			# Add outlier threshold control
+			col1, _, col3 = st.columns([1, 1, 3])
+
+			with col1:
+				outlier_threshold = st.number_input(
+					"Temperature Outlier Threshold",
+					min_value=0.0,
+					max_value=0.9,
+					value=0.2,
+					step=0.05,
+					help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
+				)
+
+			# Get the filtered data for y-axis limits
+			temp_df = Visualizer._remove_outliers(temp_df, 'Center of Wound Temperature (Fahrenheit)', outlier_threshold)
+
+			with col3:
+				if not temp_df.empty:
+					# Calculate correlation
+					r, p = stats.pearsonr(temp_df['Center of Wound Temperature (Fahrenheit)'], temp_df['Healing Rate (%)'])
+					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
+					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
+					# TODO: add this to the per patient analysis Optimal wound healing typically occurs at normal body temperature (98.6°F)
+					# Temperatures significantly below or above this range can impair healing
+					# When temperatures drop below about 93°F, wound healing slows dramatically due to reduced blood flow and cellular activity
+					# Mild warming of wounds (up to about 102°F) can actually accelerate healing by increasing blood flow, oxygen delivery, and cellular metabolism
+					# However, temperatures above about 102°F can begin to damage tissues and impair healing
+
 			# Create boxplot of temperature gradients by wound type
 			gradient_cols = ['Center-Edge Gradient', 'Edge-Peri Gradient', 'Total Gradient']
 			fig = px.box(
@@ -1891,7 +1920,7 @@ class Dashboard:
 					analysis = llm.analyze_population_data(patient_data)
 
 					# Store analysis in session state for "All Patients"
-					st.session_state.llm_reports['all_patients'] = dict(analysis_results=analysis, patient_metadata=patient_data['patient_metadata'])
+					st.session_state.llm_reports['all_patients'] = dict(analysis_results=analysis, patient_metadata=None)
 
 				# Display analysis if it exists
 				if 'all_patients' in st.session_state.llm_reports:

@@ -95,7 +95,7 @@ class WoundDataProcessor:
 				'total_visits': len(df),
 				'avg_visits_per_patient': len(df) / len(df['Record ID'].unique()),
 				'overall_improvement_rate': (df['Healing Rate (%)'] < 0).mean() * 100,
-				'avg_treatment_duration_days': (df.groupby('Record ID')['Days from First Visit'].max().mean()),
+				'avg_treatment_duration_days': (df.groupby('Record ID')['Days_Since_First_Visit'].max().mean()),
 				'completion_rate': (df['Visit Status'] == 'Completed').mean() * 100 if 'Visit Status' in df.columns else None
 			},
 			'demographics': {
@@ -166,7 +166,7 @@ class WoundDataProcessor:
 				},
 				'temporal_analysis': {
 					'by_visit_number': df.groupby('Visit Number')['Healing Rate (%)'].agg(['mean', 'std', 'count']).to_dict(),
-					'by_treatment_duration': pd.cut(df['Days from First Visit'],
+					'by_treatment_duration': pd.cut(df['Days_Since_First_Visit'],
 						bins=[0, 30, 90, 180, float('inf')],
 						labels=['<30 days', '30-90 days', '90-180 days', '>180 days']
 					).value_counts().to_dict()
@@ -279,8 +279,10 @@ class WoundDataProcessor:
 
 		# Handle Wound Type categorization
 		if 'Wound Type' in df.columns:
-			# First replace NaN with 'Unknown'
-			df['Wound Type'] = df['Wound Type'].fillna('Unknown')
+			# Convert to string type first to handle any existing categorical
+			df['Wound Type'] = df['Wound Type'].astype(str)
+			# Replace NaN with 'Unknown'
+			df['Wound Type'] = df['Wound Type'].replace('nan', 'Unknown')
 			# Get unique categories including 'Unknown'
 			categories = sorted(df['Wound Type'].unique())
 			# Now create categorical with all possible categories
@@ -289,6 +291,12 @@ class WoundDataProcessor:
 		# Calculate wound area if not present
 		if 'Calculated Wound Area' not in df.columns and all(col in df.columns for col in ['Length (cm)', 'Width (cm)']):
 			df['Calculated Wound Area'] = df['Length (cm)'] * df['Width (cm)']
+
+		# Convert numeric columns
+		numeric_columns = ['Length (cm)', 'Width (cm)', 'Healing Rate (%)', 'Oxygenation (%)']
+		for col in numeric_columns:
+			if col in df.columns:
+				df[col] = pd.to_numeric(df[col].astype(str).str.replace('%', ''), errors='coerce')
 
 		# Create derived features
 		# Temperature gradients
