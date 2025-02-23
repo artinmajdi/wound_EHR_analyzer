@@ -1503,26 +1503,31 @@ class Dashboard:
 		"""Render the LLM analysis tab."""
 		st.header("LLM Analysis")
 		if selected_patient == "All Patients":
-			st.info("Please select an individual patient for LLM analysis.")
+			st.warning("Please select a specific patient to view their analysis.")
 		else:
 			st.subheader("LLM-Powered Wound Analysis")
 			if self.uploaded_file is not None:
 				if st.button("Run Analysis", key="run_analysis"):
-
 					# Initialize LLM with platform and model
 					llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
 					patient_data = self.data_processor.get_patient_visits(record_id=int(selected_patient.split(" ")[1]))
 					analysis = llm.analyze_patient_data(patient_data)
+
+					# Store analysis results and patient data in session state
+					st.session_state.analysis_results = analysis
+					st.session_state.current_patient_data = patient_data
+					st.session_state.report_path = create_and_save_report(patient_data=patient_data, analysis_results=analysis)
+
 					st.success("LLM analysis complete.")
+
+				# Display analysis results if they exist in session state
+				if st.session_state.analysis_results is not None:
 					st.header("Analysis Results")
-					st.markdown(analysis)
+					st.markdown(st.session_state.analysis_results)
 
-					# Save the report path in session state
-					report_path = create_and_save_report(patient_data=patient_data,analysis_results=analysis)
-
-					# Example: save report and provide download link
-					download_word_report(st=st, report_path=report_path)
-					# st.markdown(f"Download Report: [Click Here]({download_link})")
+					# Show download button if report path exists
+					if 'report_path' in st.session_state:
+						download_word_report(st=st, report_path=st.session_state.report_path)
 			else:
 				st.warning("Please upload a patient data file from the sidebar to enable LLM analysis.")
 
