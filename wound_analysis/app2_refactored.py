@@ -337,26 +337,33 @@ class Visualizer:
 			column: Column name to check for outliers
 			quantile_threshold: Value between 0 and 0.5 for quantile-based filtering (0 = no filtering)
 		"""
-		if quantile_threshold <= 0 or len(df) < 3:  # Not enough data points or no filtering requested
+		try:
+			if quantile_threshold <= 0 or len(df) < 3:  # Not enough data points or no filtering requested
+				return df
+
+			Q1 = df[column].quantile(quantile_threshold)
+			Q3 = df[column].quantile(1 - quantile_threshold)
+			IQR = Q3 - Q1
+
+			if IQR == 0:  # All values are the same
+				return df
+
+			lower_bound = max(0, Q1 - 1.5 * IQR)  # Ensure non-negative values
+			upper_bound = Q3 + 1.5 * IQR
+
+			# Calculate z-scores for additional validation
+			z_scores = abs((df[column] - df[column].mean()) / df[column].std())
+
+			# Combine IQR and z-score methods
+			mask = (df[column] >= lower_bound) & (df[column] <= upper_bound) & (z_scores <= 3)
+
+			return df[mask].copy()
+
+		except Exception as e:
+			print(f"------- Error removing outliers: {e} ----- ")
+			print(df['Oxygenation (%)'].to_frame().describe())
+			print(df['Oxygenation (%)'].to_frame())
 			return df
-
-		Q1 = df[column].quantile(quantile_threshold)
-		Q3 = df[column].quantile(1 - quantile_threshold)
-		IQR = Q3 - Q1
-
-		if IQR == 0:  # All values are the same
-			return df
-
-		lower_bound = max(0, Q1 - 1.5 * IQR)  # Ensure non-negative values
-		upper_bound = Q3 + 1.5 * IQR
-
-		# Calculate z-scores for additional validation
-		z_scores = abs((df[column] - df[column].mean()) / df[column].std())
-
-		# Combine IQR and z-score methods
-		mask = (df[column] >= lower_bound) & (df[column] <= upper_bound) & (z_scores <= 3)
-
-		return df[mask].copy()
 
 	@staticmethod
 	def _create_all_patients_plot(df: pd.DataFrame) -> go.Figure:
@@ -1056,10 +1063,10 @@ class Dashboard:
 		if selected_patient == "All Patients":
 
 			# Scatter plot: Impedance vs Healing Rate
-			valid_df = df[df['Healing Rate (%)'] > 0].copy()
-
+			valid_df = df.copy() # [df['Healing Rate (%)'] < 0].copy()
+			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
 			# Add outlier threshold control
-			col1, _, col3 = st.columns([1, 1, 3])
+			col1, _, col3 = st.columns([2,3,3])
 
 			with col1:
 				outlier_threshold = st.number_input(
@@ -1080,7 +1087,7 @@ class Dashboard:
 					r, p = stats.pearsonr(valid_df['Skin Impedance (kOhms) - Z'], valid_df['Healing Rate (%)'])
 					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
 					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
-					st.write("Higher impedance values correlate with slower healing rates, especially in diabetic patients")
+					# st.write("Higher impedance values correlate with slower healing rates, especially in diabetic patients")
 
 			# Add consistent diabetes status for each patient
 			first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
@@ -1148,9 +1155,10 @@ class Dashboard:
 
 	def _temperature_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""Render the temperature analysis tab."""
-		st.header("Temperature Gradient Analysis")
 
 		if selected_patient == "All Patients":
+			st.header("Temperature Gradient Analysis")
+
 			# Create a temperature gradient dataframe
 			temp_df = df.copy()
 
@@ -1177,7 +1185,7 @@ class Dashboard:
 
 
 			# Add outlier threshold control
-			col1, _, col3 = st.columns([1, 1, 3])
+			col1, _, col3 = st.columns([2,3,3])
 
 			with col1:
 				outlier_threshold = st.number_input(
@@ -1198,11 +1206,6 @@ class Dashboard:
 					r, p = stats.pearsonr(temp_df['Center of Wound Temperature (Fahrenheit)'], temp_df['Healing Rate (%)'])
 					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
 					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
-					# TODO: add this to the per patient analysis Optimal wound healing typically occurs at normal body temperature (98.6°F)
-					# Temperatures significantly below or above this range can impair healing
-					# When temperatures drop below about 93°F, wound healing slows dramatically due to reduced blood flow and cellular activity
-					# Mild warming of wounds (up to about 102°F) can actually accelerate healing by increasing blood flow, oxygen delivery, and cellular metabolism
-					# However, temperatures above about 102°F can begin to damage tissues and impair healing
 
 			# Create boxplot of temperature gradients by wound type
 			gradient_cols = ['Center-Edge Gradient', 'Edge-Peri Gradient', 'Total Gradient']
@@ -1222,8 +1225,11 @@ class Dashboard:
 			st.plotly_chart(fig, use_container_width=True)
 
 			# Scatter plot of total gradient vs healing rate
+			# temp_df = temp_df.copy() # [df['Healing Rate (%)'] < 0].copy()
+			temp_df['Healing Rate (%)'] = temp_df['Healing Rate (%)'].clip(-100, 100)
+
 			fig = px.scatter(
-				temp_df[temp_df['Healing Rate (%)'] > 0],  # Exclude first visits
+				temp_df,#[temp_df['Healing Rate (%)'] > 0],  # Exclude first visits
 				x='Total Gradient',
 				y='Healing Rate (%)',
 				color='Wound Type',
@@ -1242,17 +1248,131 @@ class Dashboard:
 			# For individual patient
 			df_temp = df[df['Record ID'] == int(selected_patient.split(" ")[1])].copy()
 			df_temp['Visit date'] = pd.to_datetime(df_temp['Visit date']).dt.strftime('%m-%d-%Y')
-			fig = Visualizer.create_temperature_chart(df=df_temp)
+			st.header(f"Temperature Gradient Analysis for Patient {selected_patient.split(' ')[1]}")
 
-			fig.update_layout(
-				title=f"Temperature Measurements for {selected_patient}",
-				xaxis_title="Visit Date",  # Changed from "Visit Number"
-				legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
-			)
+			# Get patient visits
+			visits = self.data_processor.get_patient_visits(int(selected_patient.split(" ")[1]))
 
-			fig.update_yaxes(title_text="Temperature (°F)", secondary_y=False)
+			# Create tabs
+			trends_tab, visit_analysis_tab, overview_tab = st.tabs([
+				"Temperature Trends",
+				"Visit-by-Visit Analysis",
+				"Overview & Clinical Guidelines"
+			])
 
-			st.plotly_chart(fig, use_container_width=True)
+			with trends_tab:
+				st.markdown("### Temperature Trends Over Time")
+				fig = Visualizer.create_temperature_chart(df=df_temp)
+				st.plotly_chart(fig, use_container_width=True)
+
+				# Add statistical analysis
+				temp_data = pd.DataFrame([
+					{
+						'date': visit['visit_date'],
+						'center': visit['sensor_data']['temperature']['center'],
+						'edge': visit['sensor_data']['temperature']['edge'],
+						'peri': visit['sensor_data']['temperature']['peri']
+					}
+					for visit in visits['visits']
+				])
+
+				if not temp_data.empty:
+					st.markdown("### Statistical Summary")
+					col1, col2, col3 = st.columns(3)
+					with col1:
+						avg_center = temp_data['center'].mean()
+						st.metric("Average Center Temp", f"{avg_center:.1f}°F")
+					with col2:
+						avg_edge = temp_data['edge'].mean()
+						st.metric("Average Edge Temp", f"{avg_edge:.1f}°F")
+					with col3:
+						avg_peri = temp_data['peri'].mean()
+						st.metric("Average Peri Temp", f"{avg_peri:.1f}°F")
+
+			with visit_analysis_tab:
+				st.markdown("### Visit-by-Visit Temperature Analysis")
+
+				# Create tabs for each visit
+				visit_tabs = st.tabs([visit.get('visit_date', 'N/A') for visit in visits['visits']])
+
+				for tab, visit in zip(visit_tabs, visits['visits']):
+					with tab:
+						temp_data = visit['sensor_data']['temperature']
+
+						# Display temperature readings
+						st.markdown("#### Temperature Readings")
+						col1, col2, col3 = st.columns(3)
+						with col1:
+							st.metric("center", f"{temp_data['center']}°F")
+						with col2:
+							st.metric("edge", f"{temp_data['edge']}°F")
+						with col3:
+							st.metric("peri", f"{temp_data['peri']}°F")
+
+						# Calculate and display gradients
+						if all(v is not None for v in temp_data.values()):
+
+							st.markdown("#### Temperature Gradients")
+
+							gradients = {
+								'center-edge': temp_data['center'] - temp_data['edge'],
+								'edge-peri': temp_data['edge'] - temp_data['peri'],
+								'Total': temp_data['center'] - temp_data['peri']
+							}
+
+							col1, col2, col3 = st.columns(3)
+							with col1:
+								st.metric("center-edge", f"{gradients['center-edge']:.1f}°F")
+							with col2:
+								st.metric("edge-peri", f"{gradients['edge-peri']:.1f}°F")
+							with col3:
+								st.metric("Total Gradient", f"{gradients['Total']:.1f}°F")
+
+						# Clinical interpretation
+						st.markdown("#### Clinical Assessment")
+						if temp_data['center'] is not None:
+							center_temp = float(temp_data['center'])
+							if center_temp < 93:
+								st.warning("⚠️ Center temperature is below 93°F. This can significantly slow healing due to reduced blood flow and cellular activity.")
+							elif 93 <= center_temp < 98:
+								st.info("ℹ️ Center temperature is below optimal range. Mild warming might be beneficial.")
+							elif 98 <= center_temp <= 102:
+								st.success("✅ Center temperature is in the optimal range for wound healing.")
+							else:
+								st.error("❗ Center temperature is above 102°F. This may cause tissue damage and impair healing.")
+
+						# Temperature gradient interpretation
+						if all(v is not None for v in temp_data.values()):
+							st.markdown("#### Gradient Analysis")
+							if abs(gradients['Total']) > 4:
+								st.warning(f"⚠️ Large temperature gradient ({gradients['Total']:.1f}°F) between center and periwound area may indicate inflammation or poor circulation.")
+							else:
+								st.success("✅ Temperature gradients are within normal range.")
+
+			with overview_tab:
+				st.markdown("### Clinical Guidelines for Temperature Assessment")
+				st.markdown("""
+					Temperature plays a crucial role in wound healing. Here's what the measurements indicate:
+					- Optimal healing occurs at normal body temperature (98.6°F)
+					- Temperatures below 93°F significantly slow healing
+					- Temperatures between 98.6-102°F can promote healing
+					- Temperatures above 102°F may damage tissues
+				""")
+
+				st.markdown("### Key Temperature Zones")
+				col1, col2, col3, col4 = st.columns(4)
+				with col1:
+					st.error("❄️ Below 93°F")
+					st.markdown("- Severely impaired healing\n- Reduced blood flow\n- Low cellular activity")
+				with col2:
+					st.info("🌡️ 93-98°F")
+					st.markdown("- Suboptimal healing\n- May need warming\n- Monitor closely")
+				with col3:
+					st.success("✅ 98-102°F")
+					st.markdown("- Optimal healing range\n- Good blood flow\n- Active metabolism")
+				with col4:
+					st.error("🔥 Above 102°F")
+					st.markdown("- Tissue damage risk\n- Possible infection\n- Requires attention")
 
 	def _oxygenation_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""Render the oxygenation analysis tab."""
@@ -1260,11 +1380,42 @@ class Dashboard:
 
 		if selected_patient == "All Patients":
 			# Prepare data for scatter plot
-			valid_df = df[df['Healing Rate (%)'] > 0].copy()
+			valid_df = df[df['Healing Rate (%)'] < 0].copy()
+			# valid_df = df.copy()
+			# valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
 
 			# Handle NaN values
-			valid_df['Hemoglobin Level'] = valid_df['Hemoglobin Level'].fillna(valid_df['Hemoglobin Level'].mean())
+			# valid_df['Hemoglobin Level'] = valid_df['Hemoglobin Level'].fillna(valid_df['Hemoglobin Level'].mean())
+
+			# Handle NaN values and convert columns to float
+			valid_df['Hemoglobin Level'] = pd.to_numeric(valid_df['Hemoglobin Level'], errors='coerce')#.fillna(valid_df['Hemoglobin Level'].astype(float).mean())
+			valid_df['Oxygenation (%)'] = pd.to_numeric(valid_df['Oxygenation (%)'], errors='coerce')
+			valid_df['Healing Rate (%)'] = pd.to_numeric(valid_df['Healing Rate (%)'], errors='coerce')
+
 			valid_df = valid_df.dropna(subset=['Oxygenation (%)', 'Healing Rate (%)', 'Hemoglobin Level'])
+			# Add outlier threshold control
+			col1, _, col3 = st.columns([2, 3, 3])
+
+			with col1:
+				outlier_threshold = st.number_input(
+					"Oxygenation Outlier Threshold",
+					min_value=0.0,
+					max_value=0.9,
+					value=0.2,
+					step=0.05,
+					help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
+				)
+
+			# Get the filtered data for y-axis limits
+			valid_df = Visualizer._remove_outliers(df=valid_df, column='Oxygenation (%)', quantile_threshold=outlier_threshold)
+
+			with col3:
+				if not valid_df.empty:
+					# Calculate correlation
+					r, p = stats.pearsonr(valid_df['Oxygenation (%)'], valid_df['Healing Rate (%)'])
+					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
+					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
+
 
 			if not valid_df.empty:
 				fig1 = px.scatter(
@@ -1389,6 +1540,8 @@ class Dashboard:
 
 				# Create scatter plot matrix for volume, viscosity, and healing rate
 				st.subheader("Relationship Analysis")
+
+				exudate_df['Healing Rate (%)'] = exudate_df['Healing Rate (%)'].clip(-100, 100)
 				fig_scatter = px.scatter(
 					exudate_df,
 					x='Volume_Numeric',
