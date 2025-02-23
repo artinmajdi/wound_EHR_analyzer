@@ -202,6 +202,139 @@ class WoundAnalysisLLM:
 
         return prompt
 
+    def _format_population_prompt(self, population_data: Dict) -> str:
+        """Format population-level data into a prompt for the LLM."""
+
+        prompt = (
+            "Task: Analyze wound healing patterns and provide comprehensive clinical insights for the entire patient population.\n\n"
+            "Population Overview:\n"
+        )
+
+        # Add demographic statistics
+        demographics = population_data.get('demographics', {})
+        prompt += (
+            f"Total Patients: {demographics.get('total_patients', 'Unknown')}\n"
+            f"Age Distribution: {demographics.get('age_stats', 'Unknown')}\n"
+            f"Gender Distribution: {demographics.get('gender_distribution', 'Unknown')}\n"
+            f"Race/Ethnicity Distribution: {demographics.get('race_distribution', 'Unknown')}\n"
+            f"BMI Distribution: {demographics.get('bmi_stats', 'Unknown')}\n"
+            f"Smoking Status Distribution: {demographics.get('smoking_distribution', 'Unknown')}\n"
+            f"Diabetes Status Distribution: {demographics.get('diabetes_distribution', 'Unknown')}\n"
+            f"Comorbidity Distribution: {demographics.get('comorbidity_distribution', 'Unknown')}\n"
+        )
+
+        # Add wound characteristics with more detail
+        wound_stats = population_data.get('wound_stats', {})
+        prompt += (
+            "\nWound Characteristics:\n"
+            f"Wound Types Distribution: {wound_stats.get('type_distribution', 'Unknown')}\n"
+            f"Location Distribution: {wound_stats.get('location_distribution', 'Unknown')}\n"
+            f"Average Initial Size: {wound_stats.get('avg_initial_size', 'Unknown')}\n"
+            f"Size Distribution: {wound_stats.get('size_distribution', 'Unknown')}\n"
+            f"Average Treatment Duration: {wound_stats.get('avg_treatment_duration', 'Unknown')}\n"
+            f"Duration Distribution: {wound_stats.get('duration_distribution', 'Unknown')}\n"
+            f"Initial Wound Grade Distribution: {wound_stats.get('initial_grade_distribution', 'Unknown')}\n"
+        )
+
+        # Add healing rate analysis with detailed statistics
+        healing_stats = population_data.get('healing_stats', {})
+        prompt += (
+            "\nHealing Rate Analysis:\n"
+            f"Overall Healing Rate Distribution: {healing_stats.get('overall_distribution', 'Unknown')}\n"
+            f"Average Weekly Healing Rate: {healing_stats.get('avg_weekly_rate', 'Unknown')}\n"
+            f"Complete Healing Rate: {healing_stats.get('complete_healing_rate', 'Unknown')}%\n"
+            f"Time to 50% Healing: {healing_stats.get('time_to_50_percent', 'Unknown')}\n"
+            "\nHealing Rates by Risk Factors:\n"
+            f"- Diabetes Impact: {healing_stats.get('diabetes_impact', 'Unknown')}\n"
+            f"- Smoking Impact: {healing_stats.get('smoking_impact', 'Unknown')}\n"
+            f"- BMI Impact: {healing_stats.get('bmi_impact', 'Unknown')}\n"
+            f"- Age Impact: {healing_stats.get('age_impact', 'Unknown')}\n"
+            f"- Comorbidity Impact: {healing_stats.get('comorbidity_impact', 'Unknown')}\n"
+        )
+
+        # Add treatment outcome analysis
+        treatment_stats = population_data.get('treatment_stats', {})
+        prompt += (
+            "\nTreatment Outcomes:\n"
+            f"Treatment Modalities Used: {treatment_stats.get('modalities_used', 'Unknown')}\n"
+            f"Success Rates by Treatment: {treatment_stats.get('success_rates', 'Unknown')}\n"
+            f"Average Time to Response: {treatment_stats.get('time_to_response', 'Unknown')}\n"
+            f"Treatment Adherence Rates: {treatment_stats.get('adherence_rates', 'Unknown')}\n"
+            f"Complication Rates: {treatment_stats.get('complication_rates', 'Unknown')}\n"
+        )
+
+        # Add exudate analysis with trends
+        exudate_stats = population_data.get('exudate_stats', {})
+        prompt += (
+            "\nExudate Analysis:\n"
+            f"Volume Distribution: {exudate_stats.get('volume_distribution', 'Unknown')}\n"
+            f"Type Distribution: {exudate_stats.get('type_distribution', 'Unknown')}\n"
+            f"Viscosity Distribution: {exudate_stats.get('viscosity_distribution', 'Unknown')}\n"
+            f"Volume Trends Over Time: {exudate_stats.get('volume_trends', 'Unknown')}\n"
+            f"Correlation with Healing: {exudate_stats.get('healing_correlation', 'Unknown')}\n"
+        )
+
+        # Add sensor data statistics with trends and correlations
+        sensor_stats = population_data.get('sensor_stats', {})
+        if sensor_stats:
+            prompt += (
+                "\nSensor Measurements Analysis:\n"
+                f"Oxygenation Levels: {sensor_stats.get('oxygenation_stats', 'Unknown')}\n"
+                f"Oxygenation Trends: {sensor_stats.get('oxygenation_trends', 'Unknown')}\n"
+                f"Temperature Patterns: {sensor_stats.get('temperature_stats', 'Unknown')}\n"
+                f"Temperature Trends: {sensor_stats.get('temperature_trends', 'Unknown')}\n"
+                f"Impedance Measurements: {sensor_stats.get('impedance_stats', 'Unknown')}\n"
+                f"Impedance Trends: {sensor_stats.get('impedance_trends', 'Unknown')}\n"
+                "\nSensor-Healing Correlations:\n"
+                f"- Oxygenation Impact: {sensor_stats.get('oxygenation_impact', 'Unknown')}\n"
+                f"- Temperature Impact: {sensor_stats.get('temperature_impact', 'Unknown')}\n"
+                f"- Impedance Impact: {sensor_stats.get('impedance_impact', 'Unknown')}\n"
+            )
+
+        # Add correlation analysis with detailed insights
+        correlations = population_data.get('correlations', {})
+        if correlations:
+            prompt += (
+                "\nMultivariate Analysis:\n"
+                "Healing Rate Correlations:\n"
+                f"- Patient Factors: {correlations.get('patient_factors', 'Unknown')}\n"
+                f"- Wound Characteristics: {correlations.get('wound_characteristics', 'Unknown')}\n"
+                f"- Treatment Approaches: {correlations.get('treatment_approaches', 'Unknown')}\n"
+                f"- Sensor Measurements: {correlations.get('sensor_measurements', 'Unknown')}\n"
+                f"\nPredictive Factors:\n{correlations.get('predictive_factors', 'Unknown')}\n"
+                f"Risk Factor Interactions: {correlations.get('risk_interactions', 'Unknown')}\n"
+            )
+
+        prompt += (
+            "\nPlease provide a comprehensive analysis of the population-level data, including:\n"
+            "1. Key Patterns and Trends:\n"
+            "   - Identify significant patterns in wound healing across different patient groups\n"
+            "   - Analyze temporal trends in healing rates and wound characteristics\n"
+            "   - Highlight any unexpected or notable findings\n\n"
+            "2. Risk Factor Analysis:\n"
+            "   - Evaluate the impact of each risk factor on healing outcomes\n"
+            "   - Identify high-risk patient profiles\n"
+            "   - Analyze interactions between multiple risk factors\n\n"
+            "3. Treatment Effectiveness:\n"
+            "   - Compare outcomes across different treatment modalities\n"
+            "   - Identify factors associated with treatment success\n"
+            "   - Analyze time-to-response patterns\n\n"
+            "4. Sensor Data Insights:\n"
+            "   - Interpret patterns in oxygenation, temperature, and impedance measurements\n"
+            "   - Correlate sensor data with healing outcomes\n"
+            "   - Identify predictive indicators\n\n"
+            "5. Clinical Recommendations:\n"
+            "   - Suggest evidence-based treatment strategies\n"
+            "   - Recommend risk mitigation approaches\n"
+            "   - Propose monitoring protocols based on risk profiles\n\n"
+            "6. Future Directions:\n"
+            "   - Identify areas needing additional investigation\n"
+            "   - Suggest potential protocol improvements\n"
+            "   - Recommend data collection enhancements\n"
+        )
+
+        return prompt
+
     def analyze_patient_data(self, patient_data: Dict) -> str:
         """
         Analyze patient data using the configured model.
@@ -269,12 +402,103 @@ class WoundAnalysisLLM:
             logger.error(f"Error during analysis: {str(e)}")
             raise
 
-def create_and_save_report(patient_data: dict, analysis_results: str) -> str:
+    def analyze_population_data(self, population_data: Dict) -> str:
+        """
+        Analyze population-level data using the configured model.
+        Args:
+            population_data: Dictionary containing aggregated population statistics and analysis
+        Returns:
+            Analysis results as string
+        """
+        self._load_model()
+
+        try:
+            prompt = self._format_population_prompt(population_data)
+
+            if self.platform == "ai-verde":
+                system_prompt = (
+                    "You are a senior wound care specialist and data scientist analyzing population-level wound healing data. "
+                    "Your expertise spans clinical wound care, biostatistics, and medical data analysis. Your task is to:\n\n"
+                    "1. Analyze complex wound healing patterns across diverse patient populations\n"
+                    "2. Identify clinically significant trends and correlations\n"
+                    "3. Evaluate the effectiveness of different treatment approaches\n"
+                    "4. Provide evidence-based recommendations for improving wound care outcomes\n\n"
+                    "Focus on actionable insights that have practical clinical applications. Support your analysis with "
+                    "specific data points and statistics when available. Consider both statistical significance and "
+                    "clinical relevance in your interpretations. When making recommendations, consider implementation "
+                    "feasibility and potential resource constraints."
+                )
+
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=prompt)
+                ]
+                response = self.model.invoke(messages)
+                return response.content
+            else:
+                # For HuggingFace models, we'll use a simplified version of the prompt
+                combined_prompt = (
+                    "You are a wound care expert analyzing population-level data. "
+                    "Provide a detailed analysis focusing on patterns, risk factors, "
+                    "and evidence-based recommendations.\n\n" + prompt
+                )
+
+                response = self.model(
+                    combined_prompt,
+                    do_sample=True,
+                    temperature=0.3,
+                    max_new_tokens=1024,  # Increased for more detailed analysis
+                    num_return_sequences=1
+                )
+
+                if isinstance(response, list):
+                    generated_text = response[0]['generated_text']
+                else:
+                    generated_text = response['generated_text']
+
+                # Clean up the response
+                analysis = generated_text.replace(combined_prompt, '').strip()
+
+                # Format the analysis with clear sections
+                sections = [
+                    "Key Patterns and Trends",
+                    "Risk Factor Analysis",
+                    "Treatment Effectiveness",
+                    "Sensor Data Insights",
+                    "Clinical Recommendations",
+                    "Future Directions"
+                ]
+
+                formatted_analysis = ""
+                current_section = ""
+                for line in analysis.split('\n'):
+                    # Check if line starts a new section
+                    is_section = False
+                    for section in sections:
+                        if section.lower() in line.lower():
+                            current_section = section
+                            formatted_analysis += f"\n## {section}\n"
+                            is_section = True
+                            break
+
+                    if not is_section and line.strip():
+                        if not current_section:
+                            current_section = "Analysis"
+                            formatted_analysis += "\n## General Analysis\n"
+                        formatted_analysis += line + "\n"
+
+                return formatted_analysis.strip()
+
+        except Exception as e:
+            logger.error(f"Error analyzing population data: {str(e)}")
+            raise
+
+
+def create_and_save_report(patient_metadata: dict, analysis_results: str) -> str:
     """Create and save the analysis report as a Word document."""
     doc = Document()
-    report_path = format_word_document(doc=doc, analysis_results=analysis_results, patient_data=patient_data)
+    report_path = format_word_document(doc=doc, analysis_results=analysis_results, patient_metadata=patient_metadata)
     return report_path
-
 
 def download_word_report(st, report_path: str):
     """Create a download link for the Word report."""
@@ -290,7 +514,7 @@ def download_word_report(st, report_path: str):
     except Exception as e:
         st.error(f"Error preparing report download: {str(e)}")
 
-def format_word_document(doc: Document, analysis_results: str, patient_data: dict, report_path: str = None) -> str:
+def format_word_document(doc: Document, analysis_results: str, patient_metadata: dict, report_path: str = None) -> str:
     """
     Format the analysis results in a professional Word document layout.
     Returns the path to the saved document.
@@ -301,19 +525,18 @@ def format_word_document(doc: Document, analysis_results: str, patient_data: dic
 
     # Add patient information section
     doc.add_heading('Patient Information', level=1)
-    metadata = patient_data['patient_metadata']
     patient_info = doc.add_paragraph()
     patient_info.add_run('Patient Demographics:\n').bold = True
-    patient_info.add_run(f"Age: {metadata.get('age', 'Unknown')} years\n")
-    patient_info.add_run(f"Sex: {metadata.get('sex', 'Unknown')}\n")
-    patient_info.add_run(f"BMI: {metadata.get('bmi', 'Unknown')}\n")
+    patient_info.add_run(f"Age: {patient_metadata.get('age', 'Unknown')} years\n")
+    patient_info.add_run(f"Sex: {patient_metadata.get('sex', 'Unknown')}\n")
+    patient_info.add_run(f"BMI: {patient_metadata.get('bmi', 'Unknown')}\n")
 
     # Add diabetes information
     diabetes_info = doc.add_paragraph()
     diabetes_info.add_run('Diabetes Status:\n').bold = True
-    if 'diabetes' in metadata:
-        diabetes_info.add_run(f"Type: {metadata['diabetes'].get('status', 'Unknown')}\n")
-        diabetes_info.add_run(f"HbA1c: {metadata['diabetes'].get('hemoglobin_a1c', 'Unknown')}%\n")
+    if 'diabetes' in patient_metadata:
+        diabetes_info.add_run(f"Type: {patient_metadata['diabetes'].get('status', 'Unknown')}\n")
+        diabetes_info.add_run(f"HbA1c: {patient_metadata['diabetes'].get('hemoglobin_a1c', 'Unknown')}%\n")
 
     # Add analysis section
     doc.add_heading('Analysis Results', level=1)

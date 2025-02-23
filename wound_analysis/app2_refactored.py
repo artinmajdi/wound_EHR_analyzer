@@ -318,31 +318,6 @@ class SessionStateManager:
 		if 'report_path' not in st.session_state:
 			st.session_state.report_path = None
 
-# class DocumentHandler:
-# 	"""Handles document generation and downloads."""
-
-# 	@staticmethod
-# 	def create_and_save_report(patient_data: dict, analysis_results: str) -> str:
-# 		"""Create and save analysis report."""
-# 		doc = Document()
-# 		report_path = format_word_document(doc, patient_data, analysis_results)
-# 		return report_path
-
-# 	@staticmethod
-# 	def download_word_report(report_path: str) -> str:
-# 		"""Create a download link for the Word report."""
-# 		try:
-# 			with open(report_path, 'rb') as f:
-# 				bytes_data = f.read()
-# 				st.download_button(
-# 					label="Download Full Report (DOCX)",
-# 					data=bytes_data,
-# 					file_name=os.path.basename(report_path),
-# 					mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-# 				)
-# 		except Exception as e:
-# 			st.error(f"Error preparing report download: {str(e)}")
-
 class Visualizer:
 	"""Handles data visualization."""
 
@@ -1433,7 +1408,7 @@ class Dashboard:
 			fig = Visualizer.create_exudate_chart(visits)
 			st.plotly_chart(fig, use_container_width=True)
 
-			df_temp = df[df['Record ID'] == int(selected_patient.split(" ")[1])].copy()
+			# df_temp = df[df['Record ID'] == int(selected_patient.split(" ")[1])].copy()
 
 			# Clinical interpretation section
 			st.subheader("Clinical Interpretation of Exudate Characteristics")
@@ -1501,7 +1476,8 @@ class Dashboard:
 
 					# Exudate Type Analysis
 					st.markdown("### Type Analysis")
-					exudate_type_str = visit['wound_info']['exudate'].get('type', 'N/A')
+					# st.markdown(visit['wound_info']['exudate'])
+					exudate_type_str = str(visit['wound_info']['exudate'].get('type', 'N/A'))
 
 					if exudate_type_str != 'N/A':
 						# Split types and strip whitespace
@@ -1799,6 +1775,7 @@ class Dashboard:
 					labels={'Percentage': 'Percentage of Wounds (%)'}
 				)
 				st.plotly_chart(fig2, use_container_width=True)
+
 		else:
 			# For individual patient
 			df_temp = df[df['Record ID'] == int(selected_patient.split(" ")[1])].copy()
@@ -1899,33 +1876,51 @@ class Dashboard:
 
 	def _llm_analysis_tab(self, selected_patient: str) -> None:
 		"""Render the LLM analysis tab."""
-		st.header("LLM Analysis")
+		st.header("LLM-Powered Wound Analysis")
+
+		# Initialize reports dictionary in session state if it doesn't exist
+		if 'llm_reports' not in st.session_state:
+			st.session_state.llm_reports = {}
+
 		if selected_patient == "All Patients":
-			st.warning("Please select a specific patient to view their analysis.")
-		else:
-			st.subheader("LLM-Powered Wound Analysis")
 			if self.uploaded_file is not None:
 				if st.button("Run Analysis", key="run_analysis"):
 					# Initialize LLM with platform and model
 					llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
-					patient_data = self.data_processor.get_patient_visits(record_id=int(selected_patient.split(" ")[1]))
+					patient_data = self.data_processor.get_population_statistics()
+					analysis = llm.analyze_population_data(patient_data)
+
+					# Store analysis in session state for "All Patients"
+					st.session_state.llm_reports['all_patients'] = dict(analysis_results=analysis, patient_metadata=patient_data['patient_metadata'])
+
+				# Display analysis if it exists
+				if 'all_patients' in st.session_state.llm_reports:
+					st.markdown(st.session_state.llm_reports['all_patients']['analysis_results'])
+
+					# Add download button for the report
+					report_doc = create_and_save_report(**st.session_state.llm_reports['all_patients'])
+					download_word_report(st=st, report_path=report_doc)
+
+		else:
+			patient_id = selected_patient.split(' ')[1]
+			st.subheader(f"Patient {patient_id}")
+
+			if self.uploaded_file is not None:
+				if st.button("Run Analysis", key="run_analysis"):
+					# Initialize LLM with platform and model
+					llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
+					patient_data = self.data_processor.get_patient_visits(int(patient_id))
 					analysis = llm.analyze_patient_data(patient_data)
 
-					# Store analysis results and patient data in session state
-					st.session_state.analysis_results = analysis
-					st.session_state.current_patient_data = patient_data
-					st.session_state.report_path = create_and_save_report(patient_data=patient_data, analysis_results=analysis)
+					# Store analysis in session state for this patient
+					st.session_state.llm_reports[patient_id] = dict(analysis_results=analysis, patient_metadata=patient_data['patient_metadata'])
+				# Display analysis if it exists for this patient
+				if patient_id in st.session_state.llm_reports:
+					st.markdown(st.session_state.llm_reports[patient_id]['analysis_results'])
 
-					st.success("LLM analysis complete.")
-
-				# Display analysis results if they exist in session state
-				if st.session_state.analysis_results is not None:
-					st.header("Analysis Results")
-					st.markdown(st.session_state.analysis_results)
-
-					# Show download button if report path exists
-					if 'report_path' in st.session_state:
-						download_word_report(st=st, report_path=st.session_state.report_path)
+					# Add download button for the report
+					report_doc = create_and_save_report(**st.session_state.llm_reports[patient_id])
+					download_word_report(st=st, report_path=report_doc)
 			else:
 				st.warning("Please upload a patient data file from the sidebar to enable LLM analysis.")
 
@@ -1994,6 +1989,8 @@ class Dashboard:
 
 				if self.llm_platform == "ai-verde":
 					base_url = st.text_input("Base URL", value="https://llm-api.cyverse.ai")
+
+
 
 	def _render_tab_all_patients(self, df: pd.DataFrame) -> None:
 		"""Render statistics for all patients."""
@@ -2162,8 +2159,6 @@ class Dashboard:
 		undermining = wound_info.get('undermining', {})
 		cols = st.columns(3)
 
-
-
 		with cols[0]:
 			st.metric("Present", get_metric_value(undermining.get('present')))
 		with cols[1]:
@@ -2171,34 +2166,10 @@ class Dashboard:
 		with cols[2]:
 			st.metric("Tunneling", get_metric_value(undermining.get('tunneling')))
 
-
-		# wound_info = {
-		# 	'location'       : clean_field(visit_data, 'Describe the wound location'),
-		# 	'type'           : clean_field(visit_data, 'Wound Type'),
-		# 	'current_care'   : clean_field(visit_data, 'Current wound care'),
-		# 	'clinical_events': clean_field(visit_data, 'Clinical events'),
-		# 	'undermining': {
-		# 		'present'  : None if present is None else present == 'Yes',
-		# 		'location' : visit_data.get('Undermining Location Description'),
-		# 		'tunneling': visit_data.get('Tunneling Location Description')
-		# 	},
-		# 	'infection': {
-		# 		'status'             : clean_field(visit_data, 'Infection'),
-		# 		'wifi_classification': visit_data.get('Diabetic Foot Wound - WIfI Classification: foot Infection (fI)')
-		# 	},
-		# 	'granulation': {
-		# 		'coverage': clean_field(visit_data, 'Granulation'),
-		# 		'quality' : clean_field(visit_data, 'Granulation Quality')
-		# 	},
-
 def main():
 	"""Main application entry point."""
-	# try:
 	dashboard = Dashboard()
 	dashboard.run()
-	# except Exception as e:
-	#     st.error(f"Application error: {str(e)}")
-	#     st.error("Please check the data source and configuration.")
 
 if __name__ == "__main__":
 	main()
