@@ -682,60 +682,62 @@ with tab3:
         # For individual patient
         patient_data = filtered_df.sort_values('Visit Number')
 
-        # Calculate temperature gradients
-        patient_data['Center-Edge'] = patient_data['Center of Wound Temperature (Fahrenheit)'] - patient_data['Edge of Wound Temperature (Fahrenheit)']
-        patient_data['Edge-Peri'] = patient_data['Edge of Wound Temperature (Fahrenheit)'] - patient_data['Peri-wound Temperature (Fahrenheit)']
+        # Check which temperature columns have data
+        temp_cols = {
+            'Center': 'Center of Wound Temperature (Fahrenheit)',
+            'Edge': 'Edge of Wound Temperature (Fahrenheit)',
+            'Peri': 'Peri-wound Temperature (Fahrenheit)'
+        }
 
-        # Plot
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        available_temps = {k: v for k, v in temp_cols.items()
+                            if v in patient_data.columns and not patient_data[v].isna().all()}
 
-        # Add temperature lines
-        fig.add_trace(
-            go.Scatter(
-                x=patient_data['Visit Number'],
-                y=patient_data['Center of Wound Temperature (Fahrenheit)'],
-                name="Center Temp",
-                line=dict(color='red')
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=patient_data['Visit Number'],
-                y=patient_data['Edge of Wound Temperature (Fahrenheit)'],
-                name="Edge Temp",
-                line=dict(color='orange')
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=patient_data['Visit Number'],
-                y=patient_data['Peri-wound Temperature (Fahrenheit)'],
-                name="Peri-wound Temp",
-                line=dict(color='blue')
-            )
-        )
+        fig = make_subplots(specs=[[{"secondary_y": len(available_temps) == 3}]])
 
-        # Add gradient bars on secondary y-axis
-        fig.add_trace(
-            go.Bar(
-                x=patient_data['Visit Number'],
-                y=patient_data['Center-Edge'],
-                name="Center-Edge Gradient",
-                opacity=0.5,
-                marker_color='lightpink'
-            ),
-            secondary_y=True
-        )
-        fig.add_trace(
-            go.Bar(
-                x=patient_data['Visit Number'],
-                y=patient_data['Edge-Peri'],
-                name="Edge-Peri Gradient",
-                opacity=0.5,
-                marker_color='lightblue'
-            ),
-            secondary_y=True
-        )
+        # Color mapping for temperature lines
+        colors = {'Center': 'red', 'Edge': 'orange', 'Peri': 'blue'}
+
+        # Add available temperature lines
+        for temp_name, col_name in available_temps.items():
+            fig.add_trace(
+                go.Scatter(
+                    x=patient_data['Visit Number'],
+                    y=patient_data[col_name],
+                    name=f"{temp_name} Temp",
+                    line=dict(color=colors[temp_name])
+                )
+            )
+
+        # Only add gradients if all three temperatures are available
+        if len(available_temps) == 3:
+            # Calculate temperature gradients
+            patient_data['Center-Edge'] = patient_data[temp_cols['Center']] - patient_data[temp_cols['Edge']]
+            patient_data['Edge-Peri'] = patient_data[temp_cols['Edge']] - patient_data[temp_cols['Peri']]
+
+            # Add gradient bars on secondary y-axis
+            fig.add_trace(
+                go.Bar(
+                    x=patient_data['Visit Number'],
+                    y=patient_data['Center-Edge'],
+                    name="Center-Edge Gradient",
+                    opacity=0.5,
+                    marker_color='lightpink'
+                ),
+                secondary_y=True
+            )
+            fig.add_trace(
+                go.Bar(
+                    x=patient_data['Visit Number'],
+                    y=patient_data['Edge-Peri'],
+                    name="Edge-Peri Gradient",
+                    opacity=0.5,
+                    marker_color='lightblue'
+                ),
+                secondary_y=True
+            )
+
+            # Add secondary y-axis title only if showing gradients
+            fig.update_yaxes(title_text="Temperature Gradient (°F)", secondary_y=True)
 
         fig.update_layout(
             title=f"Temperature Measurements for {selected_patient}",
@@ -744,7 +746,6 @@ with tab3:
         )
 
         fig.update_yaxes(title_text="Temperature (°F)", secondary_y=False)
-        fig.update_yaxes(title_text="Temperature Gradient (°F)", secondary_y=True)
 
         st.plotly_chart(fig, use_container_width=True)
 
@@ -856,10 +857,7 @@ with tab5:
                 title="Average Healing Rate by Diabetes Status",
                 markers=True
             )
-            fig.update_layout(
-                xaxis_title="Visit Number",
-                yaxis_title="Average Healing Rate (%)"
-            )
+            fig.update_layout( xaxis_title="Visit Number", yaxis_title="Average Healing Rate (%)" )
             st.plotly_chart(fig, use_container_width=True)
 
             # Compare impedance by diabetes status
@@ -872,10 +870,7 @@ with tab5:
                 color='Diabetes?',
                 title="Average Impedance by Diabetes Status"
             )
-            fig.update_layout(
-                xaxis_title="Diabetes Status",
-                yaxis_title="Average Impedance Z (kOhms)"
-            )
+            fig.update_layout(xaxis_title="Diabetes Status", yaxis_title="Average Impedance Z (kOhms)")
             st.plotly_chart(fig, use_container_width=True)
 
         with risk_tab2:

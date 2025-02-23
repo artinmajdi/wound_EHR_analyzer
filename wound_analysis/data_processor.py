@@ -13,11 +13,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class WoundDataProcessor:
-	def __init__(self, dataset_path: pathlib.Path):
+	def __init__(self, dataset_path: pathlib.Path=None, df: pd.DataFrame= None):
+
 		self.dataset_path = dataset_path
-		# Load single consolidated CSV file
-		csv_path = dataset_path / 'SmartBandage-Data_for_llm.csv'
-		self.df = pd.read_csv(csv_path)
+		if df is None:
+			csv_path = dataset_path / 'SmartBandage-Data_for_llm.csv'
+			self.df = pd.read_csv(csv_path)
+		else:
+			self.df = df
+
 		# Clean column names
 		self.df.columns = self.df.columns.str.strip()
 
@@ -55,17 +59,27 @@ class WoundDataProcessor:
 
 		metadata = {
 			'age': patient_data['Calculated Age at Enrollment'] if not pd.isna(patient_data.get('Calculated Age at Enrollment')) else None,
+
 			'sex': patient_data['Sex'] if not pd.isna(patient_data.get('Sex')) else None,
+
 			'race': patient_data['Race'] if not pd.isna(patient_data.get('Race')) else None,
+
 			'ethnicity': patient_data['Ethnicity'] if not pd.isna(patient_data.get('Ethnicity')) else None,
+
 			'weight': patient_data['Weight'] if not pd.isna(patient_data.get('Weight')) else None,
 			'height': patient_data['Height'] if not pd.isna(patient_data.get('Height')) else None,
 			'bmi': patient_data['BMI'] if not pd.isna(patient_data.get('BMI')) else None,
+
 			'study_cohort': patient_data['Study Cohort'] if not pd.isna(patient_data.get('Study Cohort')) else None,
+
 			'smoking_status': patient_data['Smoking status'] if not pd.isna(patient_data.get('Smoking status')) else None,
+
 			'packs_per_day': patient_data['Number of Packs per Day(average number of cigarette packs smoked per day)1 Pack= 20 Cigarettes'] if not pd.isna(patient_data.get('Number of Packs per Day(average number of cigarette packs smoked per day)1 Pack= 20 Cigarettes')) else None,
+
 			'years_smoking': patient_data['Number of Years smoked/has been smoking cigarettes'] if not pd.isna(patient_data.get('Number of Years smoked/has been smoking cigarettes')) else None,
+
 			'alcohol_use': patient_data['Alcohol Use Status'] if not pd.isna(patient_data.get('Alcohol Use Status')) else None,
+
 			'alcohol_frequency': patient_data['Number of alcohol drinks consumed/has been consuming'] if not pd.isna(patient_data.get('Number of alcohol drinks consumed/has been consuming')) else None
 		}
 
