@@ -1597,6 +1597,24 @@ class Dashboard:
 
 			valid_df = df.dropna(subset=['Healing Rate (%)', 'Visit Number']).copy()
 
+			# Add detailed warning for outliers with statistics
+			outliers = valid_df[abs(valid_df['Healing Rate (%)']) > 100]
+			if not outliers.empty:
+				st.warning(
+					f"⚠️ Data Quality Alert:\n\n"
+					f"Found {len(outliers)} measurements ({(len(outliers)/len(valid_df)*100):.1f}% of data) "
+					f"with healing rates outside the expected range (-100% to 100%).\n\n"
+					f"Statistics:\n"
+					f"- Minimum value: {outliers['Healing Rate (%)'].min():.1f}%\n"
+					f"- Maximum value: {outliers['Healing Rate (%)'].max():.1f}%\n"
+					f"- Mean value: {outliers['Healing Rate (%)'].mean():.1f}%\n"
+					f"- Number of unique patients affected: {len(outliers['Record ID'].unique())}\n\n"
+					"These values will be clipped to [-100%, 100%] range for visualization purposes."
+				)
+
+			# Clip healing rates to reasonable range
+			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
+
 			for col in ['Diabetes?', 'Smoking status', 'BMI']:
 				# Add consistent diabetes status for each patient
 				first_diabetes_status = valid_df.groupby('Record ID')[col].first()
@@ -1632,7 +1650,13 @@ class Dashboard:
 					yaxis_title="Healing Rate (%)",
 					showlegend=True,
 					legend_title="Wound Status",
-					legend={'traceorder': 'reversed'}
+					legend={'traceorder': 'reversed'},
+					yaxis=dict(
+						range=[-100, 100],
+						tickmode='linear',
+						tick0=-100,
+						dtick=25
+					)
 				)
 				# Update legend labels
 				fig1.for_each_trace(lambda t: t.update(name='Improving' if t.name == 'green' else 'Worsening'))
@@ -1679,7 +1703,13 @@ class Dashboard:
 				fig1.update_layout(
 					showlegend=True,
 					legend_title="Wound Status",
-					legend={'traceorder': 'reversed'}
+					legend={'traceorder': 'reversed'},
+					yaxis=dict(
+						range=[-100, 100],
+						tickmode='linear',
+						tick0=-100,
+						dtick=25
+					)
 				)
 				# Update legend labels
 				fig1.for_each_trace(lambda t: t.update(name='Improving' if t.name == 'green' else 'Worsening'))
@@ -1732,7 +1762,13 @@ class Dashboard:
 				fig1.update_layout(
 					showlegend=True,
 					legend_title="Wound Status",
-					legend={'traceorder': 'reversed'}
+					legend={'traceorder': 'reversed'},
+					yaxis=dict(
+						range=[-100, 100],
+						tickmode='linear',
+						tick0=-100,
+						dtick=25
+					)
 				)
 				# Update legend labels
 				fig1.for_each_trace(lambda t: t.update(name='Improving' if t.name == 'green' else 'Worsening'))
