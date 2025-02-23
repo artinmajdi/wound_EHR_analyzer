@@ -1167,8 +1167,6 @@ class Dashboard:
 			# Remove skipped visits
 			# temp_df = temp_df[temp_df['Skipped Visit?'] != 'Yes']
 
-			temp_df['Calculated Wound Area'] = temp_df['Calculated Wound Area'].fillna(temp_df['Calculated Wound Area'].mean())
-
 			# Define temperature column names
 			temp_cols = [	'Center of Wound Temperature (Fahrenheit)',
 							'Edge of Wound Temperature (Fahrenheit)',
@@ -1227,6 +1225,7 @@ class Dashboard:
 			# Scatter plot of total gradient vs healing rate
 			# temp_df = temp_df.copy() # [df['Healing Rate (%)'] < 0].copy()
 			temp_df['Healing Rate (%)'] = temp_df['Healing Rate (%)'].clip(-100, 100)
+			temp_df['Calculated Wound Area'] = temp_df['Calculated Wound Area'].fillna(temp_df['Calculated Wound Area'].mean())
 
 			fig = px.scatter(
 				temp_df,#[temp_df['Healing Rate (%)'] > 0],  # Exclude first visits
@@ -1380,17 +1379,15 @@ class Dashboard:
 
 		if selected_patient == "All Patients":
 			# Prepare data for scatter plot
-			valid_df = df[df['Healing Rate (%)'] < 0].copy()
-			# valid_df = df.copy()
+			# valid_df = df[df['Healing Rate (%)'] < 0].copy()
+			valid_df = df.copy()
 			# valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
-
-			# Handle NaN values
-			# valid_df['Hemoglobin Level'] = valid_df['Hemoglobin Level'].fillna(valid_df['Hemoglobin Level'].mean())
 
 			# Handle NaN values and convert columns to float
 			valid_df['Hemoglobin Level'] = pd.to_numeric(valid_df['Hemoglobin Level'], errors='coerce')#.fillna(valid_df['Hemoglobin Level'].astype(float).mean())
 			valid_df['Oxygenation (%)'] = pd.to_numeric(valid_df['Oxygenation (%)'], errors='coerce')
 			valid_df['Healing Rate (%)'] = pd.to_numeric(valid_df['Healing Rate (%)'], errors='coerce')
+			# valid_df['Calculated Wound Area'] = pd.to_numeric(valid_df['Calculated Wound Area'], errors='coerce')
 
 			valid_df = valid_df.dropna(subset=['Oxygenation (%)', 'Healing Rate (%)', 'Hemoglobin Level'])
 			# Add outlier threshold control
@@ -1416,17 +1413,22 @@ class Dashboard:
 					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
 					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
 
+			# # Add consistent diabetes status for each patient
+			# first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
+			# valid_df['Diabetes?'] = valid_df['Record ID'].map(first_diabetes_status)
+			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
+			valid_df['Calculated Wound Area'] = valid_df['Calculated Wound Area'].fillna(valid_df['Calculated Wound Area'].mean())
 
 			if not valid_df.empty:
 				fig1 = px.scatter(
 					valid_df,
 					x='Oxygenation (%)',
 					y='Healing Rate (%)',
-					color='Diabetes?',
-					size='Hemoglobin Level',
+					# color='Diabetes?',
+					size='Calculated Wound Area',#'Hemoglobin Level', #
 					size_max=30,
 					hover_data=['Record ID', 'Event Name', 'Wound Type'],
-					title="Relationship Between Oxygenation and Healing Rate"
+					title="Relationship Between Oxygenation and Healing Rate (size=Hemoglobin Level)"
 				)
 				fig1.update_layout(xaxis_title="Oxygenation (%)", yaxis_title="Healing Rate (% reduction per visit)")
 				st.plotly_chart(fig1, use_container_width=True)
@@ -1542,6 +1544,8 @@ class Dashboard:
 				st.subheader("Relationship Analysis")
 
 				exudate_df['Healing Rate (%)'] = exudate_df['Healing Rate (%)'].clip(-100, 100)
+				exudate_df['Calculated Wound Area'] = exudate_df['Calculated Wound Area'].fillna(exudate_df['Calculated Wound Area'].mean())
+
 				fig_scatter = px.scatter(
 					exudate_df,
 					x='Volume_Numeric',
@@ -1756,19 +1760,19 @@ class Dashboard:
 			valid_df = df.dropna(subset=['Healing Rate (%)', 'Visit Number']).copy()
 
 			# Add detailed warning for outliers with statistics
-			outliers = valid_df[abs(valid_df['Healing Rate (%)']) > 100]
-			if not outliers.empty:
-				st.warning(
-					f"⚠️ Data Quality Alert:\n\n"
-					f"Found {len(outliers)} measurements ({(len(outliers)/len(valid_df)*100):.1f}% of data) "
-					f"with healing rates outside the expected range (-100% to 100%).\n\n"
-					f"Statistics:\n"
-					f"- Minimum value: {outliers['Healing Rate (%)'].min():.1f}%\n"
-					f"- Maximum value: {outliers['Healing Rate (%)'].max():.1f}%\n"
-					f"- Mean value: {outliers['Healing Rate (%)'].mean():.1f}%\n"
-					f"- Number of unique patients affected: {len(outliers['Record ID'].unique())}\n\n"
-					"These values will be clipped to [-100%, 100%] range for visualization purposes."
-				)
+			# outliers = valid_df[abs(valid_df['Healing Rate (%)']) > 100]
+			# if not outliers.empty:
+			# 	st.warning(
+			# 		f"⚠️ Data Quality Alert:\n\n"
+			# 		f"Found {len(outliers)} measurements ({(len(outliers)/len(valid_df)*100):.1f}% of data) "
+			# 		f"with healing rates outside the expected range (-100% to 100%).\n\n"
+			# 		f"Statistics:\n"
+			# 		f"- Minimum value: {outliers['Healing Rate (%)'].min():.1f}%\n"
+			# 		f"- Maximum value: {outliers['Healing Rate (%)'].max():.1f}%\n"
+			# 		f"- Mean value: {outliers['Healing Rate (%)'].mean():.1f}%\n"
+			# 		f"- Number of unique patients affected: {len(outliers['Record ID'].unique())}\n\n"
+			# 		"These values will be clipped to [-100%, 100%] range for visualization purposes."
+			# 	)
 
 			# Clip healing rates to reasonable range
 			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
