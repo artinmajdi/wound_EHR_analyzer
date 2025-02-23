@@ -59,6 +59,8 @@ class DataManager:
 		# Fill missing Visit Number with 1 before converting to int
 		df['Visit Number'] = df['Event Name'].str.extract(r'Visit (\d+)').fillna(1).astype(int)
 
+		df['Visit date'] = pd.to_datetime(df['Visit date']).dt.strftime('%m-%d-%Y')
+
 		# Convert Wound Type to categorical with specified categories
 		df['Wound Type'] = pd.Categorical(df['Wound Type'].fillna('Unknown'), categories=df['Wound Type'].dropna().unique())
 
@@ -786,6 +788,110 @@ class Visualizer:
 
 		return fig
 
+	@staticmethod
+	def create_oxygenation_chart(patient_data, visits):
+		fig_bar = go.Figure()
+		fig_bar.add_trace(go.Bar(
+			x=patient_data['Visit date'],
+			y=patient_data['Oxyhemoglobin Level'],
+			name="Oxyhemoglobin",
+			marker_color='red'
+		))
+		fig_bar.add_trace(go.Bar(
+			x=patient_data['Visit date'],
+			y=patient_data['Deoxyhemoglobin Level'],
+			name="Deoxyhemoglobin",
+			marker_color='purple'
+		))
+		fig_bar.update_layout(
+			title=f"Hemoglobin Components",
+			xaxis_title="Visit Date",
+			yaxis_title="Level (g/dL)",
+			barmode='stack',
+			legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
+		)
+
+		# Create an interactive chart showing oxygenation and hemoglobin measurements over time.
+		dates = []
+		oxygenation = []
+		hemoglobin = []
+
+		for visit in visits:
+			date = visit['visit_date']
+			sensor_data = visit['sensor_data']
+			dates.append(date)
+			oxygenation.append(sensor_data.get('oxygenation'))
+
+			# Handle None values for hemoglobin measurements
+			hb = sensor_data.get('hemoglobin')
+			hemoglobin.append(100 * hb if hb is not None else None)
+
+		fig_line = go.Figure()
+		fig_line.add_trace(go.Scatter(x=dates, y=oxygenation, name='Oxygenation (%)', mode='lines+markers'))
+		fig_line.add_trace(go.Scatter(x=dates, y=hemoglobin, name='Hemoglobin', mode='lines+markers'))
+
+		fig_line.update_layout(
+			title='Oxygenation and Hemoglobin Measurements Over Time',
+			xaxis_title='Visit Date',
+			yaxis_title='Value',
+			hovermode='x unified'
+		)
+		return fig_bar, fig_line
+
+	@staticmethod
+	def create_exudate_chart(visits):
+		"""Create a chart showing exudate characteristics over time."""
+		dates = []
+		volumes = []
+		types = []
+		viscosities = []
+
+		for visit in visits:
+			date = visit['visit_date']
+			wound_info = visit['wound_info']
+			exudate = wound_info.get('exudate', {})
+			dates.append(date)
+			volumes.append(exudate.get('volume', None))
+			types.append(exudate.get('type', None))
+			viscosities.append(exudate.get('viscosity', None))
+
+		# Create figure for categorical data
+		fig = go.Figure()
+
+		# Add volume as lines
+		if any(volumes):
+			fig.add_trace(go.Scatter(x=dates, y=volumes, name='Volume', mode='lines+markers'))
+
+		# Add types and viscosities as markers with text
+		if any(types):
+			fig.add_trace(go.Scatter(
+				x=dates,
+				y=[1]*len(dates),
+				text=types,
+				name='Type',
+				mode='markers+text',
+				textposition='bottom center'
+			))
+
+		if any(viscosities):
+			fig.add_trace(go.Scatter(
+				x=dates,
+				y=[0]*len(dates),
+				text=viscosities,
+				name='Viscosity',
+				mode='markers+text',
+				textposition='top center'
+			))
+
+		fig.update_layout(
+			# title='Exudate Characteristics Over Time',
+			xaxis_title='Visit Date',
+			yaxis_title='Properties',
+			hovermode='x unified'
+		)
+		return fig
+
+
 class RiskAnalyzer:
 	"""Handles risk analysis and assessment."""
 
@@ -894,6 +1000,7 @@ class Dashboard:
 			"Impedance Analysis",
 			"Temperature",
 			"Oxygenation",
+			"Exudate",
 			"Risk Factors",
 			"LLM Analysis"
 		])
@@ -907,8 +1014,10 @@ class Dashboard:
 		with tabs[3]:
 			self._oxygenation_tab(df, selected_patient)
 		with tabs[4]:
-			self._risk_factors_tab(df, selected_patient)
+			self._exudate_tab(selected_patient)
 		with tabs[5]:
+			self._risk_factors_tab(df, selected_patient)
+		with tabs[6]:
 			self._llm_analysis_tab(df, selected_patient)
 
 	def _overview_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
@@ -1122,41 +1231,28 @@ class Dashboard:
 
 		else:
 			patient_data = DataManager.get_patient_data(df, int(selected_patient.split(" ")[1])).sort_values('Visit Number')
-			fig_bar = go.Figure()
-			fig_bar.add_trace(go.Bar(
-				x=patient_data['Visit Number'],
-				y=patient_data['Oxyhemoglobin Level'],
-				name="Oxyhemoglobin",
-				marker_color='red'
-			))
-			fig_bar.add_trace(go.Bar(
-				x=patient_data['Visit Number'],
-				y=patient_data['Deoxyhemoglobin Level'],
-				name="Deoxyhemoglobin",
-				marker_color='purple'
-			))
-			fig_bar.update_layout(
-				title=f"Hemoglobin Components for {selected_patient}",
-				xaxis_title="Visit Number",
-				yaxis_title="Level (g/dL)",
-				barmode='stack',
-				legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
-			)
-			st.plotly_chart(fig_bar, use_container_width=True)
 
-			fig_line = px.line(
-				patient_data,
-				x='Visit Number',
-				y='Oxygenation (%)',
-				title=f"Oxygenation Over Time for {selected_patient}",
-				markers=True
-			)
-			fig_line.update_layout(
-				xaxis_title="Visit Number",
-				yaxis_title="Oxygenation (%)",
-				yaxis=dict(range=[80, 100])
-			)
+			# Convert Visit date to string for display
+			patient_data['Visit date'] = pd.to_datetime(patient_data['Visit date']).dt.strftime('%m-%d-%Y')
+			visits = self.data_processor.get_patient_visits(record_id=int(selected_patient.split(" ")[1]))['visits']
+
+			fig_bar, fig_line = Visualizer.create_oxygenation_chart(patient_data, visits)
+
+			st.plotly_chart(fig_bar, use_container_width=True)
 			st.plotly_chart(fig_line, use_container_width=True)
+
+	def _exudate_tab(self, selected_patient: str) -> None:
+		"""Render the exudate analysis tab."""
+		st.header("Exudate Characteristics Over Time")
+
+		if selected_patient == "All Patients":
+			pass
+
+		else:
+			visits = self.data_processor.get_patient_visits(record_id=int(selected_patient.split(" ")[1]))['visits']
+
+			fig = Visualizer.create_exudate_chart(visits)
+			st.plotly_chart(fig, use_container_width=True)
 
 	def _risk_factors_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""Render the risk factors analysis tab."""
