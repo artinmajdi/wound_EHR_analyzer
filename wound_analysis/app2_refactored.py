@@ -390,7 +390,7 @@ class Visualizer:
 		col1, col2 = st.columns([4, 1])
 		with col2:
 			outlier_threshold = st.number_input(
-				"Outlier Threshold",
+				"Temperature Outlier Threshold",
 				min_value=0.0,
 				max_value=0.5,
 				value=0.0,
@@ -1079,19 +1079,37 @@ class Dashboard:
 		st.header("Impedance Analysis")
 
 		if selected_patient == "All Patients":
+
 			# Scatter plot: Impedance vs Healing Rate
-			# Filter out NaN values and rows where Healing Rate is 0
 			valid_df = df[df['Healing Rate (%)'] > 0].copy()
-			# pdb.set_trace()  # Breakpoint
-			# Handle NaN values in the size column (Calculated Wound Area)
-			# valid_df['Calculated Wound Area'] = valid_df['Calculated Wound Area'].fillna(valid_df['Calculated Wound Area'].mean())
 
-			# Ensure all numeric columns are clean
-			# for col in ['Skin Impedance (kOhms) - Z', 'Healing Rate (%)', 'Calculated Wound Area']:
-			# 	valid_df[col] = pd.to_numeric(valid_df[col], errors='coerce')
+			# Add outlier threshold control
+			col1, _, col3 = st.columns([1, 1, 3])
 
-			# Remove any remaining rows with NaN values
-			# valid_df = valid_df.dropna(subset=['Skin Impedance (kOhms) - Z', 'Healing Rate (%)', 'Calculated Wound Area'])
+			with col1:
+				outlier_threshold = st.number_input(
+					"Impedance Outlier Threshold",
+					min_value=0.0,
+					max_value=0.9,
+					value=0.2,
+					step=0.05,
+					help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
+				)
+
+			# Get the filtered data for y-axis limits
+			valid_df = Visualizer._remove_outliers(valid_df, 'Skin Impedance (kOhms) - Z', outlier_threshold)
+
+			with col3:
+				if not valid_df.empty:
+					# Calculate correlation
+					r, p = stats.pearsonr(valid_df['Skin Impedance (kOhms) - Z'], valid_df['Healing Rate (%)'])
+					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
+					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
+					st.write("Higher impedance values correlate with slower healing rates, especially in diabetic patients")
+
+			# Add consistent diabetes status for each patient
+			first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
+			valid_df['Diabetes?'] = valid_df['Record ID'].map(first_diabetes_status)
 
 			if not valid_df.empty:
 				fig = px.scatter(
@@ -1106,12 +1124,6 @@ class Dashboard:
 				)
 				fig.update_layout(xaxis_title="Impedance Z (kOhms)", yaxis_title="Healing Rate (% reduction per visit)")
 				st.plotly_chart(fig, use_container_width=True)
-
-				# Calculate correlation
-				r, p = stats.pearsonr(valid_df['Skin Impedance (kOhms) - Z'], valid_df['Healing Rate (%)'])
-				p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
-				st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
-				st.write("Higher impedance values correlate with slower healing rates, especially in diabetic patients")
 			else:
 				st.warning("No valid data available for the scatter plot.")
 
@@ -1174,23 +1186,30 @@ class Dashboard:
 
 			temp_df['Calculated Wound Area'] = temp_df['Calculated Wound Area'].fillna(temp_df['Calculated Wound Area'].mean())
 
-			temp_df = temp_df.dropna(subset=['Center of Wound Temperature (Fahrenheit)', 'Edge of Wound Temperature (Fahrenheit)', 'Peri-wound Temperature (Fahrenheit)'])
+			# Define temperature column names
+			temp_cols = [	'Center of Wound Temperature (Fahrenheit)',
+							'Edge of Wound Temperature (Fahrenheit)',
+							'Peri-wound Temperature (Fahrenheit)']
 
-			# Create derived variables for temperature if they exist
-			if all(col in temp_df.columns for col in ['Center of Wound Temperature (Fahrenheit)', 'Edge of Wound Temperature (Fahrenheit)', 'Peri-wound Temperature (Fahrenheit)']):
-				temp_df['Center-Edge Gradient'] = temp_df['Center of Wound Temperature (Fahrenheit)'] - temp_df['Edge of Wound Temperature (Fahrenheit)']
-				temp_df['Edge-Peri Gradient'] = temp_df['Edge of Wound Temperature (Fahrenheit)'] - temp_df['Peri-wound Temperature (Fahrenheit)']
-				temp_df['Total Gradient'] = temp_df['Center of Wound Temperature (Fahrenheit)'] - temp_df['Peri-wound Temperature (Fahrenheit)']
+			# Drop rows with missing temperature data
+			temp_df = temp_df.dropna(subset=temp_cols)
 
+			# Calculate temperature gradients if all required columns exist
+			if all(col in temp_df.columns for col in temp_cols):
+				temp_df['Center-Edge Gradient'] = temp_df[temp_cols[0]] - temp_df[temp_cols[1]]
+				temp_df['Edge-Peri Gradient'] = temp_df[temp_cols[1]] - temp_df[temp_cols[2]]
+				temp_df['Total Gradient'] = temp_df[temp_cols[0]] - temp_df[temp_cols[2]]
 
-			# Boxplot of temperature gradients by wound type
+			# Create boxplot of temperature gradients by wound type
+			gradient_cols = ['Center-Edge Gradient', 'Edge-Peri Gradient', 'Total Gradient']
 			fig = px.box(
 				temp_df,
 				x='Wound Type',
-				y=['Center-Edge Gradient', 'Edge-Peri Gradient', 'Total Gradient'],
+				y=gradient_cols,
 				title="Temperature Gradients by Wound Type",
 				points="all"
 			)
+
 			fig.update_layout(
 				xaxis_title="Wound Type",
 				yaxis_title="Temperature Gradient (°F)",
@@ -1208,6 +1227,7 @@ class Dashboard:
 				hover_data=['Record ID', 'Event Name'],
 				title="Temperature Gradient vs. Healing Rate"
 			)
+
 			fig.update_layout(
 				xaxis_title="Temperature Gradient (Center to Peri-wound, °F)",
 				yaxis_title="Healing Rate (% reduction per visit)"
