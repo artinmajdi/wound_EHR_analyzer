@@ -26,7 +26,7 @@ st.set_option('client.showErrorDetails', True)
 @dataclass
 class Config:
 	"""Application configuration settings."""
-	PAGE_TITLE: str = "VSCODE - O3"
+	PAGE_TITLE: str = "Wound Care Management & Interpreter Dashboard"
 	PAGE_ICON: str = "🩹"
 	LAYOUT: str = "wide"
 	DATA_PATH: Optional[pathlib.Path] = pathlib.Path('/Users/artinmajdi/Documents/GitHubs/postdoc/Wound_management_interpreter_LLM/dataset')

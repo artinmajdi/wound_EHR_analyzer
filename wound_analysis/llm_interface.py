@@ -228,7 +228,7 @@ class WoundAnalysisLLM:
         # Add completion rate only if available
         if population_data['summary'].get('completion_rate') is not None:
             prompt += f"- Completion Rate: {safe_float_format(population_data['summary']['completion_rate'])}%\n"
-        
+
         prompt += (
             "\n**Demographics Profile**:\n"
             f"- Age Statistics: {population_data['demographics']['age_stats']['summary']}\n"
@@ -315,17 +315,17 @@ class WoundAnalysisLLM:
         # Add sensor data section if available
         if 'sensor_data' in population_data:
             prompt += "**Sensor Data Analysis**:\n"
-            
+
             if 'temperature' in population_data['sensor_data']:
                 temp_data = population_data['sensor_data']['temperature']
                 prompt += "Temperature Measurements:\n"
-                
+
                 # Center temperature
                 center_stats = temp_data['center_temp']['overall']
                 prompt += (f"Center of Wound:\n"
                           f"- Mean: {safe_float_format(center_stats['mean'])}°F\n"
                           f"- Range: {safe_float_format(center_stats['min'])} - {safe_float_format(center_stats['max'])}°F\n")
-                
+
                 # Edge and peri-wound temperatures if available
                 if 'edge_temp' in temp_data and 'peri_temp' in temp_data:
                     edge_stats = temp_data['edge_temp']['overall']
@@ -336,7 +336,7 @@ class WoundAnalysisLLM:
                         f"Peri-wound:\n"
                         f"- Mean: {safe_float_format(peri_stats['mean'])}°F\n"
                     )
-                    
+
                     # Temperature gradients
                     if 'gradients' in temp_data:
                         grad_stats = temp_data['gradients']
@@ -346,17 +346,17 @@ class WoundAnalysisLLM:
                             f"- Center to Peri-wound: {safe_float_format(grad_stats['center_to_peri']['mean'])}°F\n"
                         )
                 prompt += "\n"
-            
+
             if 'impedance' in population_data['sensor_data']:
                 imp_data = population_data['sensor_data']['impedance']
                 prompt += "Impedance Measurements:\n"
-                
+
                 # Magnitude
                 mag_stats = imp_data['magnitude']['overall']
                 prompt += (f"Magnitude (|Z|):\n"
                           f"- Mean: {safe_float_format(mag_stats['mean'])} kOhms\n"
                           f"- Range: {safe_float_format(mag_stats['min'])} - {safe_float_format(mag_stats['max'])} kOhms\n")
-                
+
                 # Complex components if available
                 if 'complex_components' in imp_data:
                     real_stats = imp_data['complex_components']['real']['overall']
@@ -368,11 +368,11 @@ class WoundAnalysisLLM:
                         f"- Mean: {safe_float_format(imag_stats['mean'])} kOhms\n"
                     )
                 prompt += "\n"
-            
+
             if 'oxygenation' in population_data['sensor_data']:
                 oxy_data = population_data['sensor_data']['oxygenation']
                 prompt += "Oxygenation Measurements:\n"
-                
+
                 # Basic oxygenation
                 if 'oxygenation' in oxy_data:
                     oxy_stats = oxy_data['oxygenation']['overall']
@@ -382,7 +382,7 @@ class WoundAnalysisLLM:
                         f"- Range: {safe_float_format(oxy_stats['min'])} - {safe_float_format(oxy_stats['max'])}%\n"
                         f"- Correlation with Healing: {safe_float_format(oxy_data['oxygenation']['correlation_with_healing'])}\n"
                     )
-                
+
                 # Hemoglobin measurements
                 for hb_type in ['hemoglobin', 'oxyhemoglobin', 'deoxyhemoglobin']:
                     if hb_type in oxy_data:
@@ -394,7 +394,7 @@ class WoundAnalysisLLM:
                             f"- Correlation with Healing: {safe_float_format(oxy_data[hb_type]['correlation_with_healing'])}\n"
                         )
                 prompt += "\n"
-        
+
         prompt += (
             "\n**Analysis Requirements**:\n"
             "1. Identify key patterns and correlations in:\n"
