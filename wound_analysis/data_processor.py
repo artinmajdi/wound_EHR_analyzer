@@ -195,54 +195,108 @@ class WoundDataProcessor:
 		}
 
 		# Add sensor data analysis if available
-		if all(col in df.columns for col in ['Skin Impedance (kOhms) - Z', 'Skin Impedance (kOhms) - Phase']):
-			stats['sensor_data'] = {
-				'impedance': {
-					'magnitude': {
-						'overall': df['Skin Impedance (kOhms) - Z'].agg(['mean', 'std', 'min', 'max']).to_dict(),
-						'by_healing_status': df.groupby('Healing_Status')['Skin Impedance (kOhms) - Z'].mean().to_dict(),
-						'temporal_trend': df.groupby('Visit Number')['Skin Impedance (kOhms) - Z'].mean().to_dict()
-					},
-					'phase': {
-						'overall': df['Skin Impedance (kOhms) - Phase'].agg(['mean', 'std', 'min', 'max']).to_dict(),
-						'by_healing_status': df.groupby('Healing_Status')['Skin Impedance (kOhms) - Phase'].mean().to_dict(),
-						'temporal_trend': df.groupby('Visit Number')['Skin Impedance (kOhms) - Phase'].mean().to_dict()
-					}
-				}
-			}
+		stats['sensor_data'] = {}
 
-		if all(col in df.columns for col in ['Temperature (°F)', 'Peri-wound Temperature (°F)']):
-			if 'sensor_data' not in stats:
-				stats['sensor_data'] = {}
-
+		# Temperature Analysis
+		temp_columns = {
+			'center': 'Center of Wound Temperature (Fahrenheit)',
+			'edge': 'Edge of Wound Temperature (Fahrenheit)',
+			'peri': 'Peri-wound Temperature (Fahrenheit)'
+		}
+		
+		if temp_columns['center'] in df.columns:
 			stats['sensor_data']['temperature'] = {
-				'wound_temp': {
-					'overall': df['Temperature (°F)'].agg(['mean', 'std', 'min', 'max']).to_dict(),
-					'by_healing_status': df.groupby('Healing_Status')['Temperature (°F)'].mean().to_dict()
-				},
-				'gradient': {
-					'overall': (df['Temperature (°F)'] - df['Peri-wound Temperature (°F)']).agg(['mean', 'std']).to_dict(),
-					'by_healing_status': df.groupby('Healing_Status')
-						.apply(lambda x: (x['Temperature (°F)'] - x['Peri-wound Temperature (°F)']).mean()).to_dict()
-				},
-				'temporal_patterns': {
-					'wound_temp': df.groupby('Visit Number')['Temperature (°F)'].mean().to_dict(),
-					'gradient': df.groupby('Visit Number')
-						.apply(lambda x: (x['Temperature (°F)'] - x['Peri-wound Temperature (°F)']).mean()).to_dict()
+				'center_temp': {
+					'overall': df[temp_columns['center']].agg(['mean', 'std', 'min', 'max']).to_dict(),
+					'by_healing_status': df.groupby('Healing_Status')[temp_columns['center']].mean().to_dict(),
+					'temporal_trend': df.groupby('Visit Number')[temp_columns['center']].mean().to_dict()
+				}
+			}
+			
+			# Add edge and peri-wound temperatures if available
+			if all(col in df.columns for col in [temp_columns['edge'], temp_columns['peri']]):
+				stats['sensor_data']['temperature'].update({
+					'edge_temp': {
+						'overall': df[temp_columns['edge']].agg(['mean', 'std', 'min', 'max']).to_dict(),
+						'by_healing_status': df.groupby('Healing_Status')[temp_columns['edge']].mean().to_dict()
+					},
+					'peri_temp': {
+						'overall': df[temp_columns['peri']].agg(['mean', 'std', 'min', 'max']).to_dict(),
+						'by_healing_status': df.groupby('Healing_Status')[temp_columns['peri']].mean().to_dict()
+					},
+					'gradients': {
+						'center_to_edge': (df[temp_columns['center']] - df[temp_columns['edge']]).agg(['mean', 'std']).to_dict(),
+						'center_to_peri': (df[temp_columns['center']] - df[temp_columns['peri']]).agg(['mean', 'std']).to_dict(),
+						'by_healing_status': df.groupby('Healing_Status').apply(
+							lambda x: {
+								'center_to_edge': (x[temp_columns['center']] - x[temp_columns['edge']]).mean(),
+								'center_to_peri': (x[temp_columns['center']] - x[temp_columns['peri']]).mean()
+							}
+						).to_dict()
+					}
+				})
+
+		# Impedance Analysis
+		impedance_columns = {
+			'magnitude': 'Skin Impedance (kOhms) - Z',
+			'real': "Skin Impedance (kOhms) - Z'",
+			'imaginary': 'Skin Impedance (kOhms) - Z"'
+		}
+
+		if impedance_columns['magnitude'] in df.columns:
+			stats['sensor_data']['impedance'] = {
+				'magnitude': {
+					'overall': df[impedance_columns['magnitude']].agg(['mean', 'std', 'min', 'max']).to_dict(),
+					'by_healing_status': df.groupby('Healing_Status')[impedance_columns['magnitude']].mean().to_dict(),
+					'temporal_trend': df.groupby('Visit Number')[impedance_columns['magnitude']].mean().to_dict()
 				}
 			}
 
-		if 'Oxygenation (%)' in df.columns:
-			if 'sensor_data' not in stats:
-				stats['sensor_data'] = {}
+			# Add complex impedance components if available
+			if all(col in df.columns for col in [impedance_columns['real'], impedance_columns['imaginary']]):
+				stats['sensor_data']['impedance'].update({
+					'complex_components': {
+						'real': {
+							'overall': df[impedance_columns['real']].agg(['mean', 'std', 'min', 'max']).to_dict(),
+							'by_healing_status': df.groupby('Healing_Status')[impedance_columns['real']].mean().to_dict()
+						},
+						'imaginary': {
+							'overall': df[impedance_columns['imaginary']].agg(['mean', 'std', 'min', 'max']).to_dict(),
+							'by_healing_status': df.groupby('Healing_Status')[impedance_columns['imaginary']].mean().to_dict()
+						}
+					}
+				})
 
+		# Oxygenation Analysis
+		oxy_columns = {
+			'oxygenation': 'Oxygenation (%)',
+			'hemoglobin': 'Hemoglobin Level',
+			'oxyhemoglobin': 'Oxyhemoglobin Level',
+			'deoxyhemoglobin': 'Deoxyhemoglobin Level'
+		}
+
+		if oxy_columns['oxygenation'] in df.columns:
 			stats['sensor_data']['oxygenation'] = {
-				'overall': df['Oxygenation (%)'].agg(['mean', 'std', 'min', 'max']).to_dict(),
-				'by_healing_status': df.groupby('Healing_Status')['Oxygenation (%)'].mean().to_dict(),
-				'temporal_trend': df.groupby('Visit Number')['Oxygenation (%)'].mean().to_dict(),
-				'correlation_with_healing': df['Healing Rate (%)'].corr(df['Oxygenation (%)']),
-				'distribution_quartiles': pd.qcut(df['Oxygenation (%)'], q=4).value_counts().to_dict()
+				'oxygenation': {
+					'overall': df[oxy_columns['oxygenation']].agg(['mean', 'std', 'min', 'max']).to_dict(),
+					'by_healing_status': df.groupby('Healing_Status')[oxy_columns['oxygenation']].mean().to_dict(),
+					'temporal_trend': df.groupby('Visit Number')[oxy_columns['oxygenation']].mean().to_dict(),
+					'correlation_with_healing': df[oxy_columns['oxygenation']].corr(df['Healing Rate (%)']),
+					'distribution_quartiles': pd.qcut(df[oxy_columns['oxygenation']], q=4).value_counts().to_dict()
+				}
 			}
+
+			# Add hemoglobin measurements if available
+			for hb_type, col in {'hemoglobin': oxy_columns['hemoglobin'], 
+								'oxyhemoglobin': oxy_columns['oxyhemoglobin'],
+								'deoxyhemoglobin': oxy_columns['deoxyhemoglobin']}.items():
+				if col in df.columns:
+					stats['sensor_data']['oxygenation'][hb_type] = {
+						'overall': df[col].agg(['mean', 'std', 'min', 'max']).to_dict(),
+						'by_healing_status': df.groupby('Healing_Status')[col].mean().to_dict(),
+						'temporal_trend': df.groupby('Visit Number')[col].mean().to_dict(),
+						'correlation_with_healing': df[col].corr(df['Healing Rate (%)'])
+					}
 
 		return stats
 

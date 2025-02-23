@@ -13,6 +13,10 @@ from docx.shared import Inches, Pt, RGBColor
 
 logger = logging.getLogger(__name__)
 
+def dict_to_bullets(d: Dict) -> str:
+    """Convert a dictionary to a bullet-point string format."""
+    return "\n".join([f"- {k}: {v}" for k, v in d.items()])
+
 class WoundAnalysisLLM:
     MODEL_CATEGORIES = {
         "huggingface": {
@@ -96,7 +100,7 @@ class WoundAnalysisLLM:
             raise ValueError(f"Platform {platform} not supported")
         return list(cls.MODEL_CATEGORIES[platform].keys())
 
-    def _format_prompt(self, patient_data: Dict) -> str:
+    def _format_per_patient_prompt(self, patient_data: Dict) -> str:
         """Format patient data into a prompt for the LLM."""
         metadata = patient_data['patient_metadata']
         visits = patient_data['visits']
@@ -203,134 +207,209 @@ class WoundAnalysisLLM:
         return prompt
 
     def _format_population_prompt(self, population_data: Dict) -> str:
-        """Format population-level data into a prompt for the LLM."""
+        """Format population-level data into a clinical analysis prompt for the LLM."""
+
+        # Helper function to safely format float values
+        def safe_float_format(value, format_spec='.1f'):
+            return f"{value:{format_spec}}" if value is not None else "N/A"
 
         prompt = (
-            "Task: Analyze wound healing patterns and provide comprehensive clinical insights for the entire patient population.\n\n"
-            "Population Overview:\n"
+            "## Clinical Population Analysis Task\n\n"
+            "**Context**: Analyze this wound care dataset from a smart bandage clinical trial. "
+            "Provide insights to improve wound care protocols and patient outcomes.\n\n"
+            "**Dataset Overview**:\n"
+            f"- Total Patients: {population_data['summary']['total_patients']}\n"
+            f"- Total Visits: {population_data['summary']['total_visits']}\n"
+            f"- Average Visits per Patient: {safe_float_format(population_data['summary']['avg_visits_per_patient'])}\n"
+            f"- Overall Improvement Rate: {safe_float_format(population_data['summary']['overall_improvement_rate'])}%\n"
+            f"- Average Treatment Duration: {safe_float_format(population_data['summary']['avg_treatment_duration_days'])} days\n"
         )
 
-        # Add demographic statistics
-        demographics = population_data.get('demographics', {})
+        # Add completion rate only if available
+        if population_data['summary'].get('completion_rate') is not None:
+            prompt += f"- Completion Rate: {safe_float_format(population_data['summary']['completion_rate'])}%\n"
+        
         prompt += (
-            f"Total Patients: {demographics.get('total_patients', 'Unknown')}\n"
-            f"Age Distribution: {demographics.get('age_stats', 'Unknown')}\n"
-            f"Gender Distribution: {demographics.get('gender_distribution', 'Unknown')}\n"
-            f"Race/Ethnicity Distribution: {demographics.get('race_distribution', 'Unknown')}\n"
-            f"BMI Distribution: {demographics.get('bmi_stats', 'Unknown')}\n"
-            f"Smoking Status Distribution: {demographics.get('smoking_distribution', 'Unknown')}\n"
-            f"Diabetes Status Distribution: {demographics.get('diabetes_distribution', 'Unknown')}\n"
-            f"Comorbidity Distribution: {demographics.get('comorbidity_distribution', 'Unknown')}\n"
+            "\n**Demographics Profile**:\n"
+            f"- Age Statistics: {population_data['demographics']['age_stats']['summary']}\n"
+            "Age Distribution:\n"
+            f"{dict_to_bullets(population_data['demographics']['age_stats']['age_groups'])}\n"
+            "Gender Distribution:\n"
+            f"{dict_to_bullets(population_data['demographics']['gender_distribution'])}\n"
+            "Race Distribution:\n"
+            f"{dict_to_bullets(population_data['demographics']['race_distribution'])}\n"
+            "Ethnicity Distribution:\n"
+            f"{dict_to_bullets(population_data['demographics']['ethnicity_distribution'])}\n"
+            "BMI Profile:\n"
+            f"- Summary: {population_data['demographics']['bmi_stats']['summary']}\n"
+            "BMI Categories:\n"
+            f"{dict_to_bullets(population_data['demographics']['bmi_stats']['distribution'])}\n\n"
+
+            "**Risk Factor Analysis**:\n"
+            "Diabetes Status:\n"
+            f"{dict_to_bullets(population_data['risk_factors']['primary_conditions']['diabetes']['distribution'])}\n"
+            "Diabetes Impact on Healing:\n"
+            f"{dict_to_bullets(population_data['risk_factors']['primary_conditions']['diabetes']['healing_impact'])}\n"
+            "Smoking Status:\n"
+            f"{dict_to_bullets(population_data['risk_factors']['primary_conditions']['smoking']['distribution'])}\n"
+            "Smoking Impact on Healing:\n"
+            f"{dict_to_bullets(population_data['risk_factors']['primary_conditions']['smoking']['healing_impact'])}\n\n"
+            "Comorbidity Analysis:\n"
+            "- Diabetes & Smoking Interaction:\n"
+            f"{dict_to_bullets(population_data['risk_factors']['comorbidity_analysis']['diabetes_smoking'])}\n"
+            "- Diabetes & BMI Interaction:\n"
+            f"{dict_to_bullets(population_data['risk_factors']['comorbidity_analysis']['diabetes_bmi'])}\n\n"
+
+            "**Wound Characteristics**:\n"
+            "Type Distribution:\n"
+            f"{dict_to_bullets(population_data['wound_characteristics']['type_distribution']['overall'])}\n"
+            "Healing Status by Wound Type:\n"
+            f"{dict_to_bullets(population_data['wound_characteristics']['type_distribution']['by_healing_status'])}\n"
+            "Location Analysis:\n"
+            f"{dict_to_bullets(population_data['wound_characteristics']['location_analysis']['distribution'])}\n"
+            "Healing by Location:\n"
+            f"{dict_to_bullets(population_data['wound_characteristics']['location_analysis']['healing_by_location'])}\n\n"
+            "Size Progression:\n"
+            "Initial Area Statistics:\n"
+            f"{dict_to_bullets(population_data['wound_characteristics']['size_progression']['initial_vs_final']['area']['initial'])}\n"
+            "Final Area Statistics:\n"
+            f"{dict_to_bullets(population_data['wound_characteristics']['size_progression']['initial_vs_final']['area']['final'])}\n"
+            f"Percent Change in Area: {safe_float_format(population_data['wound_characteristics']['size_progression']['initial_vs_final']['area']['percent_change'])}%\n"
+            "Healing by Initial Size:\n"
+            f"- Small Wounds: {safe_float_format(population_data['wound_characteristics']['size_progression']['healing_by_initial_size']['small'])}%\n"
+            f"- Medium Wounds: {safe_float_format(population_data['wound_characteristics']['size_progression']['healing_by_initial_size']['medium'])}%\n"
+            f"- Large Wounds: {safe_float_format(population_data['wound_characteristics']['size_progression']['healing_by_initial_size']['large'])}%\n\n"
+
+            "**Healing Progression**:\n"
+            f"Overall: {population_data['healing_progression']['overall_stats']['summary']}\n"
+            "Status Distribution:\n"
+            f"{dict_to_bullets(population_data['healing_progression']['overall_stats']['distribution'])}\n"
+            "Healing Rate Percentiles:\n"
+            f"{dict_to_bullets(population_data['healing_progression']['overall_stats']['percentiles'])}\n"
+            "Temporal Analysis:\n"
+            "By Visit Number:\n"
+            f"{dict_to_bullets(population_data['healing_progression']['temporal_analysis']['by_visit_number'])}\n"
+            "By Treatment Duration:\n"
+            f"{dict_to_bullets(population_data['healing_progression']['temporal_analysis']['by_treatment_duration'])}\n\n"
+
+            "**Exudate Analysis**:\n"
+            "Volume Characteristics:\n"
+            f"{dict_to_bullets(population_data['exudate_analysis']['characteristics']['volume']['distribution'])}\n"
+            "Volume vs Healing:\n"
+            f"{dict_to_bullets(population_data['exudate_analysis']['characteristics']['volume']['healing_correlation'])}\n"
+            "Type Distribution:\n"
+            f"{dict_to_bullets(population_data['exudate_analysis']['characteristics']['type']['distribution'])}\n"
+            "Type vs Healing:\n"
+            f"{dict_to_bullets(population_data['exudate_analysis']['characteristics']['type']['healing_correlation'])}\n"
+            "Viscosity Distribution:\n"
+            f"{dict_to_bullets(population_data['exudate_analysis']['characteristics']['viscosity']['distribution'])}\n"
+            "Viscosity vs Healing:\n"
+            f"{dict_to_bullets(population_data['exudate_analysis']['characteristics']['viscosity']['healing_correlation'])}\n"
+            "Temporal Patterns:\n"
+            "Volume Progression:\n"
+            f"{dict_to_bullets(population_data['exudate_analysis']['temporal_patterns']['volume_progression'])}\n"
+            "Type Progression:\n"
+            f"{dict_to_bullets(population_data['exudate_analysis']['temporal_patterns']['type_progression'])}\n\n"
         )
 
-        # Add wound characteristics with more detail
-        wound_stats = population_data.get('wound_stats', {})
+        # Add sensor data section if available
+        if 'sensor_data' in population_data:
+            prompt += "**Sensor Data Analysis**:\n"
+            
+            if 'temperature' in population_data['sensor_data']:
+                temp_data = population_data['sensor_data']['temperature']
+                prompt += "Temperature Measurements:\n"
+                
+                # Center temperature
+                center_stats = temp_data['center_temp']['overall']
+                prompt += (f"Center of Wound:\n"
+                          f"- Mean: {safe_float_format(center_stats['mean'])}°F\n"
+                          f"- Range: {safe_float_format(center_stats['min'])} - {safe_float_format(center_stats['max'])}°F\n")
+                
+                # Edge and peri-wound temperatures if available
+                if 'edge_temp' in temp_data and 'peri_temp' in temp_data:
+                    edge_stats = temp_data['edge_temp']['overall']
+                    peri_stats = temp_data['peri_temp']['overall']
+                    prompt += (
+                        f"Edge of Wound:\n"
+                        f"- Mean: {safe_float_format(edge_stats['mean'])}°F\n"
+                        f"Peri-wound:\n"
+                        f"- Mean: {safe_float_format(peri_stats['mean'])}°F\n"
+                    )
+                    
+                    # Temperature gradients
+                    if 'gradients' in temp_data:
+                        grad_stats = temp_data['gradients']
+                        prompt += (
+                            "Temperature Gradients:\n"
+                            f"- Center to Edge: {safe_float_format(grad_stats['center_to_edge']['mean'])}°F\n"
+                            f"- Center to Peri-wound: {safe_float_format(grad_stats['center_to_peri']['mean'])}°F\n"
+                        )
+                prompt += "\n"
+            
+            if 'impedance' in population_data['sensor_data']:
+                imp_data = population_data['sensor_data']['impedance']
+                prompt += "Impedance Measurements:\n"
+                
+                # Magnitude
+                mag_stats = imp_data['magnitude']['overall']
+                prompt += (f"Magnitude (|Z|):\n"
+                          f"- Mean: {safe_float_format(mag_stats['mean'])} kOhms\n"
+                          f"- Range: {safe_float_format(mag_stats['min'])} - {safe_float_format(mag_stats['max'])} kOhms\n")
+                
+                # Complex components if available
+                if 'complex_components' in imp_data:
+                    real_stats = imp_data['complex_components']['real']['overall']
+                    imag_stats = imp_data['complex_components']['imaginary']['overall']
+                    prompt += (
+                        f"Real Component (Z'):\n"
+                        f"- Mean: {safe_float_format(real_stats['mean'])} kOhms\n"
+                        f"Imaginary Component (Z\"):\n"
+                        f"- Mean: {safe_float_format(imag_stats['mean'])} kOhms\n"
+                    )
+                prompt += "\n"
+            
+            if 'oxygenation' in population_data['sensor_data']:
+                oxy_data = population_data['sensor_data']['oxygenation']
+                prompt += "Oxygenation Measurements:\n"
+                
+                # Basic oxygenation
+                if 'oxygenation' in oxy_data:
+                    oxy_stats = oxy_data['oxygenation']['overall']
+                    prompt += (
+                        f"Oxygenation Percentage:\n"
+                        f"- Mean: {safe_float_format(oxy_stats['mean'])}%\n"
+                        f"- Range: {safe_float_format(oxy_stats['min'])} - {safe_float_format(oxy_stats['max'])}%\n"
+                        f"- Correlation with Healing: {safe_float_format(oxy_data['oxygenation']['correlation_with_healing'])}\n"
+                    )
+                
+                # Hemoglobin measurements
+                for hb_type in ['hemoglobin', 'oxyhemoglobin', 'deoxyhemoglobin']:
+                    if hb_type in oxy_data:
+                        hb_stats = oxy_data[hb_type]['overall']
+                        prompt += (
+                            f"{hb_type.title()}:\n"
+                            f"- Mean: {safe_float_format(hb_stats['mean'])}\n"
+                            f"- Range: {safe_float_format(hb_stats['min'])} - {safe_float_format(hb_stats['max'])}\n"
+                            f"- Correlation with Healing: {safe_float_format(oxy_data[hb_type]['correlation_with_healing'])}\n"
+                        )
+                prompt += "\n"
+        
         prompt += (
-            "\nWound Characteristics:\n"
-            f"Wound Types Distribution: {wound_stats.get('type_distribution', 'Unknown')}\n"
-            f"Location Distribution: {wound_stats.get('location_distribution', 'Unknown')}\n"
-            f"Average Initial Size: {wound_stats.get('avg_initial_size', 'Unknown')}\n"
-            f"Size Distribution: {wound_stats.get('size_distribution', 'Unknown')}\n"
-            f"Average Treatment Duration: {wound_stats.get('avg_treatment_duration', 'Unknown')}\n"
-            f"Duration Distribution: {wound_stats.get('duration_distribution', 'Unknown')}\n"
-            f"Initial Wound Grade Distribution: {wound_stats.get('initial_grade_distribution', 'Unknown')}\n"
-        )
-
-        # Add healing rate analysis with detailed statistics
-        healing_stats = population_data.get('healing_stats', {})
-        prompt += (
-            "\nHealing Rate Analysis:\n"
-            f"Overall Healing Rate Distribution: {healing_stats.get('overall_distribution', 'Unknown')}\n"
-            f"Average Weekly Healing Rate: {healing_stats.get('avg_weekly_rate', 'Unknown')}\n"
-            f"Complete Healing Rate: {healing_stats.get('complete_healing_rate', 'Unknown')}%\n"
-            f"Time to 50% Healing: {healing_stats.get('time_to_50_percent', 'Unknown')}\n"
-            "\nHealing Rates by Risk Factors:\n"
-            f"- Diabetes Impact: {healing_stats.get('diabetes_impact', 'Unknown')}\n"
-            f"- Smoking Impact: {healing_stats.get('smoking_impact', 'Unknown')}\n"
-            f"- BMI Impact: {healing_stats.get('bmi_impact', 'Unknown')}\n"
-            f"- Age Impact: {healing_stats.get('age_impact', 'Unknown')}\n"
-            f"- Comorbidity Impact: {healing_stats.get('comorbidity_impact', 'Unknown')}\n"
-        )
-
-        # Add treatment outcome analysis
-        treatment_stats = population_data.get('treatment_stats', {})
-        prompt += (
-            "\nTreatment Outcomes:\n"
-            f"Treatment Modalities Used: {treatment_stats.get('modalities_used', 'Unknown')}\n"
-            f"Success Rates by Treatment: {treatment_stats.get('success_rates', 'Unknown')}\n"
-            f"Average Time to Response: {treatment_stats.get('time_to_response', 'Unknown')}\n"
-            f"Treatment Adherence Rates: {treatment_stats.get('adherence_rates', 'Unknown')}\n"
-            f"Complication Rates: {treatment_stats.get('complication_rates', 'Unknown')}\n"
-        )
-
-        # Add exudate analysis with trends
-        exudate_stats = population_data.get('exudate_stats', {})
-        prompt += (
-            "\nExudate Analysis:\n"
-            f"Volume Distribution: {exudate_stats.get('volume_distribution', 'Unknown')}\n"
-            f"Type Distribution: {exudate_stats.get('type_distribution', 'Unknown')}\n"
-            f"Viscosity Distribution: {exudate_stats.get('viscosity_distribution', 'Unknown')}\n"
-            f"Volume Trends Over Time: {exudate_stats.get('volume_trends', 'Unknown')}\n"
-            f"Correlation with Healing: {exudate_stats.get('healing_correlation', 'Unknown')}\n"
-        )
-
-        # Add sensor data statistics with trends and correlations
-        sensor_stats = population_data.get('sensor_stats', {})
-        if sensor_stats:
-            prompt += (
-                "\nSensor Measurements Analysis:\n"
-                f"Oxygenation Levels: {sensor_stats.get('oxygenation_stats', 'Unknown')}\n"
-                f"Oxygenation Trends: {sensor_stats.get('oxygenation_trends', 'Unknown')}\n"
-                f"Temperature Patterns: {sensor_stats.get('temperature_stats', 'Unknown')}\n"
-                f"Temperature Trends: {sensor_stats.get('temperature_trends', 'Unknown')}\n"
-                f"Impedance Measurements: {sensor_stats.get('impedance_stats', 'Unknown')}\n"
-                f"Impedance Trends: {sensor_stats.get('impedance_trends', 'Unknown')}\n"
-                "\nSensor-Healing Correlations:\n"
-                f"- Oxygenation Impact: {sensor_stats.get('oxygenation_impact', 'Unknown')}\n"
-                f"- Temperature Impact: {sensor_stats.get('temperature_impact', 'Unknown')}\n"
-                f"- Impedance Impact: {sensor_stats.get('impedance_impact', 'Unknown')}\n"
-            )
-
-        # Add correlation analysis with detailed insights
-        correlations = population_data.get('correlations', {})
-        if correlations:
-            prompt += (
-                "\nMultivariate Analysis:\n"
-                "Healing Rate Correlations:\n"
-                f"- Patient Factors: {correlations.get('patient_factors', 'Unknown')}\n"
-                f"- Wound Characteristics: {correlations.get('wound_characteristics', 'Unknown')}\n"
-                f"- Treatment Approaches: {correlations.get('treatment_approaches', 'Unknown')}\n"
-                f"- Sensor Measurements: {correlations.get('sensor_measurements', 'Unknown')}\n"
-                f"\nPredictive Factors:\n{correlations.get('predictive_factors', 'Unknown')}\n"
-                f"Risk Factor Interactions: {correlations.get('risk_interactions', 'Unknown')}\n"
-            )
-
-        prompt += (
-            "\nPlease provide a comprehensive analysis of the population-level data, including:\n"
-            "1. Key Patterns and Trends:\n"
-            "   - Identify significant patterns in wound healing across different patient groups\n"
-            "   - Analyze temporal trends in healing rates and wound characteristics\n"
-            "   - Highlight any unexpected or notable findings\n\n"
-            "2. Risk Factor Analysis:\n"
-            "   - Evaluate the impact of each risk factor on healing outcomes\n"
-            "   - Identify high-risk patient profiles\n"
-            "   - Analyze interactions between multiple risk factors\n\n"
-            "3. Treatment Effectiveness:\n"
-            "   - Compare outcomes across different treatment modalities\n"
-            "   - Identify factors associated with treatment success\n"
-            "   - Analyze time-to-response patterns\n\n"
-            "4. Sensor Data Insights:\n"
-            "   - Interpret patterns in oxygenation, temperature, and impedance measurements\n"
-            "   - Correlate sensor data with healing outcomes\n"
-            "   - Identify predictive indicators\n\n"
-            "5. Clinical Recommendations:\n"
-            "   - Suggest evidence-based treatment strategies\n"
-            "   - Recommend risk mitigation approaches\n"
-            "   - Propose monitoring protocols based on risk profiles\n\n"
-            "6. Future Directions:\n"
-            "   - Identify areas needing additional investigation\n"
-            "   - Suggest potential protocol improvements\n"
-            "   - Recommend data collection enhancements\n"
+            "\n**Analysis Requirements**:\n"
+            "1. Identify key patterns and correlations in:\n"
+            "   - Demographics vs healing outcomes\n"
+            "   - Risk factors' impact on healing\n"
+            "   - Wound characteristics vs healing time\n"
+            "   - Sensor data trends (if available)\n\n"
+            "2. Provide evidence-based recommendations for:\n"
+            "   - Risk stratification\n"
+            "   - Treatment optimization\n"
+            "   - Monitoring protocols\n\n"
+            "3. Format your analysis as a structured clinical report with:\n"
+            "   - Key findings with statistical significance\n"
+            "   - Clinical implications\n"
+            "   - Actionable recommendations\n"
         )
 
         return prompt
@@ -345,7 +424,7 @@ class WoundAnalysisLLM:
         """
         # Load model if not already loaded
         self._load_model()
-        prompt = self._format_prompt(patient_data)
+        prompt = self._format_per_patient_prompt(patient_data)
 
         try:
             if self.platform == "ai-verde":
@@ -494,7 +573,7 @@ class WoundAnalysisLLM:
             raise
 
 
-def create_and_save_report(patient_metadata: dict, analysis_results: str) -> str:
+def create_and_save_report(patient_metadata: dict, analysis_results: str, prompt: dict=None) -> str:
     """Create and save the analysis report as a Word document."""
     doc = Document()
     report_path = format_word_document(doc=doc, analysis_results=analysis_results, patient_metadata=patient_metadata)

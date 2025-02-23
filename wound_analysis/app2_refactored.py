@@ -2074,14 +2074,20 @@ class Dashboard:
 					# Initialize LLM with platform and model
 					llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
 					patient_data = self.data_processor.get_population_statistics()
+					prompt = llm._format_population_prompt(patient_data)
 					analysis = llm.analyze_population_data(patient_data)
 
 					# Store analysis in session state for "All Patients"
-					st.session_state.llm_reports['all_patients'] = dict(analysis_results=analysis, patient_metadata=None)
+					st.session_state.llm_reports['all_patients'] = dict(analysis_results=analysis, patient_metadata=None, prompt=prompt)
 
 				# Display analysis if it exists
 				if 'all_patients' in st.session_state.llm_reports:
-					st.markdown(st.session_state.llm_reports['all_patients']['analysis_results'])
+					tab1, tab2 = st.tabs(["Analysis", "Prompt"])
+					with tab1:
+						st.markdown(st.session_state.llm_reports['all_patients']['analysis_results'])
+					with tab2:
+						st.markdown(st.session_state.llm_reports['all_patients']['prompt'])
+
 
 					# Add download button for the report
 					report_doc = create_and_save_report(**st.session_state.llm_reports['all_patients'])
@@ -2096,13 +2102,19 @@ class Dashboard:
 					# Initialize LLM with platform and model
 					llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
 					patient_data = self.data_processor.get_patient_visits(int(patient_id))
+					prompt = llm._format_per_patient_prompt(patient_data)
 					analysis = llm.analyze_patient_data(patient_data)
 
 					# Store analysis in session state for this patient
-					st.session_state.llm_reports[patient_id] = dict(analysis_results=analysis, patient_metadata=patient_data['patient_metadata'])
+					st.session_state.llm_reports[patient_id] = dict(analysis_results=analysis, patient_metadata=patient_data['patient_metadata'], prompt=prompt)
+
 				# Display analysis if it exists for this patient
 				if patient_id in st.session_state.llm_reports:
-					st.markdown(st.session_state.llm_reports[patient_id]['analysis_results'])
+					tab1, tab2 = st.tabs(["Analysis", "Prompt"])
+					with tab1:
+						st.markdown(st.session_state.llm_reports[patient_id]['analysis_results'])
+					with tab2:
+						st.markdown(st.session_state.llm_reports[patient_id]['prompt'])
 
 					# Add download button for the report
 					report_doc = create_and_save_report(**st.session_state.llm_reports[patient_id])
