@@ -1,8 +1,3 @@
-"""
-VSCODE - O3 Smart Bandage Wound Healing Analytics Dashboard
-A Streamlit app for visualizing and analyzing wound healing data.
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -14,8 +9,6 @@ import pathlib
 import os
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Tuple, Any
-from docx import Document
-import base64
 from data_processor import WoundDataProcessor
 from llm_interface import WoundAnalysisLLM, create_and_save_report, download_word_report
 import pdb  # Debug mode disabled
@@ -1140,6 +1133,7 @@ class Dashboard:
 			# For individual patient
 			patient_data = self.data_processor.get_patient_visits(record_id=int(selected_patient.split(" ")[1]))
 			visits = patient_data['visits']
+
 			fig = Visualizer.create_impedance_chart(visits)
 
 			# patient_data = DataManager.get_patient_data(df, int(selected_patient.split(" ")[1])).sort_values('Visit Number')
@@ -2152,7 +2146,6 @@ class Dashboard:
 			""")
 			# - Correlation analysis between measurements and outcomes
 
-
 	def _create_left_sidebar(self) -> None:
 		"""Create sidebar components specific to LLM configuration."""
 
@@ -2180,15 +2173,12 @@ class Dashboard:
 
 			with st.expander("Advanced Model Settings"):
 
-				api_key = st.text_input("API Key", value="sk-h8JtQkCCJUOy-TAdDxCLGw", type="password")
-
+				api_key = st.text_input("API Key", type="password")
 				if api_key:
 					os.environ["OPENAI_API_KEY"] = api_key
 
 				if self.llm_platform == "ai-verde":
-					base_url = st.text_input("Base URL", value="https://llm-api.cyverse.ai")
-
-
+					base_url = st.text_input("Base URL", value=os.getenv("OPENAI_BASE_URL", ""))
 
 	def _render_tab_all_patients(self, df: pd.DataFrame) -> None:
 		"""Render statistics for all patients."""

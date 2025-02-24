@@ -50,5 +50,9 @@ env/
 .Python
 *.pyc
 
-.DS_Store
+# Environment variables
+.env
+.env.*
+!.env.example
+
 .DS_Store

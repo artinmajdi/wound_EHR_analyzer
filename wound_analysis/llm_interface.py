@@ -10,6 +10,10 @@ import pathlib
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +67,7 @@ class WoundAnalysisLLM:
 
                 self.model = ChatOpenAI(
                     model=self.model_path,
-                    base_url="https://llm-api.cyverse.ai"
+                    base_url=os.getenv("OPENAI_BASE_URL")
                 )
                 logger.info(f"Successfully loaded AI Verde model {self.model_name}")
             else:
