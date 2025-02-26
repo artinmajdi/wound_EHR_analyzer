@@ -203,7 +203,7 @@ class WoundDataProcessor:
 			'edge': 'Edge of Wound Temperature (Fahrenheit)',
 			'peri': 'Peri-wound Temperature (Fahrenheit)'
 		}
-		
+
 		if temp_columns['center'] in df.columns:
 			stats['sensor_data']['temperature'] = {
 				'center_temp': {
@@ -212,7 +212,7 @@ class WoundDataProcessor:
 					'temporal_trend': df.groupby('Visit Number')[temp_columns['center']].mean().to_dict()
 				}
 			}
-			
+
 			# Add edge and peri-wound temperatures if available
 			if all(col in df.columns for col in [temp_columns['edge'], temp_columns['peri']]):
 				stats['sensor_data']['temperature'].update({
@@ -287,7 +287,7 @@ class WoundDataProcessor:
 			}
 
 			# Add hemoglobin measurements if available
-			for hb_type, col in {'hemoglobin': oxy_columns['hemoglobin'], 
+			for hb_type, col in {'hemoglobin': oxy_columns['hemoglobin'],
 								'oxyhemoglobin': oxy_columns['oxyhemoglobin'],
 								'deoxyhemoglobin': oxy_columns['deoxyhemoglobin']}.items():
 				if col in df.columns:

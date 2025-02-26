@@ -1,6 +1,39 @@
 
 import pandas as pd
 import numpy as np
+import pandas as pd
+from ..llm_interface import WoundAnalysisLLM
+from ..data_processor import WoundDataProcessor
+
+dataset_path = '/Users/artinmajdi/Documents/GitHubs/postdoc/Wound_management_interpreter_LLM/dataset/SmartBandage-Data_for_llm.csv'
+
+df = pd.read_csv(dataset_path)
+df.head()
+
+
+def test_getting_llm_prompt():
+
+	print(df['Wound Type '].value_counts())
+
+
+	llm = WoundAnalysisLLM(platform="ai-verde", model_name="llama-3.3-70b-fp8")
+	data_processor = WoundDataProcessor(df=df, dataset_path=dataset_path)
+
+	mode = 'all'
+	if mode=='all':
+		patient_data = data_processor.get_population_statistics()
+		prompt = llm._format_population_prompt(patient_data)
+		# analysis = llm.analyze_population_data(patient_data)
+	else:
+		patient_id = 3
+		patient_data = data_processor.get_patient_visits(record_id=int(patient_id))
+		prompt = llm._format_per_patient_prompt(patient_data)
+		# analysis = llm.analyze_population_data(patient_data)
+
+	print(prompt)
+	print(patient_data.keys())
+	print(patient_data['sensor_data'])
+
 
 
 
