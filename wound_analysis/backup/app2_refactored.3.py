@@ -1761,14 +1761,14 @@ class Dashboard:
 			with tab1:
 				# Basic impedance visualization with mode selection dropdown
 				st.subheader("Impedance Measurements Over Time")
-
+				
 				# Add measurement mode selector
 				measurement_mode = st.selectbox(
 					"Select Measurement Mode:",
 					["Absolute Impedance (|Z|)", "Resistance", "Capacitance"],
 					key="impedance_mode_selector"
 				)
-
+				
 				# Create impedance chart with selected mode
 				fig = Visualizer.create_impedance_chart(visits, measurement_mode=measurement_mode)
 				st.plotly_chart(fig, use_container_width=True)

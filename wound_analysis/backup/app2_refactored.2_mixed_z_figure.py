@@ -660,7 +660,7 @@ class Visualizer:
 		return fig
 
 	@staticmethod
-	def create_impedance_chart(visits, measurement_mode: str = "Absolute Impedance (|Z|)"):
+	def create_impedance_chart(visits):
 		"""Create an interactive chart showing impedance measurements over time."""
 		dates = []
 		high_freq_z, high_freq_r, high_freq_c = [], [], []
@@ -738,79 +738,70 @@ class Visualizer:
 		low_freq_label = f"{float(low_freq_val):.0f}Hz" if low_freq_val else "Low Freq"
 
 		# Add high frequency traces
-		if measurement_mode == "Absolute Impedance (|Z|)":
-			if any(x is not None for x in high_freq_z):
-				fig.add_trace(go.Scatter(
-					x=dates, y=high_freq_z,
-					name=f'|Z| ({high_freq_label})',
-					mode='lines+markers'
-				))
-		elif measurement_mode == "Resistance":
-			if any(x is not None for x in high_freq_r):
-				fig.add_trace(go.Scatter(
-					x=dates, y=high_freq_r,
-					name=f'Resistance ({high_freq_label})',
-					mode='lines+markers'
-				))
-		elif measurement_mode == "Capacitance":
-			if any(x is not None for x in high_freq_c):
-				fig.add_trace(go.Scatter(
-					x=dates, y=high_freq_c,
-					name=f'Capacitance ({high_freq_label})',
-					mode='lines+markers'
-				))
+		if any(x is not None for x in high_freq_z):
+			fig.add_trace(go.Scatter(
+				x=dates, y=high_freq_z,
+				name=f'|Z| ({high_freq_label})',
+				mode='lines+markers'
+			))
+		if any(x is not None for x in high_freq_r):
+			fig.add_trace(go.Scatter(
+				x=dates, y=high_freq_r,
+				name=f'Resistance ({high_freq_label})',
+				mode='lines+markers'
+			))
+		if any(x is not None for x in high_freq_c):
+			fig.add_trace(go.Scatter(
+				x=dates, y=high_freq_c,
+				name=f'Capacitance ({high_freq_label})',
+				mode='lines+markers'
+			))
 
 		# Add center frequency traces
-		if measurement_mode == "Absolute Impedance (|Z|)":
-			if any(x is not None for x in center_freq_z):
-				fig.add_trace(go.Scatter(
-					x=dates, y=center_freq_z,
-					name=f'|Z| ({center_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dot')
-				))
-		elif measurement_mode == "Resistance":
-			if any(x is not None for x in center_freq_r):
-				fig.add_trace(go.Scatter(
-					x=dates, y=center_freq_r,
-					name=f'Resistance ({center_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dot')
-				))
-		elif measurement_mode == "Capacitance":
-			if any(x is not None for x in center_freq_c):
-				fig.add_trace(go.Scatter(
-					x=dates, y=center_freq_c,
-					name=f'Capacitance ({center_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dot')
-				))
+		if any(x is not None for x in center_freq_z):
+			fig.add_trace(go.Scatter(
+				x=dates, y=center_freq_z,
+				name=f'|Z| ({center_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dot')
+			))
+		if any(x is not None for x in center_freq_r):
+			fig.add_trace(go.Scatter(
+				x=dates, y=center_freq_r,
+				name=f'Resistance ({center_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dot')
+			))
+		if any(x is not None for x in center_freq_c):
+			fig.add_trace(go.Scatter(
+				x=dates, y=center_freq_c,
+				name=f'Capacitance ({center_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dot')
+			))
 
 		# Add low frequency traces
-		if measurement_mode == "Absolute Impedance (|Z|)":
-			if any(x is not None for x in low_freq_z):
-				fig.add_trace(go.Scatter(
-					x=dates, y=low_freq_z,
-					name=f'|Z| ({low_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dash')
-				))
-		elif measurement_mode == "Resistance":
-			if any(x is not None for x in low_freq_r):
-				fig.add_trace(go.Scatter(
-					x=dates, y=low_freq_r,
-					name=f'Resistance ({low_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dash')
-				))
-		elif measurement_mode == "Capacitance":
-			if any(x is not None for x in low_freq_c):
-				fig.add_trace(go.Scatter(
-					x=dates, y=low_freq_c,
-					name=f'Capacitance ({low_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dash')
-				))
+		if any(x is not None for x in low_freq_z):
+			fig.add_trace(go.Scatter(
+				x=dates, y=low_freq_z,
+				name=f'|Z| ({low_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dash')
+			))
+		if any(x is not None for x in low_freq_r):
+			fig.add_trace(go.Scatter(
+				x=dates, y=low_freq_r,
+				name=f'Resistance ({low_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dash')
+			))
+		if any(x is not None for x in low_freq_c):
+			fig.add_trace(go.Scatter(
+				x=dates, y=low_freq_c,
+				name=f'Capacitance ({low_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dash')
+			))
 
 		fig.update_layout(
 			title='Impedance Measurements Over Time',
@@ -1759,18 +1750,9 @@ class Dashboard:
 			])
 
 			with tab1:
-				# Basic impedance visualization with mode selection dropdown
+				# Basic impedance visualization from original code
 				st.subheader("Impedance Measurements Over Time")
-
-				# Add measurement mode selector
-				measurement_mode = st.selectbox(
-					"Select Measurement Mode:",
-					["Absolute Impedance (|Z|)", "Resistance", "Capacitance"],
-					key="impedance_mode_selector"
-				)
-
-				# Create impedance chart with selected mode
-				fig = Visualizer.create_impedance_chart(visits, measurement_mode=measurement_mode)
+				fig = Visualizer.create_impedance_chart(visits)
 				st.plotly_chart(fig, use_container_width=True)
 
 				# Add basic interpretation

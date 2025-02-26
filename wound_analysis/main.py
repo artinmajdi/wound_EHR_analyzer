@@ -73,5 +73,13 @@ def main():
         logger.error(f"Analysis failed: {e}")
         raise
 
+# TODO: Analysis of impedance values in the chart.
+# TODO: Clustering of data and then showing results based on the clustering
+# TODO: Look at stanford dataset impedance values to get some insights from them and how noise work there.
+# TODO: Is there some mathemtical way to analyze the impedance
+# TODO: Add some information on resistance and capacitance at low and high frequency.
+
+
+
 if __name__ == "__main__":
     main()

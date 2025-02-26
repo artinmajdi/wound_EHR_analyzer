@@ -660,7 +660,7 @@ class Visualizer:
 		return fig
 
 	@staticmethod
-	def create_impedance_chart(visits, measurement_mode: str = "Absolute Impedance (|Z|)"):
+	def create_impedance_chart(visits):
 		"""Create an interactive chart showing impedance measurements over time."""
 		dates = []
 		high_freq_z, high_freq_r, high_freq_c = [], [], []
@@ -738,79 +738,70 @@ class Visualizer:
 		low_freq_label = f"{float(low_freq_val):.0f}Hz" if low_freq_val else "Low Freq"
 
 		# Add high frequency traces
-		if measurement_mode == "Absolute Impedance (|Z|)":
-			if any(x is not None for x in high_freq_z):
-				fig.add_trace(go.Scatter(
-					x=dates, y=high_freq_z,
-					name=f'|Z| ({high_freq_label})',
-					mode='lines+markers'
-				))
-		elif measurement_mode == "Resistance":
-			if any(x is not None for x in high_freq_r):
-				fig.add_trace(go.Scatter(
-					x=dates, y=high_freq_r,
-					name=f'Resistance ({high_freq_label})',
-					mode='lines+markers'
-				))
-		elif measurement_mode == "Capacitance":
-			if any(x is not None for x in high_freq_c):
-				fig.add_trace(go.Scatter(
-					x=dates, y=high_freq_c,
-					name=f'Capacitance ({high_freq_label})',
-					mode='lines+markers'
-				))
+		if any(x is not None for x in high_freq_z):
+			fig.add_trace(go.Scatter(
+				x=dates, y=high_freq_z,
+				name=f'|Z| ({high_freq_label})',
+				mode='lines+markers'
+			))
+		if any(x is not None for x in high_freq_r):
+			fig.add_trace(go.Scatter(
+				x=dates, y=high_freq_r,
+				name=f'Resistance ({high_freq_label})',
+				mode='lines+markers'
+			))
+		if any(x is not None for x in high_freq_c):
+			fig.add_trace(go.Scatter(
+				x=dates, y=high_freq_c,
+				name=f'Capacitance ({high_freq_label})',
+				mode='lines+markers'
+			))
 
 		# Add center frequency traces
-		if measurement_mode == "Absolute Impedance (|Z|)":
-			if any(x is not None for x in center_freq_z):
-				fig.add_trace(go.Scatter(
-					x=dates, y=center_freq_z,
-					name=f'|Z| ({center_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dot')
-				))
-		elif measurement_mode == "Resistance":
-			if any(x is not None for x in center_freq_r):
-				fig.add_trace(go.Scatter(
-					x=dates, y=center_freq_r,
-					name=f'Resistance ({center_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dot')
-				))
-		elif measurement_mode == "Capacitance":
-			if any(x is not None for x in center_freq_c):
-				fig.add_trace(go.Scatter(
-					x=dates, y=center_freq_c,
-					name=f'Capacitance ({center_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dot')
-				))
+		if any(x is not None for x in center_freq_z):
+			fig.add_trace(go.Scatter(
+				x=dates, y=center_freq_z,
+				name=f'|Z| ({center_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dot')
+			))
+		if any(x is not None for x in center_freq_r):
+			fig.add_trace(go.Scatter(
+				x=dates, y=center_freq_r,
+				name=f'Resistance ({center_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dot')
+			))
+		if any(x is not None for x in center_freq_c):
+			fig.add_trace(go.Scatter(
+				x=dates, y=center_freq_c,
+				name=f'Capacitance ({center_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dot')
+			))
 
 		# Add low frequency traces
-		if measurement_mode == "Absolute Impedance (|Z|)":
-			if any(x is not None for x in low_freq_z):
-				fig.add_trace(go.Scatter(
-					x=dates, y=low_freq_z,
-					name=f'|Z| ({low_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dash')
-				))
-		elif measurement_mode == "Resistance":
-			if any(x is not None for x in low_freq_r):
-				fig.add_trace(go.Scatter(
-					x=dates, y=low_freq_r,
-					name=f'Resistance ({low_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dash')
-				))
-		elif measurement_mode == "Capacitance":
-			if any(x is not None for x in low_freq_c):
-				fig.add_trace(go.Scatter(
-					x=dates, y=low_freq_c,
-					name=f'Capacitance ({low_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dash')
-				))
+		if any(x is not None for x in low_freq_z):
+			fig.add_trace(go.Scatter(
+				x=dates, y=low_freq_z,
+				name=f'|Z| ({low_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dash')
+			))
+		if any(x is not None for x in low_freq_r):
+			fig.add_trace(go.Scatter(
+				x=dates, y=low_freq_r,
+				name=f'Resistance ({low_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dash')
+			))
+		if any(x is not None for x in low_freq_c):
+			fig.add_trace(go.Scatter(
+				x=dates, y=low_freq_c,
+				name=f'Capacitance ({low_freq_label})',
+				mode='lines+markers',
+				line=dict(dash='dash')
+			))
 
 		fig.update_layout(
 			title='Impedance Measurements Over Time',
@@ -967,604 +958,6 @@ class RiskAnalyzer:
 
 		return risk_score, risk_factors, risk_category
 
-class ImpedanceAnalyzer:
-	"""Handles advanced bioimpedance analysis and clinical interpretation."""
-
-	@staticmethod
-	def calculate_visit_changes(current_visit, previous_visit):
-		"""
-		Calculate percentage changes between consecutive visits for all impedance parameters.
-
-		Returns:
-			Dict: Percentage changes with clinical significance flags
-		"""
-		changes = {}
-		clinically_significant = {}
-
-		# Define significance thresholds based on clinical literature
-		significance_thresholds = {
-			'resistance': 0.15,  # 15% change is clinically significant
-			'capacitance': 0.20, # 20% change is clinically significant
-			'Z': 0.15  # 15% change is clinically significant for absolute impedance
-		}
-
-		freq_types = ['low_frequency', 'center_frequency', 'high_frequency']
-		params = ['Z', 'resistance', 'capacitance']
-
-		for freq_type in freq_types:
-			current_freq_data = current_visit.get('sensor_data', {}).get('impedance', {}).get(freq_type, {})
-			previous_freq_data = previous_visit.get('sensor_data', {}).get('impedance', {}).get(freq_type, {})
-
-			for param in params:
-				try:
-					current_val = float(current_freq_data.get(param, 0))
-					previous_val = float(previous_freq_data.get(param, 0))
-
-					if previous_val != 0 and current_val != 0:
-						percent_change = (current_val - previous_val) / previous_val
-						key = f"{param}_{freq_type}"
-						changes[key] = percent_change
-
-						# Determine clinical significance
-						is_significant = abs(percent_change) > significance_thresholds.get(param, 0.15)
-						clinically_significant[key] = is_significant
-				except (ValueError, TypeError, ZeroDivisionError):
-					continue
-
-		return changes, clinically_significant
-
-	@staticmethod
-	def calculate_tissue_health_index(visit):
-		"""
-		Calculate tissue health index based on multi-frequency impedance ratios.
-
-		Returns:
-			Tuple: (health_score, interpretation)
-		"""
-		sensor_data = visit.get('sensor_data', {})
-		impedance_data = sensor_data.get('impedance', {})
-
-		# Extract absolute impedance at different frequencies
-		low_freq = impedance_data.get('low_frequency', {})
-		high_freq = impedance_data.get('high_frequency', {})
-
-		try:
-			low_z = float(low_freq.get('Z', 0))
-			high_z = float(high_freq.get('Z', 0))
-
-			if low_z > 0 and high_z > 0:
-				# Calculate low/high frequency ratio
-				lf_hf_ratio = low_z / high_z
-
-				# Calculate phase angle if resistance and reactance available
-				phase_angle = None
-				if 'resistance' in high_freq and 'capacitance' in high_freq:
-					r = float(high_freq.get('resistance', 0))
-					c = float(high_freq.get('capacitance', 0))
-					if r > 0 and c > 0:
-						# Approximate phase angle calculation
-						import math
-						# Using arctan(1/(2πfRC))
-						f = float(high_freq.get('frequency', 80000))
-						phase_angle = math.atan(1/(2 * math.pi * f * r * c)) * (180/math.pi)
-
-				# Normalize scores to 0-100 scale
-				# Typical healthy ratio range: 5-12
-				ratio_score = max(0, min(100, (1 - (lf_hf_ratio - 5) / 7) * 100)) if 5 <= lf_hf_ratio <= 12 else max(0, 50 - abs(lf_hf_ratio - 8.5) * 5)
-
-				if phase_angle:
-					# Typical healthy phase angle range: 5-7 degrees
-					phase_score = max(0, min(100, (phase_angle / 7) * 100))
-					health_score = (ratio_score * 0.6) + (phase_score * 0.4)  # Weighted average
-				else:
-					health_score = ratio_score
-
-				# Interpretation
-				if health_score >= 80:
-					interpretation = "Excellent tissue health"
-				elif health_score >= 60:
-					interpretation = "Good tissue health"
-				elif health_score >= 40:
-					interpretation = "Moderate tissue health"
-				elif health_score >= 20:
-					interpretation = "Poor tissue health"
-				else:
-					interpretation = "Very poor tissue health"
-
-				return health_score, interpretation
-
-		except (ValueError, TypeError, ZeroDivisionError):
-			pass
-
-		return None, "Insufficient data for tissue health calculation"
-
-	@staticmethod
-	def analyze_healing_trajectory(visits):
-		"""
-		Analyze the healing trajectory using regression analysis of impedance values over time.
-
-		Returns:
-			Dict: Analysis results including slope, significance, and interpretation
-		"""
-		if len(visits) < 3:
-			return {"status": "insufficient_data"}
-
-		import numpy as np
-		from scipy import stats
-
-		# Extract high frequency impedance values
-		dates = []
-		z_values = []
-
-		for visit in visits:
-			try:
-				high_freq = visit.get('sensor_data', {}).get('impedance', {}).get('high_frequency', {})
-				z_val = float(high_freq.get('Z', 0))
-				if z_val > 0:
-					z_values.append(z_val)
-					dates.append(visit.get('visit_date'))
-			except (ValueError, TypeError):
-				continue
-
-		if len(z_values) < 3:
-			return {"status": "insufficient_data"}
-
-		# Convert dates to numerical values for regression
-		x = np.arange(len(z_values))
-		y = np.array(z_values)
-
-		# Perform linear regression
-		slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-		r_squared = r_value ** 2
-
-		# Determine clinical significance of slope
-		result = {
-			"slope": slope,
-			"r_squared": r_squared,
-			"p_value": p_value,
-			"dates": dates,
-			"values": z_values,
-			"status": "analyzed"
-		}
-
-		# Interpret the slope
-		if slope < -0.5 and p_value < 0.05:
-			result["interpretation"] = "Strong evidence of healing progression"
-		elif slope < -0.2 and p_value < 0.10:
-			result["interpretation"] = "Moderate evidence of healing progression"
-		elif slope > 0.5 and p_value < 0.05:
-			result["interpretation"] = "Potential deterioration detected"
-		else:
-			result["interpretation"] = "No significant trend detected"
-
-		return result
-
-	@staticmethod
-	def analyze_frequency_response(visit):
-		"""
-		Analyze the pattern of impedance across different frequencies to assess tissue composition.
-
-		Returns:
-			Dict: Dispersion characteristics and interpretation
-		"""
-		results = {}
-		sensor_data = visit.get('sensor_data', {})
-		impedance_data = sensor_data.get('impedance', {})
-
-		# Extract absolute impedance at different frequencies
-		low_freq = impedance_data.get('low_frequency', {})
-		center_freq = impedance_data.get('center_frequency', {})
-		high_freq = impedance_data.get('high_frequency', {})
-
-		try:
-			z_low = float(low_freq.get('Z', 0))
-			z_center = float(center_freq.get('Z', 0))
-			z_high = float(high_freq.get('Z', 0))
-
-			if z_low > 0 and z_center > 0 and z_high > 0:
-				# Calculate alpha dispersion (low-to-center frequency drop)
-				alpha_dispersion = (z_low - z_center) / z_low
-
-				# Calculate beta dispersion (center-to-high frequency drop)
-				beta_dispersion = (z_center - z_high) / z_center
-
-				results['alpha_dispersion'] = alpha_dispersion
-				results['beta_dispersion'] = beta_dispersion
-
-				# Interpret dispersion patterns
-				if alpha_dispersion > 0.4 and beta_dispersion < 0.2:
-					results['interpretation'] = "High extracellular fluid content, possible edema"
-				elif alpha_dispersion < 0.2 and beta_dispersion > 0.3:
-					results['interpretation'] = "High cellular density, possible granulation"
-				elif alpha_dispersion > 0.3 and beta_dispersion > 0.3:
-					results['interpretation'] = "Mixed tissue composition, active remodeling"
-				else:
-					results['interpretation'] = "Normal tissue composition pattern"
-			else:
-				results['interpretation'] = "Insufficient frequency data for analysis"
-		except (ValueError, TypeError, ZeroDivisionError) as e:
-			error_message = f"Error processing frequency response data: {type(e).__name__}: {str(e)}"
-			print(error_message)  # For console debugging
-			import traceback
-			traceback.print_exc()  # Print the full traceback
-			results['interpretation'] = error_message  # Or keep the generic message if preferred
-
-		return results
-
-	@staticmethod
-	def detect_impedance_anomalies(previous_visits, current_visit, z_score_threshold=2.5):
-		"""
-		Detect statistically significant anomalies in impedance measurements.
-
-		Returns:
-			Dict: Alerts with clinical interpretations
-		"""
-		if len(previous_visits) < 3:
-			return {}
-
-		import numpy as np
-
-		alerts = {}
-
-		# Parameters to monitor
-		params = [
-			('high_frequency', 'Z', 'High-frequency impedance'),
-			('low_frequency', 'resistance', 'Low-frequency resistance'),
-			('high_frequency', 'capacitance', 'High-frequency capacitance')
-		]
-
-		current_impedance = current_visit.get('sensor_data', {}).get('impedance', {})
-
-		for freq_type, param_name, display_name in params:
-			# Collect historical values
-			historical_values = []
-
-			for visit in previous_visits:
-				visit_impedance = visit.get('sensor_data', {}).get('impedance', {})
-				freq_data = visit_impedance.get(freq_type, {})
-				try:
-					value = float(freq_data.get(param_name, 0))
-					if value > 0:
-						historical_values.append(value)
-				except (ValueError, TypeError):
-					continue
-
-			if len(historical_values) >= 3:
-				# Calculate historical statistics
-				mean = np.mean(historical_values)
-				std = np.std(historical_values)
-
-				# Get current value
-				current_freq_data = current_impedance.get(freq_type, {})
-				try:
-					current_value = float(current_freq_data.get(param_name, 0))
-					if current_value > 0 and std > 0:
-						z_score = (current_value - mean) / std
-
-						if abs(z_score) > z_score_threshold:
-							direction = "increase" if z_score > 0 else "decrease"
-
-							# Clinical interpretation
-							if freq_type == 'high_frequency' and param_name == 'Z':
-								if direction == 'increase':
-									clinical_meaning = "Possible deterioration in tissue quality or increased inflammation"
-								else:
-									clinical_meaning = "Possible improvement in cellular integrity or reduction in edema"
-							elif freq_type == 'low_frequency' and param_name == 'resistance':
-								if direction == 'increase':
-									clinical_meaning = "Possible decrease in extracellular fluid or improved barrier function"
-								else:
-									clinical_meaning = "Possible increase in extracellular fluid or breakdown of tissue barriers"
-							elif freq_type == 'high_frequency' and param_name == 'capacitance':
-								if direction == 'increase':
-									clinical_meaning = "Possible increase in cellular density or membrane integrity"
-								else:
-									clinical_meaning = "Possible decrease in viable cell count or membrane dysfunction"
-							else:
-								clinical_meaning = "Significant change detected, clinical correlation advised"
-
-							key = f"{freq_type}_{param_name}"
-							alerts[key] = {
-								"parameter": display_name,
-								"z_score": z_score,
-								"direction": direction,
-								"interpretation": clinical_meaning
-							}
-				except (ValueError, TypeError):
-					continue
-
-		return alerts
-
-	@staticmethod
-	def assess_infection_risk(current_visit, previous_visit=None):
-		"""
-		Assess the risk of wound infection based on impedance parameters.
-
-		Returns:
-			Dict: Risk score, level, and contributing factors
-		"""
-		risk_score = 0
-		factors = []
-
-		current_impedance = current_visit.get('sensor_data', {}).get('impedance', {})
-
-		# Factor 1: Low/high frequency impedance ratio
-		low_freq = current_impedance.get('low_frequency', {})
-		high_freq = current_impedance.get('high_frequency', {})
-
-		try:
-			low_z = float(low_freq.get('Z', 0))
-			high_z = float(high_freq.get('Z', 0))
-
-			if low_z > 0 and high_z > 0:
-				ratio = low_z / high_z
-				# Ratios > 15 are associated with increased infection risk in literature
-				if ratio > 20:
-					risk_score += 40
-					factors.append("Very high low/high frequency impedance ratio")
-				elif ratio > 15:
-					risk_score += 25
-					factors.append("Elevated low/high frequency impedance ratio")
-		except (ValueError, TypeError, ZeroDivisionError):
-			pass
-
-		# Factor 2: Sudden increase in low-frequency resistance (inflammatory response)
-		if previous_visit:
-			prev_impedance = previous_visit.get('sensor_data', {}).get('impedance', {})
-			prev_low_freq = prev_impedance.get('low_frequency', {})
-
-			try:
-				current_r = float(low_freq.get('resistance', 0))
-				prev_r = float(prev_low_freq.get('resistance', 0))
-
-				if prev_r > 0 and current_r > 0:
-					pct_change = (current_r - prev_r) / prev_r
-					if pct_change > 0.30:  # >30% increase
-						risk_score += 30
-						factors.append("Significant increase in low-frequency resistance")
-			except (ValueError, TypeError, ZeroDivisionError):
-				pass
-
-		# Factor 3: Phase angle calculation (if resistance and capacitance available)
-		try:
-			r = float(high_freq.get('resistance', 0))
-			c = float(high_freq.get('capacitance', 0))
-			f = float(high_freq.get('frequency', 80000))
-
-			if r > 0 and c > 0:
-				import math
-				phase_angle = math.atan(1/(2 * math.pi * f * r * c)) * (180/math.pi)
-
-				if phase_angle < 2:  # Low phase angles are associated with poor tissue health
-					risk_score += 30
-					factors.append("Very low phase angle")
-				elif phase_angle < 3:
-					risk_score += 15
-					factors.append("Low phase angle")
-		except (ValueError, TypeError, ZeroDivisionError):
-			pass
-
-		# Limit score to 0-100 range
-		risk_score = min(100, max(0, risk_score))
-
-		# Interpret risk level
-		if risk_score >= 60:
-			interpretation = "High infection risk"
-		elif risk_score >= 30:
-			interpretation = "Moderate infection risk"
-		else:
-			interpretation = "Low infection risk"
-
-		return {
-			"risk_score": risk_score,
-			"risk_level": interpretation,
-			"contributing_factors": factors
-		}
-
-	@staticmethod
-	def calculate_cole_parameters(visit):
-		"""
-		Calculate bioimpedance Cole-Cole model parameters from multi-frequency measurements.
-
-		Returns:
-			Dictionary containing R0, R∞, Fc (characteristic frequency), and alpha
-		"""
-		import math
-
-		results = {}
-		impedance_data = visit.get('sensor_data', {}).get('impedance', {})
-
-		# Extract resistance at different frequencies
-		low_freq = impedance_data.get('low_frequency', {})
-		center_freq = impedance_data.get('center_frequency', {})
-		high_freq = impedance_data.get('high_frequency', {})
-
-		try:
-			# Get resistance values
-			r_low = float(low_freq.get('resistance', 0))
-			r_center = float(center_freq.get('resistance', 0))
-			r_high = float(high_freq.get('resistance', 0))
-
-			# Get capacitance values
-			c_low = float(low_freq.get('capacitance', 0))
-			c_center = float(center_freq.get('capacitance', 0))
-			c_high = float(high_freq.get('capacitance', 0))
-
-			# Get frequency values
-			f_low = float(low_freq.get('frequency', 100))
-			f_center = float(center_freq.get('frequency', 7499))
-			f_high = float(high_freq.get('frequency', 80000))
-
-			if r_low > 0 and r_high > 0:
-				# Approximate R0 and R∞
-				results['R0'] = r_low  # Low frequency resistance approximates R0
-				results['Rinf'] = r_high  # High frequency resistance approximates R∞
-
-				# Calculate membrane capacitance (Cm)
-				if r_center > 0 and c_center > 0:
-					results['Fc'] = f_center
-
-					# Calculate time constant
-					tau = 1 / (2 * math.pi * f_center)
-					results['Tau'] = tau
-
-					# Membrane capacitance estimation
-					if (r_low - r_high) > 0 and r_high > 0:
-						cm = tau / ((r_low - r_high) * r_high)
-						results['Cm'] = cm
-
-				# Calculate alpha (tissue heterogeneity)
-				# Using resistance values to estimate alpha
-				if r_low > 0 and r_center > 0 and r_high > 0:
-					# Simplified alpha estimation
-					alpha_est = 1 - (r_center / math.sqrt(r_low * r_high))
-					results['Alpha'] = max(0, min(1, abs(alpha_est)))
-
-					# Interpret alpha value
-					if results['Alpha'] < 0.6:
-						results['tissue_homogeneity'] = "High tissue homogeneity"
-					elif results['Alpha'] < 0.8:
-						results['tissue_homogeneity'] = "Moderate tissue homogeneity"
-					else:
-						results['tissue_homogeneity'] = "Low tissue homogeneity (heterogeneous tissue)"
-		except (ValueError, TypeError, ZeroDivisionError, KeyError):
-			pass
-
-		return results
-
-	@staticmethod
-	def generate_clinical_insights(analyses):
-		"""
-		Generate clinical insights based on comprehensive impedance analysis.
-
-		Returns:
-			List of clinical insights with confidence levels
-		"""
-		insights = []
-
-		# Healing trajectory insights
-		if 'healing_trajectory' in analyses:
-			trajectory = analyses['healing_trajectory']
-			if trajectory.get('status') == 'analyzed':
-				if trajectory.get('slope', 0) < -0.3 and trajectory.get('p_value', 1) < 0.05:
-					insights.append({
-						"insight": "Strong evidence of consistent wound healing progression based on impedance trends",
-						"confidence": "High",
-						"recommendation": "Continue current treatment protocol"
-					})
-				elif trajectory.get('slope', 0) > 0.3 and trajectory.get('p_value', 1) < 0.1:
-					insights.append({
-						"insight": "Potential stalling or deterioration in wound healing process",
-						"confidence": "Moderate",
-						"recommendation": "Consider reassessment of treatment approach"
-					})
-
-		# Infection risk insights
-		if 'infection_risk' in analyses:
-			risk = analyses['infection_risk']
-			if risk.get('risk_score', 0) > 50:
-				insights.append({
-					"insight": f"Elevated infection risk detected ({risk.get('risk_score')}%)",
-					"confidence": "Moderate to High",
-					"recommendation": "Consider microbiological assessment and prophylactic measures",
-					"supporting_factors": risk.get('contributing_factors', [])
-				})
-
-		# Tissue composition insights
-		if 'frequency_response' in analyses:
-			freq_response = analyses['frequency_response']
-			if 'interpretation' in freq_response:
-				insights.append({
-					"insight": freq_response['interpretation'],
-					"confidence": "Moderate",
-					"recommendation": "Correlate with clinical assessment of wound bed"
-				})
-
-		# Anomaly detection insights
-		if 'anomalies' in analyses and analyses['anomalies']:
-			for param, anomaly in analyses['anomalies'].items():
-				insights.append({
-					"insight": f"Significant {anomaly.get('direction')} in {anomaly.get('parameter')} detected (z-score: {anomaly.get('z_score', 0):.2f})",
-					"confidence": "High" if abs(anomaly.get('z_score', 0)) > 3 else "Moderate",
-					"clinical_meaning": anomaly.get('interpretation', '')
-				})
-
-		return insights
-
-	@staticmethod
-	def classify_wound_healing_stage(analyses):
-		"""
-		Classify the wound healing stage based on impedance patterns.
-
-		Returns:
-			Dict: Healing stage classification and characteristics
-		"""
-		# Default to inflammatory if we don't have enough data
-		stage = "Inflammatory"
-		characteristics = []
-		confidence = "Low"
-
-		# Get tissue health index
-		tissue_health = analyses.get('tissue_health', (None, ""))
-		health_score = tissue_health[0] if tissue_health else None
-
-		# Get frequency response
-		freq_response = analyses.get('frequency_response', {})
-		alpha = freq_response.get('alpha_dispersion', 0)
-		beta = freq_response.get('beta_dispersion', 0)
-
-		# Get Cole parameters
-		cole_params = analyses.get('cole_parameters', {})
-
-		# Stage classification logic
-		if health_score is not None and freq_response and cole_params:
-			confidence = "Moderate"
-
-			# Inflammatory phase characteristics:
-			# - High alpha dispersion (high extracellular fluid)
-			# - Low tissue health score
-			# - High low/high frequency ratio
-			if alpha > 0.4 and health_score < 40:
-				stage = "Inflammatory"
-				characteristics = [
-					"High extracellular fluid content",
-					"Low tissue health score",
-					"Elevated cellular permeability"
-				]
-				confidence = "High" if alpha > 0.5 and health_score < 30 else "Moderate"
-
-			# Proliferative phase characteristics:
-			# - High beta dispersion (cellular proliferation)
-			# - Moderate tissue health score
-			# - Moderate alpha dispersion
-			elif beta > 0.3 and 40 <= health_score <= 70 and 0.2 <= alpha <= 0.4:
-				stage = "Proliferative"
-				characteristics = [
-					"Active cellular proliferation",
-					"Increasing tissue organization",
-					"Moderate extracellular fluid"
-				]
-				confidence = "High" if beta > 0.4 and health_score > 50 else "Moderate"
-
-			# Remodeling phase characteristics:
-			# - Low alpha dispersion (reduced extracellular fluid)
-			# - High tissue health score
-			# - Low variability in impedance
-			elif alpha < 0.2 and health_score > 70:
-				stage = "Remodeling"
-				characteristics = [
-					"Reduced extracellular fluid",
-					"Improved tissue organization",
-					"Enhanced barrier function"
-				]
-				confidence = "High" if alpha < 0.15 and health_score > 80 else "Moderate"
-
-		return {
-			"stage": stage,
-			"characteristics": characteristics,
-			"confidence": confidence
-		}
-
 class Dashboard:
 	"""Main dashboard application."""
 
@@ -1667,13 +1060,13 @@ class Dashboard:
 			st.plotly_chart(fig, use_container_width=True)
 
 	def _impedance_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
-		"""Render the impedance analysis tab."""
+		"""Render the impedance analysis tab with comprehensive bioimpedance analysis."""
 		st.header("Impedance Analysis")
 
 		if selected_patient == "All Patients":
-			# Existing code for all patients view remains the same
+
 			# Scatter plot: Impedance vs Healing Rate
-			valid_df = df.copy()
+			valid_df = df.copy() # [df['Healing Rate (%)'] < 0].copy()
 			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
 			# Add outlier threshold control
 			col1, _, col3 = st.columns([2,3,3])
@@ -1697,6 +1090,7 @@ class Dashboard:
 					r, p = stats.pearsonr(valid_df['Skin Impedance (kOhms) - Z'], valid_df['Healing Rate (%)'])
 					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
 					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
+					# st.write("Higher impedance values correlate with slower healing rates, especially in diabetic patients")
 
 			# Add consistent diabetes status for each patient
 			first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
@@ -1746,278 +1140,137 @@ class Dashboard:
 				fig2.update_layout(xaxis_title="Wound Type", yaxis_title="Average Impedance Z (kOhms)")
 				st.plotly_chart(fig2, use_container_width=True)
 		else:
-			# For individual patient - Enhanced with advanced bioimpedance analysis
-			patient_id = int(selected_patient.split(" ")[1])
-			patient_data = self.data_processor.get_patient_visits(record_id=patient_id)
+			# For individual patient
+			patient_data = self.data_processor.get_patient_visits(record_id=int(selected_patient.split(" ")[1]))
 			visits = patient_data['visits']
 
-			# Create tabs for different analysis views
-			tab1, tab2, tab3 = st.tabs([
-				"Impedance Measurements",
-				"Clinical Analysis",
-				"Advanced Interpretation"
-			])
+			# Create tabs for different analysis aspects
+			tabs = st.tabs(["Overview", "Tissue Health", "Infection Risk", "Healing Trajectory", "Clinical Insights"])
 
-			with tab1:
-				# Basic impedance visualization with mode selection dropdown
-				st.subheader("Impedance Measurements Over Time")
-
-				# Add measurement mode selector
-				measurement_mode = st.selectbox(
-					"Select Measurement Mode:",
-					["Absolute Impedance (|Z|)", "Resistance", "Capacitance"],
-					key="impedance_mode_selector"
-				)
-
-				# Create impedance chart with selected mode
-				fig = Visualizer.create_impedance_chart(visits, measurement_mode=measurement_mode)
+			with tabs[0]:
+				st.subheader("Impedance Measurements Overview")
+				fig = Visualizer.create_impedance_chart(visits)
+				fig.update_layout(xaxis_title="Visit Number", yaxis_title="Impedance (kOhms)", legend_title="Measurement")
 				st.plotly_chart(fig, use_container_width=True)
 
-				# Add basic interpretation
-				st.markdown("### Measurement Interpretation")
-				st.info("""
-				**Interpreting Impedance Measurements:**
-				- **Absolute Impedance (|Z|)**: Total opposition to electrical current flow
-				- **Resistance**: Opposition from the tissue's ionic content
-				- **Capacitance**: Opposition from cell membranes
+			with tabs[1]:
+				st.subheader("Tissue Health Assessment")
 
-				Lower frequencies (100Hz) primarily measure extracellular fluid, while higher frequencies (80000Hz)
-				penetrate cell membranes to measure both intracellular and extracellular properties.
-				""")
+				# Calculate tissue health metrics
+				for i, visit in enumerate(visits):
+					if i > 0:  # Skip first visit for relative changes
+						prev_visit = visits[i-1]
+						current_imp = visit.get('sensor_data', {}).get('impedance', {})
+						prev_imp = prev_visit.get('sensor_data', {}).get('impedance', {})
 
-			with tab2:
-				st.subheader("Bioimpedance Clinical Analysis")
+						# Calculate relative changes
+						st.write(f"### Visit {visit['visit_date']}")
+						col1, col2 = st.columns(2)
 
-				# Only analyze if we have at least two visits
+						with col1:
+							# Calculate tissue health score (0-100)
+							high_freq = current_imp.get('high_frequency', {})
+							low_freq = current_imp.get('low_frequency', {})
+
+							if high_freq.get('Z') and low_freq.get('Z'):
+								ratio = float(low_freq['Z']) / float(high_freq['Z'])
+								health_score = max(0, min(100, (1 - (ratio - 1)) * 100))
+								st.metric("Tissue Health Score", f"{health_score:.1f}/100")
+
+						with col2:
+							# Calculate phase angle if available
+							center_freq = current_imp.get('center_frequency', {})
+							if center_freq.get('resistance') and center_freq.get('capacitance'):
+								phase_angle = np.arctan2(float(center_freq['capacitance']), float(center_freq['resistance'])) * 180 / np.pi
+								st.metric("Phase Angle", f"{phase_angle:.1f}°")
+
+			with tabs[2]:
+				st.subheader("Infection Risk Monitoring")
+
+				for visit in visits:
+					imp_data = visit.get('sensor_data', {}).get('impedance', {})
+					st.write(f"### Visit {visit['visit_date']}")
+
+					# Calculate infection risk score
+					high_freq = imp_data.get('high_frequency', {})
+					low_freq = imp_data.get('low_frequency', {})
+
+					if high_freq.get('Z') and low_freq.get('Z'):
+						ratio = float(low_freq['Z']) / float(high_freq['Z'])
+						risk_level = "High" if ratio > 15 else "Moderate" if ratio > 10 else "Low"
+						st.warning(f"Infection Risk Level: {risk_level}")
+						st.write(f"Low/High Frequency Ratio: {ratio:.2f}")
+
+			with tabs[3]:
+				st.subheader("Healing Trajectory Analysis")
+
+				# Prepare data for regression
+				dates = []
+				high_freq_values = []
+
+				for visit in visits:
+					imp_data = visit.get('sensor_data', {}).get('impedance', {}).get('high_frequency', {})
+					if imp_data.get('Z'):
+						dates.append(pd.to_datetime(visit['visit_date']))
+						high_freq_values.append(float(imp_data['Z']))
+
+				if len(dates) >= 2:
+					# Perform regression analysis
+					X = np.array([(d - dates[0]).days for d in dates]).reshape(-1, 1)
+					y = np.array(high_freq_values)
+					model = LinearRegression()
+					model.fit(X, y)
+					r2 = model.score(X, y)
+					slope = model.coef_[0]
+
+					# Classify trajectory
+					if slope < 0 and r2 > 0.7:
+						trajectory = "Strong healing progression"
+					elif slope < 0 and r2 > 0.5:
+						trajectory = "Moderate improvement"
+					elif abs(slope) < 0.1:
+						trajectory = "Stagnation"
+					else:
+						trajectory = "Deterioration"
+
+					st.success(f"Healing Trajectory: {trajectory}")
+					st.write(f"R² value: {r2:.3f}")
+
+			with tabs[4]:
+				st.subheader("Clinical Insights")
+
+				# Generate clinical insights based on all analyses
 				if len(visits) >= 2:
-					# Pick most recent visit for current analysis
-					current_visit = visits[-1]
-					previous_visit = visits[-2]
+					latest_visit = visits[-1]
+					prev_visit = visits[-2]
 
-					# Perform analyses
-					tissue_health = ImpedanceAnalyzer.calculate_tissue_health_index(current_visit)
-					infection_risk = ImpedanceAnalyzer.assess_infection_risk(current_visit, previous_visit)
-					freq_response = ImpedanceAnalyzer.analyze_frequency_response(current_visit)
-					changes, significant = ImpedanceAnalyzer.calculate_visit_changes(current_visit, previous_visit)
+					# Extract impedance data
+					current_imp = latest_visit.get('sensor_data', {}).get('impedance', {})
+					prev_imp = prev_visit.get('sensor_data', {}).get('impedance', {})
 
-					# Display Tissue Health Index
-					col1, col2 = st.columns(2)
-					with col1:
-						st.markdown("### Tissue Health Assessment")
-						health_score, health_interp = tissue_health
+					# Generate insights
+					st.write("### Key Clinical Insights")
 
-						if health_score is not None:
-							# Create a color scale for the health score
-							color = "red" if health_score < 40 else "orange" if health_score < 60 else "green"
-							st.markdown(f"**Tissue Health Index:** <span style='color:{color};font-weight:bold'>{health_score:.1f}/100</span>", unsafe_allow_html=True)
-							st.markdown(f"**Interpretation:** {health_interp}")
+					# Analyze tissue composition
+					high_freq = current_imp.get('high_frequency', {})
+					low_freq = current_imp.get('low_frequency', {})
+
+					if high_freq.get('Z') and low_freq.get('Z'):
+						ratio = float(low_freq['Z']) / float(high_freq['Z'])
+						if ratio > 15:
+							st.error("⚠️ High risk of infection - immediate attention required")
+						elif ratio > 10:
+							st.warning("⚠️ Elevated infection risk - close monitoring recommended")
+
+					# Analyze healing stage
+					if high_freq.get('Z') and prev_imp.get('high_frequency', {}).get('Z'):
+						change = (float(high_freq['Z']) - float(prev_imp['high_frequency']['Z'])) / float(prev_imp['high_frequency']['Z']) * 100
+						if change < -15:
+							st.success("✅ Active healing - significant improvement in tissue integrity")
+						elif change > 15:
+							st.error("⚠️ Possible deterioration - review treatment plan")
 						else:
-							st.warning("Insufficient data for tissue health calculation")
-
-					with col2:
-						st.markdown("### Infection Risk Assessment")
-						risk_score = infection_risk["risk_score"]
-						risk_level = infection_risk["risk_level"]
-
-						# Create a color scale for the risk score
-						risk_color = "green" if risk_score < 30 else "orange" if risk_score < 60 else "red"
-						st.markdown(f"**Infection Risk Score:** <span style='color:{risk_color};font-weight:bold'>{risk_score:.1f}/100</span>", unsafe_allow_html=True)
-						st.markdown(f"**Risk Level:** {risk_level}")
-
-						# Display contributing factors if any
-						factors = infection_risk["contributing_factors"]
-						if factors:
-							st.markdown("**Contributing Factors:**")
-							for factor in factors:
-								st.markdown(f"- {factor}")
-
-					# Display Tissue Composition Analysis
-					st.markdown("### Tissue Composition Analysis")
-					st.info(freq_response['interpretation'])
-
-					# Display changes since last visit
-					st.markdown("### Changes Since Previous Visit")
-
-					if changes:
-						change_cols = st.columns(3)
-						col_idx = 0
-
-						for key, change in changes.items():
-							with change_cols[col_idx % 3]:
-								# Format parameter name for display
-								param_parts = key.split('_')
-								param_name = param_parts[0].capitalize()
-								freq_name = ' '.join(param_parts[1:]).replace('_', ' ').capitalize()
-
-								# Format the value with correct sign and style
-								direction = "increase" if change > 0 else "decrease"
-								arrow = "↑" if change > 0 else "↓"
-								color = "red" if change > 0 else "green"  # In most cases, decreasing is good
-
-								# Check if clinically significant
-								sig_badge = ""
-								if significant.get(key, False):
-									sig_badge = "🔔 "
-
-								st.markdown(f"**{sig_badge}{param_name} ({freq_name}):**")
-								st.markdown(f"<span style='color:{color};font-weight:bold'>{arrow} {abs(change)*100:.1f}%</span> {direction}", unsafe_allow_html=True)
-
-							col_idx += 1
-					else:
-						st.warning("No comparable data from previous visit")
-				else:
-					st.warning("At least two visits are required for clinical analysis")
-
-			with tab3:
-				st.subheader("Advanced Bioelectrical Interpretation")
-
-				if len(visits) >= 3:
-					# Perform advanced analyses
-					healing_trajectory = ImpedanceAnalyzer.analyze_healing_trajectory(visits)
-					anomalies = ImpedanceAnalyzer.detect_impedance_anomalies(visits[:-1], visits[-1])
-					cole_params = ImpedanceAnalyzer.calculate_cole_parameters(visits[-1])
-
-					# Consolidate all analyses for insight generation
-					all_analyses = {
-						'healing_trajectory': healing_trajectory,
-						'tissue_health': ImpedanceAnalyzer.calculate_tissue_health_index(visits[-1]),
-						'infection_risk': ImpedanceAnalyzer.assess_infection_risk(visits[-1], visits[-2] if len(visits) > 1 else None),
-						'frequency_response': ImpedanceAnalyzer.analyze_frequency_response(visits[-1]),
-						'anomalies': anomalies,
-						'cole_parameters': cole_params
-					}
-
-					# Generate comprehensive clinical insights
-					insights = ImpedanceAnalyzer.generate_clinical_insights(all_analyses)
-					healing_stage = ImpedanceAnalyzer.classify_wound_healing_stage(all_analyses)
-
-					# Display healing trajectory
-					if healing_trajectory['status'] == 'analyzed':
-						st.markdown("### Healing Trajectory Analysis")
-
-						# Create simple line chart with trend line
-						import plotly.graph_objects as go
-						import numpy as np
-
-						dates = healing_trajectory['dates']
-						values = healing_trajectory['values']
-
-						fig = go.Figure()
-						fig.add_trace(go.Scatter(
-							x=list(range(len(dates))),
-							y=values,
-							mode='lines+markers',
-							name='Impedance',
-							hovertext=dates
-						))
-
-						# Add trend line
-						x = np.array(range(len(values)))
-						y = healing_trajectory['slope'] * x + np.mean(values)
-						fig.add_trace(go.Scatter(
-							x=x,
-							y=y,
-							mode='lines',
-							name='Trend',
-							line=dict(color='red', dash='dash')
-						))
-
-						fig.update_layout(
-							title="Impedance Trend Over Time",
-							xaxis_title="Visit Number",
-							yaxis_title="High-Frequency Impedance (Z)",
-							hovermode="x unified"
-						)
-
-						st.plotly_chart(fig, use_container_width=True)
-
-						# Display statistical results
-						col1, col2 = st.columns(2)
-						with col1:
-							slope_color = "green" if healing_trajectory['slope'] < 0 else "red"
-							st.markdown(f"**Trend Slope:** <span style='color:{slope_color}'>{healing_trajectory['slope']:.4f}</span>", unsafe_allow_html=True)
-							st.markdown(f"**Statistical Significance:** p = {healing_trajectory['p_value']:.4f}")
-
-						with col2:
-							st.markdown(f"**R² Value:** {healing_trajectory['r_squared']:.4f}")
-							st.info(healing_trajectory['interpretation'])
-
-					# Display Wound Healing Stage Classification
-					st.markdown("### Wound Healing Stage Classification")
-					stage_colors = {
-						"Inflammatory": "red",
-						"Proliferative": "orange",
-						"Remodeling": "green"
-					}
-
-					stage_color = stage_colors.get(healing_stage['stage'], "blue")
-					st.markdown(f"**Current Stage:** <span style='color:{stage_color};font-weight:bold'>{healing_stage['stage']}</span> (Confidence: {healing_stage['confidence']})", unsafe_allow_html=True)
-
-					if healing_stage['characteristics']:
-						st.markdown("**Characteristics:**")
-						for char in healing_stage['characteristics']:
-							st.markdown(f"- {char}")
-
-					# Display Cole-Cole parameters if available
-					if cole_params:
-						st.markdown("### Tissue Electrical Properties")
-						col1, col2 = st.columns(2)
-
-						with col1:
-							if 'R0' in cole_params:
-								st.markdown(f"**Extracellular Resistance (R₀):** {cole_params['R0']:.2f} Ω")
-							if 'Rinf' in cole_params:
-								st.markdown(f"**Total Resistance (R∞):** {cole_params['Rinf']:.2f} Ω")
-
-						with col2:
-							if 'Cm' in cole_params:
-								st.markdown(f"**Membrane Capacitance:** {cole_params['Cm']:.2e} F")
-							if 'Alpha' in cole_params:
-								st.markdown(f"**Tissue Heterogeneity (α):** {cole_params['Alpha']:.2f}")
-								st.info(cole_params.get('tissue_homogeneity', ''))
-
-					# Display comprehensive clinical insights
-					st.markdown("### Clinical Insights")
-
-					if insights:
-						for i, insight in enumerate(insights):
-							with st.expander(f"Clinical Insight {i+1}: {insight['insight'][:50]}...", expanded=i==0):
-								st.markdown(f"**Insight:** {insight['insight']}")
-								st.markdown(f"**Confidence:** {insight['confidence']}")
-								if 'recommendation' in insight:
-									st.markdown(f"**Recommendation:** {insight['recommendation']}")
-								if 'supporting_factors' in insight and insight['supporting_factors']:
-									st.markdown("**Supporting Factors:**")
-									for factor in insight['supporting_factors']:
-										st.markdown(f"- {factor}")
-								if 'clinical_meaning' in insight:
-									st.markdown(f"**Clinical Interpretation:** {insight['clinical_meaning']}")
-					else:
-						st.info("No significant clinical insights generated from current data.")
-				else:
-					st.warning("At least three visits are required for advanced analysis")
-
-				# Add clinical reference information
-				with st.expander("Bioimpedance Reference Information", expanded=False):
-					st.markdown("""
-					### Interpreting Impedance Parameters
-
-					**Frequency Significance:**
-					- **Low Frequency (100Hz):** Primarily reflects extracellular fluid and tissue properties
-					- **Center Frequency:** Reflects the maximum reactance point, varies based on tissue composition
-					- **High Frequency (80000Hz):** Penetrates cell membranes, reflects total tissue properties
-
-					**Clinical Correlations:**
-					- **Decreasing High-Frequency Impedance:** Often associated with improved healing
-					- **Increasing Low-to-High Frequency Ratio:** May indicate inflammation or infection
-					- **Decreasing Phase Angle:** May indicate deterioration in cellular health
-					- **Increasing Alpha Parameter:** Often indicates increasing tissue heterogeneity
-
-					**Reference Ranges:**
-					- **Healthy Tissue Low/High Ratio:** 5-12
-					- **Optimal Phase Angle:** 5-7 degrees
-					- **Typical Alpha Range:** 0.6-0.8
-					""")
+							st.info("ℹ️ Stable condition - continue current treatment")
 
 	def _temperature_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""Render the temperature analysis tab."""
