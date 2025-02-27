@@ -1032,70 +1032,114 @@ class ImpedanceAnalyzer:
 		"""
 		Calculate tissue health index based on multi-frequency impedance ratios.
 
+		This function uses the following steps:
+		1. Extract impedance data from the visit's sensor data.
+		2. Calculate the ratio of low to high frequency impedance (LF/HF ratio).
+		3. Calculate phase angle if resistance and capacitance data are available.
+		4. Normalize the LF/HF ratio and phase angle to a 0-100 scale.
+		5. Combine these scores (with weightings) to produce a final health score.
+		6. Provide an interpretation based on the health score.
+
+		Args:
+			visit (dict): A dictionary containing visit data, including sensor readings.
+
 		Returns:
-			Tuple: (health_score, interpretation)
+			tuple: A tuple containing:
+				- health_score (float): A value between 0-100 representing tissue health.
+				- interpretation (str): A textual interpretation of the health score.
 		"""
-		sensor_data = visit.get('sensor_data', {})
+		sensor_data    = visit.get('sensor_data', {})
 		impedance_data = sensor_data.get('impedance', {})
 
 		# Extract absolute impedance at different frequencies
-		low_freq = impedance_data.get('low_frequency', {})
+		low_freq  = impedance_data.get('low_frequency', {})
 		high_freq = impedance_data.get('high_frequency', {})
 
-		try:
-			low_z = float(low_freq.get('Z', 0))
-			high_z = float(high_freq.get('Z', 0))
+		low_z  = low_freq.get('Z', 0)
+		high_z = high_freq.get('Z', 0)
 
-			if low_z > 0 and high_z > 0:
-				# Calculate low/high frequency ratio
-				lf_hf_ratio = low_z / high_z
+		if low_z is None or high_z is None:
+			return None, "Insufficient data for tissue health calculation"
 
-				# Calculate phase angle if resistance and reactance available
-				phase_angle = None
-				if 'resistance' in high_freq and 'capacitance' in high_freq:
-					r = float(high_freq.get('resistance', 0))
-					c = float(high_freq.get('capacitance', 0))
-					if r > 0 and c > 0:
-						# Approximate phase angle calculation
-						import math
-						# Using arctan(1/(2πfRC))
-						f = float(high_freq.get('frequency', 80000))
-						phase_angle = math.atan(1/(2 * math.pi * f * r * c)) * (180/math.pi)
+		low_z  = float(low_z)
+		high_z = float(high_z)
 
-				# Normalize scores to 0-100 scale
-				# Typical healthy ratio range: 5-12
-				ratio_score = max(0, min(100, (1 - (lf_hf_ratio - 5) / 7) * 100)) if 5 <= lf_hf_ratio <= 12 else max(0, 50 - abs(lf_hf_ratio - 8.5) * 5)
+		if low_z > 0 and high_z > 0:
+			# Calculate low/high frequency ratio
+			lf_hf_ratio = low_z / high_z
 
-				if phase_angle:
-					# Typical healthy phase angle range: 5-7 degrees
-					phase_score = max(0, min(100, (phase_angle / 7) * 100))
-					health_score = (ratio_score * 0.6) + (phase_score * 0.4)  # Weighted average
-				else:
-					health_score = ratio_score
+			# Calculate phase angle if resistance and reactance available
+			phase_angle = None
+			if 'resistance' in high_freq and 'capacitance' in high_freq:
+				r = float(high_freq.get('resistance', 0))
+				c = float(high_freq.get('capacitance', 0))
+				if r > 0 and c > 0:
+					# Approximate phase angle calculation
+					import math
+					# Using arctan(1/(2πfRC))
+					f = float(high_freq.get('frequency', 80000))
+					phase_angle = math.atan(1/(2 * math.pi * f * r * c)) * (180/math.pi)
 
-				# Interpretation
-				if health_score >= 80:
-					interpretation = "Excellent tissue health"
-				elif health_score >= 60:
-					interpretation = "Good tissue health"
-				elif health_score >= 40:
-					interpretation = "Moderate tissue health"
-				elif health_score >= 20:
-					interpretation = "Poor tissue health"
-				else:
-					interpretation = "Very poor tissue health"
+			# Normalize scores to 0-100 scale
+			# Typical healthy ratio range: 5-12
+			# This formula is based on bioimpedance analysis principles in wound healing:
+			# - LF/HF ratio typically ranges from 5-12 in healthy tissue
+			# - Optimal ratio is around 8.5 (midpoint of healthy range)
+			# - Scores decrease as ratio deviates from this range
+			# Within 5-12 range: Linear scaling from 100 (at 5) to 0 (at 12)
+			# Outside range: Penalty increases with distance from optimal ratio
+			ratio_score = max(0, min(100, (1 - (lf_hf_ratio - 5) / 7) * 100)) if 5 <= lf_hf_ratio <= 12 else max(0, 50 - abs(lf_hf_ratio - 8.5) * 5)
 
-				return health_score, interpretation
+			if phase_angle:
+				# Typical healthy phase angle range: 5-7 degrees
+				# Phase angle calculation logic:
+				# - Typical healthy phase angle range: 5-7 degrees
+				# - Linear scaling from 0 to 100 as phase angle increases from 0 to 7 degrees
+				# - Values above 7 degrees are capped at 100
+				# - This approach assumes that higher phase angles (up to 7 degrees) indicate better tissue health
+				phase_score = max(0, min(100, (phase_angle / 7) * 100))
+				health_score = (ratio_score * 0.6) + (phase_score * 0.4)  # Weighted average
+			else:
+				health_score = ratio_score
 
-		except (ValueError, TypeError, ZeroDivisionError):
-			pass
+			# Interpretation
+			if health_score >= 80:
+				interpretation = "Excellent tissue health"
+			elif health_score >= 60:
+				interpretation = "Good tissue health"
+			elif health_score >= 40:
+				interpretation = "Moderate tissue health"
+			elif health_score >= 20:
+				interpretation = "Poor tissue health"
+			else:
+				interpretation = "Very poor tissue health"
 
+			return health_score, interpretation
+
+		# except (ValueError, TypeError, ZeroDivisionError):
+		# 	pass
 		return None, "Insufficient data for tissue health calculation"
 
 	@staticmethod
 	def analyze_healing_trajectory(visits):
 		"""
 		Analyze the healing trajectory using regression analysis of impedance values over time.
+
+		This function employs bioelectrical impedance analysis (BIA) principles to assess wound healing:
+		1. High-frequency impedance (Z) is extracted from each visit, as it best reflects overall tissue health.
+		2. Linear regression is performed on Z values over time to determine the healing trend.
+		3. The slope of the regression line indicates the rate of change in tissue composition:
+			- Negative slope: Generally indicates healing (decreasing impedance over time).
+			- Positive slope: May indicate deterioration or complications.
+		4. Statistical significance (p-value) and goodness of fit (R-squared) are calculated to assess the reliability of the trend.
+		5. Clinical interpretation is based on both the magnitude of the slope and its statistical significance:
+			- Strong healing: Slope < -0.5 ohms/day, p < 0.05
+			- Moderate healing: Slope < -0.2 ohms/day, p < 0.10
+			- Potential deterioration: Slope > 0.5 ohms/day, p < 0.05
+			- No significant trend: Other cases
+
+		This approach allows for quantitative assessment of wound healing progression over time,
+		providing clinicians with objective data to supplement visual wound assessment.
 
 		Returns:
 			Dict: Analysis results including slope, significance, and interpretation
@@ -1106,10 +1150,7 @@ class ImpedanceAnalyzer:
 		import numpy as np
 		from scipy import stats
 
-		# Extract high frequency impedance values
-		dates = []
-		z_values = []
-
+		dates, z_values = [], []
 		for visit in visits:
 			try:
 				high_freq = visit.get('sensor_data', {}).get('impedance', {}).get('high_frequency', {})
@@ -1158,8 +1199,41 @@ class ImpedanceAnalyzer:
 		"""
 		Analyze the pattern of impedance across different frequencies to assess tissue composition.
 
+		This function utilizes bioelectrical impedance analysis (BIA) principles to evaluate
+		tissue characteristics based on the frequency-dependent response to electrical current.
+		It focuses on two key dispersion regions:
+
+		1. Alpha Dispersion (low to center frequency):
+			- Occurs in the kHz range
+			- Reflects extracellular fluid content and cell membrane permeability
+			- Large alpha dispersion may indicate edema or inflammation
+			- Formula: alpha_dispersion = (Z_low - Z_center) / Z_low
+
+		2. Beta Dispersion (center to high frequency):
+			- Occurs in the MHz range
+			- Reflects cellular density and intracellular properties
+			- Large beta dispersion may indicate increased cellular content or structural changes
+			- Formula: beta_dispersion = (Z_center - Z_high) / Z_center
+
+		The function calculates these dispersion ratios and interprets them to assess tissue
+		composition, providing insights into potential edema, cellular density, or active
+		tissue remodeling.
+
+		Interpretation logic:
+		- If alpha_dispersion > 0.4 and beta_dispersion < 0.2:
+			"High extracellular fluid content, possible edema"
+		- If alpha_dispersion < 0.2 and beta_dispersion > 0.3:
+			"High cellular density, possible granulation"
+		- If alpha_dispersion > 0.3 and beta_dispersion > 0.3:
+			"Mixed tissue composition, active remodeling"
+		- Otherwise:
+			"Normal tissue composition pattern"
+
+		Args:
+			visit (dict): A dictionary containing visit data, including sensor readings.
+
 		Returns:
-			Dict: Dispersion characteristics and interpretation
+			dict: Dispersion characteristics and interpretation of tissue composition.
 		"""
 		results = {}
 		sensor_data    = visit.get('sensor_data', {})
@@ -1171,31 +1245,40 @@ class ImpedanceAnalyzer:
 		high_freq   = impedance_data.get('high_frequency', {})
 
 		try:
-			z_low    = float(low_freq.get('Z', 0))
-			z_center = float(center_freq.get('Z', 0))
-			z_high   = float(high_freq.get('Z', 0))
+			z_low    = low_freq.get('Z')
+			z_center = center_freq.get('Z')
+			z_high   = high_freq.get('Z')
 
-			if z_low > 0 and z_center > 0 and z_high > 0:
-				# Calculate alpha dispersion (low-to-center frequency drop)
-				alpha_dispersion = (z_low - z_center) / z_low
+			# First check if all values are not None
+			if z_low is not None and z_center is not None and z_high is not None:
+				# Then convert to float
+				z_low    = float(z_low)
+				z_center = float(z_center)
+				z_high   = float(z_high)
 
-				# Calculate beta dispersion (center-to-high frequency drop)
-				beta_dispersion = (z_center - z_high) / z_center
+				if z_low > 0 and z_center > 0 and z_high > 0:
+					# Calculate alpha dispersion (low-to-center frequency drop)
+					alpha_dispersion = (z_low - z_center) / z_low
 
-				results['alpha_dispersion'] = alpha_dispersion
-				results['beta_dispersion']  = beta_dispersion
+					# Calculate beta dispersion (center-to-high frequency drop)
+					beta_dispersion = (z_center - z_high) / z_center
 
-				# Interpret dispersion patterns
-				if alpha_dispersion > 0.4 and beta_dispersion < 0.2:
-					results['interpretation'] = "High extracellular fluid content, possible edema"
-				elif alpha_dispersion < 0.2 and beta_dispersion > 0.3:
-					results['interpretation'] = "High cellular density, possible granulation"
-				elif alpha_dispersion > 0.3 and beta_dispersion > 0.3:
-					results['interpretation'] = "Mixed tissue composition, active remodeling"
+					results['alpha_dispersion'] = alpha_dispersion
+					results['beta_dispersion']  = beta_dispersion
+
+					# Interpret dispersion patterns
+					if alpha_dispersion > 0.4 and beta_dispersion < 0.2:
+						results['interpretation'] = "High extracellular fluid content, possible edema"
+					elif alpha_dispersion < 0.2 and beta_dispersion > 0.3:
+						results['interpretation'] = "High cellular density, possible granulation"
+					elif alpha_dispersion > 0.3 and beta_dispersion > 0.3:
+						results['interpretation'] = "Mixed tissue composition, active remodeling"
+					else:
+						results['interpretation'] = "Normal tissue composition pattern"
 				else:
-					results['interpretation'] = "Normal tissue composition pattern"
+					results['interpretation'] = "Insufficient frequency data for analysis (zero values)"
 			else:
-				results['interpretation'] = "Insufficient frequency data for analysis"
+				results['interpretation'] = "Insufficient frequency data for analysis (missing values)"
 		except (ValueError, TypeError, ZeroDivisionError) as e:
 			error_message = f"Error processing frequency response data: {type(e).__name__}: {str(e)}"
 			print(error_message)  # For console debugging
@@ -1294,9 +1377,32 @@ class ImpedanceAnalyzer:
 		"""
 		Assess the risk of wound infection based on impedance parameters.
 
+		This function evaluates infection risk using three key factors:
+		1. Low/high frequency impedance ratio: A ratio > 15 is associated with increased infection risk.
+			This is based on the principle that infected tissues show altered electrical properties,
+			particularly at different frequencies.
+		2. Sudden increase in low-frequency resistance: A >30% increase may indicate an inflammatory response,
+			which could be a sign of infection. This is because inflammation causes changes in tissue
+			fluid content and cellular composition, affecting electrical resistance.
+		3. Phase angle: Lower phase angles (<3°) indicate less healthy or more damaged tissue,
+			which may be more susceptible to infection.
+
+		These criteria are derived from bioimpedance studies in wound healing and infection detection.
+		The risk score is a weighted sum of these factors, providing a quantitative measure of infection risk.
+
+		The function calculates a risk score (0-100) based on these factors and interprets it as follows:
+		- 60-100: High infection risk
+		- 30-59: Moderate infection risk
+		- 0-29: Low infection risk
+
+		Args:
+			current_visit (dict): Data from the current visit.
+			previous_visit (dict, optional): Data from the previous visit for comparison.
+
 		Returns:
-			Dict: Risk score, level, and contributing factors
+			dict: Contains risk score, risk level, and contributing factors.
 		"""
+
 		risk_score = 0
 		factors = []
 
@@ -1347,14 +1453,21 @@ class ImpedanceAnalyzer:
 
 			if r > 0 and c > 0:
 				import math
+				# Phase angle calculation based on the complex impedance model
+				# It represents the phase difference between voltage and current in AC circuits
+				# Lower phase angles indicate less healthy or more damaged tissue
 				phase_angle = math.atan(1/(2 * math.pi * f * r * c)) * (180/math.pi)
 
-				if phase_angle < 2:  # Low phase angles are associated with poor tissue health
+				# Phase angle thresholds based on bioimpedance literature:
+				# <2°: Indicates severe tissue damage or very poor health
+				# 2-3°: Suggests compromised tissue health
+				# >3°: Generally associated with healthier tissue
+				if phase_angle < 2:
 					risk_score += 30
-					factors.append("Very low phase angle")
+					factors.append("Very low phase angle (<2°): Indicates severe tissue damage")
 				elif phase_angle < 3:
 					risk_score += 15
-					factors.append("Low phase angle")
+					factors.append("Low phase angle (2-3°): Suggests compromised tissue health")
 		except (ValueError, TypeError, ZeroDivisionError):
 			pass
 
@@ -1510,8 +1623,31 @@ class ImpedanceAnalyzer:
 		"""
 		Classify the wound healing stage based on impedance patterns.
 
+		This function uses bioimpedance analysis to determine the wound healing stage.
+		The classification is based on three key parameters:
+
+		1. Tissue Health Index: A composite score derived from multi-frequency
+		   impedance ratios. Higher scores indicate healthier tissue.
+
+		2. Alpha Dispersion: Reflects the amount of extracellular fluid and cell
+		   membrane permeability. High values indicate inflammation.
+
+		3. Beta Dispersion: Indicates cellular proliferation and tissue organization.
+		   Higher values suggest active cell growth and wound repair.
+
+		The stages are classified as follows:
+		- Inflammatory: High alpha dispersion, low tissue health score
+		- Proliferative: High beta dispersion, moderate tissue health and alpha dispersion
+		- Remodeling: Low alpha dispersion, high tissue health score
+
+		Confidence levels are assigned based on the strength of these indicators.
+
+		Args:
+			analyses (dict): Dictionary containing tissue health, frequency response,
+							 and Cole parameters from impedance analysis.
+
 		Returns:
-			Dict: Healing stage classification and characteristics
+			Dict: Healing stage classification, characteristics, and confidence level.
 		"""
 		# Default to inflammatory if we don't have enough data
 		stage = "Inflammatory"
@@ -1815,9 +1951,9 @@ class Dashboard:
 							previous_visit = visits[visit_idx-1] if visit_idx > 0 else None
 
 							# Perform analyses
-							tissue_health = ImpedanceAnalyzer.calculate_tissue_health_index(current_visit)
+							tissue_health  = ImpedanceAnalyzer.calculate_tissue_health_index(current_visit)
 							infection_risk = ImpedanceAnalyzer.assess_infection_risk(current_visit, previous_visit)
-							freq_response = ImpedanceAnalyzer.analyze_frequency_response(current_visit)
+							freq_response  = ImpedanceAnalyzer.analyze_frequency_response(current_visit)
 
 							# Only calculate changes if there's a previous visit
 							changes = {}
@@ -1828,7 +1964,16 @@ class Dashboard:
 							# Display Tissue Health Index
 							col1, col2 = st.columns(2)
 							with col1:
-								st.markdown("### Tissue Health Assessment")
+								st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios. The process involves: "
+								"1) Extracting impedance data from sensor readings. "
+								"2) Calculating the ratio of low to high frequency impedance (LF/HF ratio). "
+								"3) Calculating phase angle if resistance and capacitance data are available. "
+								"4) Normalizing the LF/HF ratio and phase angle to a 0-100 scale. "
+								"5) Combining these scores with weightings to produce a final health score. "
+								"6) Providing an interpretation based on the health score. "
+								"The final score ranges from 0-100, with higher scores indicating better tissue health.")
+
+
 								health_score, health_interp = tissue_health
 
 								if health_score is not None:
@@ -1840,7 +1985,15 @@ class Dashboard:
 									st.warning("Insufficient data for tissue health calculation")
 
 							with col2:
-								st.markdown("### Infection Risk Assessment")
+								st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on three key factors: "
+								"1. Low/high frequency impedance ratio: A ratio > 15 is associated with increased infection risk."
+								"2. Sudden increase in low-frequency resistance: A >30% increase may indicate an inflammatory response, "
+								"which could be a sign of infection. This is because inflammation causes changes in tissue"
+								"electrical properties, particularly at different frequencies."
+								"3. Phase angle: Lower phase angles (<3°) indicate less healthy or more damaged tissue,"
+								"which may be more susceptible to infection."
+								"The risk score is a weighted sum of these factors, providing a quantitative measure of infection risk."
+								"The final score ranges from 0-100, with higher scores indicating higher infection risk.")
 								risk_score = infection_risk["risk_score"]
 								risk_level = infection_risk["risk_level"]
 
@@ -1857,19 +2010,29 @@ class Dashboard:
 										st.markdown(f"- {factor}")
 
 							# Display Tissue Composition Analysis
-							st.markdown("### Tissue Composition Analysis")
+							st.markdown("### Tissue Composition Analysis", help="""This analysis utilizes bioelectrical impedance analysis (BIA) principles to evaluate
+							tissue characteristics based on the frequency-dependent response to electrical current.
+							It focuses on two key dispersion regions:
+							1. Alpha Dispersion (low to center frequency): Occurs in the kHz range, reflects extracellular fluid content and cell membrane permeability.
+							Large alpha dispersion may indicate edema or inflammation.
+							2. Beta Dispersion (center to high frequency): Occurs in the MHz range, reflects cell membrane properties and intracellular fluid content.
+							Changes in beta dispersion can indicate alterations in cell structure or function.""")
+
 							st.info(freq_response['interpretation'])
 
 							# Display changes since last visit (only if there's a previous visit)
 							if previous_visit:
-								st.markdown("### Changes Since Previous Visit")
+								st.markdown("#### Changes Since Previous Visit", help="The changes since previous visit are based on bioelectrical impedance analysis (BIA) principles to evaluate "
+								"the composition of biological tissues based on the frequency-dependent response to electrical current.")
+
+								# st.info(changes['interpretation'])
 
 								# TODO: check why patient 43, visit 11-25-2024 shows changes for resitance and capacitance even though the prior visit only should've had the Z value.
 								if changes:
 									# Create a structured data dictionary to organize by frequency and parameter
 									data_by_freq = {
-										"Low Freq": {"Z": None, "Resistance": None, "Capacitance": None},
-										"Mid Freq": {"Z": None, "Resistance": None, "Capacitance": None},
+										"Low Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
+										"Mid Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
 										"High Freq": {"Z": None, "Resistance": None, "Capacitance": None},
 									}
 
@@ -1969,7 +2132,20 @@ class Dashboard:
 
 					# Display healing trajectory
 					if healing_trajectory['status'] == 'analyzed':
-						st.markdown("### Healing Trajectory Analysis")
+						st.markdown("### Healing Trajectory Analysis", help="""
+						The healing trajectory analysis uses bioelectrical impedance analysis (BIA) principles to assess wound healing:
+						1. High-frequency impedance (Z) is extracted from each visit, reflecting overall tissue health.
+						2. Linear regression is performed on Z values over time to determine the healing trend.
+						3. The slope indicates the rate of change in tissue composition:
+							- Negative slope: Generally indicates healing (decreasing impedance over time).
+							- Positive slope: May indicate deterioration or complications.
+						4. Statistical significance (p-value) and goodness of fit (R-squared) are calculated.
+						5. Clinical interpretation is based on slope magnitude and statistical significance:
+							- Strong healing: Slope < -0.5 ohms/day, p < 0.05
+							- Moderate healing: Slope < -0.2 ohms/day, p < 0.10
+							- Potential deterioration: Slope > 0.5 ohms/day, p < 0.05
+							- No significant trend: Other cases
+						""")
 
 						dates = healing_trajectory['dates']
 						values = healing_trajectory['values']
@@ -2026,13 +2202,16 @@ class Dashboard:
 					st.markdown(f"**Current Stage:** <span style='color:{stage_color};font-weight:bold'>{healing_stage['stage']}</span> (Confidence: {healing_stage['confidence']})", unsafe_allow_html=True)
 
 					if healing_stage['characteristics']:
-						st.markdown("**Characteristics:**")
+						st.markdown("**Characteristics:**", help="Key indicators of the current wound healing stage based on bioimpedance analysis. These include tissue health index, alpha dispersion (reflecting extracellular fluid and cell membrane permeability), and beta dispersion (indicating cellular proliferation and tissue organization).")
 						for char in healing_stage['characteristics']:
 							st.markdown(f"- {char}")
 
 					# Display Cole-Cole parameters if available
 					if cole_params:
-						st.markdown("### Tissue Electrical Properties")
+						st.markdown("### Tissue Electrical Properties", help="""The Cole-Cole plot is a graphical representation of the frequency-dependent impedance of a tissue.
+						It shows how the impedance changes with frequency, allowing for the identification of alpha and beta dispersion regions.
+						Alpha dispersion is associated with extracellular fluid content and cell membrane permeability, while beta dispersion is related to cell structure and fluid content.
+						Changes in these dispersion regions can indicate changes in tissue composition or cell health.""")
 						col1, col2 = st.columns(2)
 
 						with col1:
