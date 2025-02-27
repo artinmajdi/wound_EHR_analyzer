@@ -12,8 +12,11 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Tuple, Any
 from data_processor import WoundDataProcessor
 from llm_interface import WoundAnalysisLLM, create_and_save_report, download_word_report
+from column_schema import DataColumns
 import pdb  # Debug mode disabled
-
+import pandas as pd
+import plotly.graph_objects as go
+import numpy as np
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
 
@@ -24,6 +27,7 @@ class Config:
 	PAGE_ICON: str = "🩹"
 	LAYOUT: str = "wide"
 	DATA_PATH: Optional[pathlib.Path] = pathlib.Path('/Users/artinmajdi/Documents/GitHubs/postdoc/Wound_management_interpreter_LLM/dataset')
+	COLUMN_SCHEMA: DataColumns = field(default_factory=DataColumns)
 
 	# Constants for bioimpedance analysis
 	ANOMALY_THRESHOLD: float = 2.5  # Z-score threshold for anomaly detection
@@ -39,6 +43,7 @@ class DataManager:
 	"""Handles data loading, processing and manipulation."""
 	data_processor: WoundDataProcessor = field(default_factory=lambda: None)
 	df: pd.DataFrame = field(default_factory=lambda: None)
+	schema: DataColumns = field(default_factory=DataColumns)
 
 	@staticmethod
 	@st.cache_data
@@ -56,27 +61,28 @@ class DataManager:
 	def _preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
 		"""Clean and preprocess the loaded data."""
 
-		# Make a copy to avoid modifying the cached data
-		# df = df.copy()
-
-
+		# Get column names from schema
+		schema = DataColumns()
+		pi = schema.patient_identifiers
+		vis = schema.visit_info
+		wc = schema.wound_characteristics
 
 		df.columns = df.columns.str.strip()
 
 		# Filter out skipped visits
-		df = df[df['Skipped Visit?'] != 'Yes']
+		df = df[df[vis.skipped_visit] != 'Yes']
 
 		# Fill missing Visit Number with 1 before converting to int
-		df['Visit Number'] = df['Event Name'].str.extract(r'Visit (\d+)').fillna(1).astype(int)
+		df['Visit Number'] = df[pi.event_name].str.extract(r'Visit (\d+)').fillna(1).astype(int)
 
-		df['Visit date'] = pd.to_datetime(df['Visit date']).dt.strftime('%m-%d-%Y')
+		df[vis.visit_date] = pd.to_datetime(df[vis.visit_date]).dt.strftime('%m-%d-%Y')
 
 		# Convert Wound Type to categorical with specified categories
-		df['Wound Type'] = pd.Categorical(df['Wound Type'].fillna('Unknown'), categories=df['Wound Type'].dropna().unique())
+		df[wc.wound_type] = pd.Categorical(df[wc.wound_type].fillna('Unknown'), categories=df[wc.wound_type].dropna().unique())
 
 		# 2. Calculate wound area if not present but dimensions are available
-		if 'Calculated Wound Area' not in df.columns and all(col in df.columns for col in ['Length (cm)', 'Width (cm)']):
-			df['Calculated Wound Area'] = df['Length (cm)'] * df['Width (cm)']
+		if wc.wound_area not in df.columns and all(col in df.columns for col in [wc.length, wc.width]):
+			df[wc.wound_area] = df[wc.length] * df[wc.width]
 
 		df = DataManager._create_derived_features(df)
 		df = DataManager._calculate_healing_rates(df)
@@ -85,10 +91,16 @@ class DataManager:
 	@staticmethod
 	def _calculate_healing_rates(df: pd.DataFrame) -> pd.DataFrame:
 		"""Calculate healing rates for each patient visit."""
+		# Get column names from schema
+		schema = DataColumns()
+		pi = schema.patient_identifiers
+		vis = schema.visit_info
+		wc = schema.wound_characteristics
+		hm = schema.healing_metrics
+
 		# Constants
 		MAX_TREATMENT_DAYS = 730  # 2 years in days
 		MIN_WOUND_AREA = 0
-
 
 		def calculate_patient_healing_metrics(patient_data: pd.DataFrame) -> tuple[list, bool, float]:
 			"""Calculate healing rate and estimated days for a patient.
@@ -109,9 +121,9 @@ class DataManager:
 					prev_visits = patient_data[patient_data['Visit Number'] < row['Visit Number']]
 					prev_visit  = prev_visits[prev_visits['Visit Number'] == prev_visits['Visit Number'].max()]
 
-					if len(prev_visit) > 0 and 'Calculated Wound Area' in patient_data.columns:
-						prev_area = prev_visit['Calculated Wound Area'].values[0]
-						curr_area = row['Calculated Wound Area']
+					if len(prev_visit) > 0 and wc.wound_area in patient_data.columns:
+						prev_area = prev_visit[wc.wound_area].values[0]
+						curr_area = row[wc.wound_area]
 
 						# Check for valid values to avoid division by zero
 						if prev_area > 0 and not pd.isna(prev_area) and not pd.isna(curr_area):
@@ -131,42 +143,42 @@ class DataManager:
 			estimated_days = np.nan
 			if is_improving and len(patient_data) > 0:
 				last_visit = patient_data.iloc[-1]
-				current_area = last_visit['Calculated Wound Area']
+				current_area = last_visit[wc.wound_area]
 
 				if current_area > MIN_WOUND_AREA and avg_healing_rate > 0:
 					# Convert percentage rate to area change per day
 					daily_healing_rate = (avg_healing_rate / 100) * current_area
 					if daily_healing_rate > 0:
 						days_to_heal = current_area / daily_healing_rate
-						total_days = last_visit['Days_Since_First_Visit'] + days_to_heal
+						total_days = last_visit[vis.days_since_first_visit] + days_to_heal
 						if 0 < total_days < MAX_TREATMENT_DAYS:
 							estimated_days = float(total_days)
 
 			return healing_rates, is_improving, estimated_days
 
 		# Process each patient's data
-		for patient_id in df['Record ID'].unique():
-			patient_data = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
+		for patient_id in df[pi.record_id].unique():
+			patient_data = df[df[pi.record_id] == patient_id].sort_values(vis.days_since_first_visit)
 
 			healing_rates, is_improving, estimated_days = calculate_patient_healing_metrics(patient_data)
 
 			# Update patient records with healing rates
 			for i, (idx, row) in enumerate(patient_data.iterrows()):
 				if i < len(healing_rates):
-					df.loc[idx, 'Healing Rate (%)'] = healing_rates[i]
+					df.loc[idx, hm.healing_rate] = healing_rates[i]
 
 			# Update the last visit with overall improvement status
-			df.loc[patient_data.iloc[-1].name, 'Overall_Improvement'] = 'Yes' if is_improving else 'No'
+			df.loc[patient_data.iloc[-1].name, hm.overall_improvement] = 'Yes' if is_improving else 'No'
 
 			if not np.isnan(estimated_days):
-				df.loc[patient_data.index, 'Estimated_Days_To_Heal'] = estimated_days
+				df.loc[patient_data.index, hm.estimated_days_to_heal] = estimated_days
 
 		# Calculate and store average healing rates
-		df['Average Healing Rate (%)'] = df.groupby('Record ID')['Healing Rate (%)'].transform('mean')
+		df[hm.average_healing_rate] = df.groupby(pi.record_id)[hm.healing_rate].transform('mean')
 
 		# Ensure estimated days column exists
-		if 'Estimated_Days_To_Heal' not in df.columns:
-			df['Estimated_Days_To_Heal'] = pd.Series(np.nan, index=df.index, dtype=float)
+		if hm.estimated_days_to_heal not in df.columns:
+			df[hm.estimated_days_to_heal] = pd.Series(np.nan, index=df.index, dtype=float)
 
 		return df
 
@@ -175,82 +187,85 @@ class DataManager:
 		"""Create additional derived features from the data."""
 		import numpy as np
 
-		# # Make a copy to avoid modifying the cached data
-		# df = df.copy()
+		# Get column names from schema
+		schema = DataColumns()
+		pi = schema.patient_identifiers
+		vis = schema.visit_info
+		temp = schema.temperature
+		dem = schema.demographics
+		hm = schema.healing_metrics
 
 		# Temperature gradients
-		center = 'Center of Wound Temperature (Fahrenheit)'
-		edge   = 'Edge of Wound Temperature (Fahrenheit)'
-		peri   = 'Peri-wound Temperature (Fahrenheit)'
-		if all(col in df.columns for col in [center, edge, peri]):
-			df['Center-Edge Temp Gradient'] = df[center] - df[edge]
-			df['Edge-Peri Temp Gradient']   = df[edge]   - df[peri]
-			df['Total Temp Gradient']       = df[center] - df[peri]
+		if all(col in df.columns for col in [temp.center_temp, temp.edge_temp, temp.peri_temp]):
+			df[temp.center_edge_gradient] = df[temp.center_temp] - df[temp.edge_temp]
+			df[temp.edge_peri_gradient] = df[temp.edge_temp] - df[temp.peri_temp]
+			df[temp.total_temp_gradient] = df[temp.center_temp] - df[temp.peri_temp]
 
 		# BMI categories
-		if 'BMI' in df.columns:
+		if dem.bmi in df.columns:
 			df['BMI Category'] = pd.cut(
-				df['BMI'],
+				df[dem.bmi],
 				bins=[0, 18.5, 25, 30, 35, 100],
 				labels=['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II-III']
 			)
 
 		if df is not None and not df.empty:
 			# Convert Visit date to datetime if not already
-			df['Visit date'] = pd.to_datetime(df['Visit date'])#.dt.strftime('%m-%d-%Y')
+			df[vis.visit_date] = pd.to_datetime(df[vis.visit_date])
 
 			# Calculate days since first visit for each patient
-			df['Days_Since_First_Visit'] = df.groupby('Record ID')['Visit date'].transform(
+			df[vis.days_since_first_visit] = df.groupby(pi.record_id)[vis.visit_date].transform(
 				lambda x: (x - x.min()).dt.days
 			)
 
 			# Initialize columns with explicit dtypes
-			df['Healing Rate (%)'] = pd.Series(0.0, index=df.index, dtype=float)
-			df['Estimated_Days_To_Heal'] = pd.Series(np.nan, index=df.index, dtype=float)
-			df['Overall_Improvement'] = pd.Series(np.nan, index=df.index, dtype=str)
+			df[hm.healing_rate] = pd.Series(0.0, index=df.index, dtype=float)
+			df[hm.estimated_days_to_heal] = pd.Series(np.nan, index=df.index, dtype=float)
+			df[hm.overall_improvement] = pd.Series(np.nan, index=df.index, dtype=str)
 
 		return df
 
 	@staticmethod
 	def get_patient_data(df: pd.DataFrame, patient_id: int) -> pd.DataFrame:
 		"""Get data for a specific patient."""
-		return df[df['Record ID'] == patient_id].sort_values('Visit Number')
+		# Get column names from schema
+		schema = DataColumns()
+		pi = schema.patient_identifiers
+
+		return df[df[pi.record_id] == patient_id].sort_values('Visit Number')
 
 	@staticmethod
 	def _extract_patient_metadata(patient_data) -> Dict:
 		"""Extract relevant patient metadata from a single row."""
 
+		# Get column names from schema
+		schema = DataColumns()
+		dem = schema.demographics
+		ls = schema.lifestyle
+		mh = schema.medical_history
+
 		metadata = {
-			'age': patient_data['Calculated Age at Enrollment'] if not pd.isna(patient_data.get('Calculated Age at Enrollment')) else None,
-
-			'sex': patient_data['Sex'] if not pd.isna(patient_data.get('Sex')) else None,
-
-			'race': patient_data['Race'] if not pd.isna(patient_data.get('Race')) else None,
-
-			'ethnicity': patient_data['Ethnicity'] if not pd.isna(patient_data.get('Ethnicity')) else None,
-
-			'weight': patient_data['Weight'] if not pd.isna(patient_data.get('Weight')) else None,
-			'height': patient_data['Height'] if not pd.isna(patient_data.get('Height')) else None,
-			'bmi': patient_data['BMI'] if not pd.isna(patient_data.get('BMI')) else None,
-
-			'study_cohort': patient_data['Study Cohort'] if not pd.isna(patient_data.get('Study Cohort')) else None,
-
-			'smoking_status': patient_data['Smoking status'] if not pd.isna(patient_data.get('Smoking status')) else None,
-
-			'packs_per_day': patient_data['Number of Packs per Day(average number of cigarette packs smoked per day)1 Pack= 20 Cigarettes'] if not pd.isna(patient_data.get('Number of Packs per Day(average number of cigarette packs smoked per day)1 Pack= 20 Cigarettes')) else None,
-
-			'years_smoking': patient_data['Number of Years smoked/has been smoking cigarettes'] if not pd.isna(patient_data.get('Number of Years smoked/has been smoking cigarettes')) else None,
-
-			'alcohol_use': patient_data['Alcohol Use Status'] if not pd.isna(patient_data.get('Alcohol Use Status')) else None,
-
-			'alcohol_frequency': patient_data['Number of alcohol drinks consumed/has been consuming'] if not pd.isna(patient_data.get('Number of alcohol drinks consumed/has been consuming')) else None
+			'age': patient_data[dem.age_at_enrollment] if not pd.isna(patient_data.get(dem.age_at_enrollment)) else None,
+			'sex': patient_data[dem.sex] if not pd.isna(patient_data.get(dem.sex)) else None,
+			'race': patient_data[dem.race] if not pd.isna(patient_data.get(dem.race)) else None,
+			'ethnicity': patient_data[dem.ethnicity] if not pd.isna(patient_data.get(dem.ethnicity)) else None,
+			'weight': patient_data[dem.weight] if not pd.isna(patient_data.get(dem.weight)) else None,
+			'height': patient_data[dem.height] if not pd.isna(patient_data.get(dem.height)) else None,
+			'bmi': patient_data[dem.bmi] if not pd.isna(patient_data.get(dem.bmi)) else None,
+			'study_cohort': patient_data[dem.study_cohort] if not pd.isna(patient_data.get(dem.study_cohort)) else None,
+			'smoking_status': patient_data[ls.smoking_status] if not pd.isna(patient_data.get(ls.smoking_status)) else None,
+			'packs_per_day': patient_data[ls.packs_per_day] if not pd.isna(patient_data.get(ls.packs_per_day)) else None,
+			'years_smoking': patient_data[ls.years_smoked] if not pd.isna(patient_data.get(ls.years_smoked)) else None,
+			'alcohol_use': patient_data[ls.alcohol_status] if not pd.isna(patient_data.get(ls.alcohol_status)) else None,
+			'alcohol_frequency': patient_data[ls.alcohol_drinks] if not pd.isna(patient_data.get(ls.alcohol_drinks)) else None
 		}
 
 		# Medical history from individual columns
 		medical_conditions = [
-			'Respiratory', 'Cardiovascular', 'Gastrointestinal', 'Musculoskeletal',
-			'Endocrine/ Metabolic', 'Hematopoietic', 'Hepatic/Renal', 'Neurologic', 'Immune'
+			mh.respiratory, mh.cardiovascular, mh.gastrointestinal, mh.musculoskeletal,
+			mh.endocrine_metabolic, mh.hematopoietic, mh.hepatic_renal, mh.neurologic, mh.immune
 		]
+
 		# Get medical history from standard columns
 		metadata['medical_history'] = {
 			condition: patient_data[condition]
@@ -258,7 +273,7 @@ class DataManager:
 		}
 
 		# Check additional medical history from free text field
-		other_history = patient_data.get('Medical History (select all that apply)')
+		other_history = patient_data.get(mh.medical_history)
 		if not pd.isna(other_history):
 			existing_conditions = set(medical_conditions)
 			other_conditions = [cond.strip() for cond in str(other_history).split(',')]
@@ -266,12 +281,11 @@ class DataManager:
 			if other_conditions:
 				metadata['medical_history']['other'] = ', '.join(other_conditions)
 
-
 		# Diabetes information
 		metadata['diabetes'] = {
-			'status': patient_data.get('Diabetes?'),
-			'hemoglobin_a1c': patient_data.get('Hemoglobin A1c (%)'),
-			'a1c_available': patient_data.get('A1c  available within the last 3 months?')
+			'status': patient_data.get(mh.diabetes),
+			'hemoglobin_a1c': patient_data.get(mh.a1c),
+			'a1c_available': patient_data.get(mh.a1c_available)
 		}
 
 		return metadata
@@ -1148,18 +1162,18 @@ class ImpedanceAnalyzer:
 			Dict: Dispersion characteristics and interpretation
 		"""
 		results = {}
-		sensor_data = visit.get('sensor_data', {})
+		sensor_data    = visit.get('sensor_data', {})
 		impedance_data = sensor_data.get('impedance', {})
 
 		# Extract absolute impedance at different frequencies
-		low_freq = impedance_data.get('low_frequency', {})
+		low_freq    = impedance_data.get('low_frequency', {})
 		center_freq = impedance_data.get('center_frequency', {})
-		high_freq = impedance_data.get('high_frequency', {})
+		high_freq   = impedance_data.get('high_frequency', {})
 
 		try:
-			z_low = float(low_freq.get('Z', 0))
+			z_low    = float(low_freq.get('Z', 0))
 			z_center = float(center_freq.get('Z', 0))
-			z_high = float(high_freq.get('Z', 0))
+			z_high   = float(high_freq.get('Z', 0))
 
 			if z_low > 0 and z_center > 0 and z_high > 0:
 				# Calculate alpha dispersion (low-to-center frequency drop)
@@ -1169,7 +1183,7 @@ class ImpedanceAnalyzer:
 				beta_dispersion = (z_center - z_high) / z_center
 
 				results['alpha_dispersion'] = alpha_dispersion
-				results['beta_dispersion'] = beta_dispersion
+				results['beta_dispersion']  = beta_dispersion
 
 				# Interpret dispersion patterns
 				if alpha_dispersion > 0.4 and beta_dispersion < 0.2:
@@ -1753,7 +1767,7 @@ class Dashboard:
 
 			# Create tabs for different analysis views
 			tab1, tab2, tab3 = st.tabs([
-				"Impedance Measurements",
+				"Overview",
 				"Clinical Analysis",
 				"Advanced Interpretation"
 			])
@@ -1790,83 +1804,145 @@ class Dashboard:
 
 				# Only analyze if we have at least two visits
 				if len(visits) >= 2:
-					# Pick most recent visit for current analysis
-					current_visit = visits[-1]
-					previous_visit = visits[-2]
+						# Create tabs for each visit
+					visit_tabs = st.tabs([f"{visit.get('visit_date', 'N/A')}" for idx, visit in enumerate(visits)])
 
-					# Perform analyses
-					tissue_health = ImpedanceAnalyzer.calculate_tissue_health_index(current_visit)
-					infection_risk = ImpedanceAnalyzer.assess_infection_risk(current_visit, previous_visit)
-					freq_response = ImpedanceAnalyzer.analyze_frequency_response(current_visit)
-					changes, significant = ImpedanceAnalyzer.calculate_visit_changes(current_visit, previous_visit)
+					for visit_idx, visit_tab in enumerate(visit_tabs):
+						with visit_tab:
+							current_visit = visits[visit_idx]
 
-					# Display Tissue Health Index
-					col1, col2 = st.columns(2)
-					with col1:
-						st.markdown("### Tissue Health Assessment")
-						health_score, health_interp = tissue_health
+							# Find previous visit if exists
+							previous_visit = visits[visit_idx-1] if visit_idx > 0 else None
 
-						if health_score is not None:
-							# Create a color scale for the health score
-							color = "red" if health_score < 40 else "orange" if health_score < 60 else "green"
-							st.markdown(f"**Tissue Health Index:** <span style='color:{color};font-weight:bold'>{health_score:.1f}/100</span>", unsafe_allow_html=True)
-							st.markdown(f"**Interpretation:** {health_interp}")
-						else:
-							st.warning("Insufficient data for tissue health calculation")
+							# Perform analyses
+							tissue_health = ImpedanceAnalyzer.calculate_tissue_health_index(current_visit)
+							infection_risk = ImpedanceAnalyzer.assess_infection_risk(current_visit, previous_visit)
+							freq_response = ImpedanceAnalyzer.analyze_frequency_response(current_visit)
 
-					with col2:
-						st.markdown("### Infection Risk Assessment")
-						risk_score = infection_risk["risk_score"]
-						risk_level = infection_risk["risk_level"]
+							# Only calculate changes if there's a previous visit
+							changes = {}
+							significant = {}
+							if previous_visit:
+								changes, significant = ImpedanceAnalyzer.calculate_visit_changes(current_visit, previous_visit)
 
-						# Create a color scale for the risk score
-						risk_color = "green" if risk_score < 30 else "orange" if risk_score < 60 else "red"
-						st.markdown(f"**Infection Risk Score:** <span style='color:{risk_color};font-weight:bold'>{risk_score:.1f}/100</span>", unsafe_allow_html=True)
-						st.markdown(f"**Risk Level:** {risk_level}")
+							# Display Tissue Health Index
+							col1, col2 = st.columns(2)
+							with col1:
+								st.markdown("### Tissue Health Assessment")
+								health_score, health_interp = tissue_health
 
-						# Display contributing factors if any
-						factors = infection_risk["contributing_factors"]
-						if factors:
-							st.markdown("**Contributing Factors:**")
-							for factor in factors:
-								st.markdown(f"- {factor}")
+								if health_score is not None:
+									# Create a color scale for the health score
+									color = "red" if health_score < 40 else "orange" if health_score < 60 else "green"
+									st.markdown(f"**Tissue Health Index:** <span style='color:{color};font-weight:bold'>{health_score:.1f}/100</span>", unsafe_allow_html=True)
+									st.markdown(f"**Interpretation:** {health_interp}")
+								else:
+									st.warning("Insufficient data for tissue health calculation")
 
-					# Display Tissue Composition Analysis
-					st.markdown("### Tissue Composition Analysis")
-					st.info(freq_response['interpretation'])
+							with col2:
+								st.markdown("### Infection Risk Assessment")
+								risk_score = infection_risk["risk_score"]
+								risk_level = infection_risk["risk_level"]
 
-					# Display changes since last visit
-					st.markdown("### Changes Since Previous Visit")
+								# Create a color scale for the risk score
+								risk_color = "green" if risk_score < 30 else "orange" if risk_score < 60 else "red"
+								st.markdown(f"**Infection Risk Score:** <span style='color:{risk_color};font-weight:bold'>{risk_score:.1f}/100</span>", unsafe_allow_html=True)
+								st.markdown(f"**Risk Level:** {risk_level}")
 
-					if changes:
-						change_cols = st.columns(3)
-						col_idx = 0
+								# Display contributing factors if any
+								factors = infection_risk["contributing_factors"]
+								if factors:
+									st.markdown("**Contributing Factors:**")
+									for factor in factors:
+										st.markdown(f"- {factor}")
 
-						for key, change in changes.items():
-							with change_cols[col_idx % 3]:
-								# Format parameter name for display
-								param_parts = key.split('_')
-								param_name = param_parts[0].capitalize()
-								freq_name = ' '.join(param_parts[1:]).replace('_', ' ').capitalize()
+							# Display Tissue Composition Analysis
+							st.markdown("### Tissue Composition Analysis")
+							st.info(freq_response['interpretation'])
 
-								# Format the value with correct sign and style
-								direction = "increase" if change > 0 else "decrease"
-								arrow = "↑" if change > 0 else "↓"
-								color = "red" if change > 0 else "green"  # In most cases, decreasing is good
+							# Display changes since last visit (only if there's a previous visit)
+							if previous_visit:
+								st.markdown("### Changes Since Previous Visit")
 
-								# Check if clinically significant
-								sig_badge = ""
-								if significant.get(key, False):
-									sig_badge = "🔔 "
+								# TODO: check why patient 43, visit 11-25-2024 shows changes for resitance and capacitance even though the prior visit only should've had the Z value.
+								if changes:
+									# Create a structured data dictionary to organize by frequency and parameter
+									data_by_freq = {
+										"Low Freq": {"Z": None, "Resistance": None, "Capacitance": None},
+										"Mid Freq": {"Z": None, "Resistance": None, "Capacitance": None},
+										"High Freq": {"Z": None, "Resistance": None, "Capacitance": None},
+									}
 
-								st.markdown(f"**{sig_badge}{param_name} ({freq_name}):**")
-								st.markdown(f"<span style='color:{color};font-weight:bold'>{arrow} {abs(change)*100:.1f}%</span> {direction}", unsafe_allow_html=True)
+									# Fill in the data from changes
+									for key, change in changes.items():
+										param_parts = key.split('_')
+										param_name = param_parts[0].capitalize()
+										freq_type = ' '.join(param_parts[1:]).replace('_', ' ')
 
-							col_idx += 1
-					else:
-						st.warning("No comparable data from previous visit")
+										# Map to our standardized names
+										if 'low frequency' in freq_type:
+											freq_name = "Low Freq"
+										elif 'center frequency' in freq_type:
+											freq_name = "Mid Freq"
+										elif 'high frequency' in freq_type:
+											freq_name = "High Freq"
+										else:
+											continue
+
+										# Format as percentage with appropriate sign
+										formatted_change = f"{change*100:+.1f}%" if change is not None else "N/A"
+
+										# Store in our data structure
+										if param_name in ["Z", "Resistance", "Capacitance"]:
+											data_by_freq[freq_name][param_name] = formatted_change
+
+									# Convert to DataFrame for display
+									change_df = pd.DataFrame(data_by_freq).T  # Transpose to get frequencies as rows
+
+									# Reorder columns if needed
+									if all(col in change_df.columns for col in ["Z", "Resistance", "Capacitance"]):
+										change_df = change_df[["Z", "Resistance", "Capacitance"]]
+
+									# Add styling
+									def color_cells(val):
+										try:
+											if val is None or val == "N/A":
+												return ''
+											# Get numeric value by stripping % and sign
+											num_val = float(val.replace('%', ''))
+											if num_val > 0:
+												return f'color: #FF4B4B; background-color: rgba(255, 75, 75, 0.1)'  # Red for increases
+											else:
+												return f'color: #00CC96; background-color: rgba(0, 204, 150, 0.1)'  # Green for decreases
+										except:
+											return ''
+
+									# Apply styling
+									styled_df = change_df.style.applymap(color_cells).set_properties(**{
+										'text-align': 'center',
+										'font-size': '14px',
+										'border': '1px solid #EEEEEE'
+									})
+
+									# Display as a styled table with a caption
+									st.write("**Percentage Change by Parameter and Frequency:**")
+									st.dataframe(styled_df)
+
+									# Add brief interpretation
+									with st.expander("Understanding Impedance Changes", expanded=False):
+										st.info("""
+										**Interpreting the table:**
+										- **Positive values (red)** indicate an increase since last visit
+										- **Negative values (green)** indicate a decrease since last visit
+
+										These changes reflect evolving tissue composition and may signal important healing developments.
+										""")
+								else:
+									st.info("No comparable data from previous visit")
+							else:
+								st.info("This is the first visit. No previous data available for comparison.")
 				else:
-					st.warning("At least two visits are required for clinical analysis")
+					st.warning("At least two visits are required for comprehensive clinical analysis")
 
 			with tab3:
 				st.subheader("Advanced Bioelectrical Interpretation")
@@ -1894,10 +1970,6 @@ class Dashboard:
 					# Display healing trajectory
 					if healing_trajectory['status'] == 'analyzed':
 						st.markdown("### Healing Trajectory Analysis")
-
-						# Create simple line chart with trend line
-						import plotly.graph_objects as go
-						import numpy as np
 
 						dates = healing_trajectory['dates']
 						values = healing_trajectory['values']

@@ -1,6 +1,7 @@
 import os
 from data_processor import WoundDataProcessor
 from llm_interface import WoundAnalysisLLM
+from column_schema import DataColumns
 import logging
 import pathlib
 import argparse

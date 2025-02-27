@@ -18,5 +18,6 @@
     "github.copilot.chat.generateTests.codeLens": true,
     "github.copilot.chat.languageContext.typescript.enabled": true,
     "github.copilot.chat.search.semanticTextResults": true,
-    "explorer.excludeGitIgnore": false
+    "explorer.excludeGitIgnore": false,
+    "github.copilot.chat.newWorkspaceCreation.enabled": true
 }

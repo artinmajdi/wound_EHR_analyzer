@@ -9,13 +9,16 @@ from docx import Document
 from llm_interface import format_word_document
 import os
 import numpy as np
+from column_schema import DataColumns
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class WoundDataProcessor:
 	def __init__(self, dataset_path: pathlib.Path=None, df: pd.DataFrame= None):
-
+		# Initialize the column schema
+		self.columns = DataColumns()
+		
 		self.dataset_path = dataset_path
 		if df is None:
 			csv_path = dataset_path / 'SmartBandage-Data_for_llm.csv'
@@ -29,7 +32,10 @@ class WoundDataProcessor:
 	def get_patient_visits(self, record_id: int) -> Dict:
 		"""Get all visit data for a specific patient."""
 		try:
-			patient_data = self.df[self.df['Record ID'] == record_id]
+			patient_id_col = self.columns.patient_identifiers.record_id
+			skipped_visit_col = self.columns.visit_info.skipped_visit
+			
+			patient_data = self.df[self.df[patient_id_col] == record_id]
 			if patient_data.empty:
 				raise ValueError(f"No measurements found for patient {record_id}")
 
@@ -39,8 +45,7 @@ class WoundDataProcessor:
 
 			visits_data = []
 			for _, visit in patient_data.iterrows():
-
-				if pd.isna(visit.get('Skipped Visit?')) or visit['Skipped Visit?'] != 'Yes':
+				if pd.isna(visit.get(skipped_visit_col)) or visit[skipped_visit_col] != 'Yes':
 					visit_data = self._process_visit_data(visit=visit, record_id=record_id)
 					if visit_data:
 						wound_info = self._get_wound_info(visit)
@@ -71,6 +76,19 @@ class WoundDataProcessor:
 				- Treatment effectiveness
 				- Temporal trends
 		"""
+		# Get schema columns
+		pi = self.columns.patient_identifiers
+		vis = self.columns.visit_info
+		wc = self.columns.wound_characteristics
+		dem = self.columns.demographics
+		ls = self.columns.lifestyle
+		mh = self.columns.medical_history
+		temp = self.columns.temperature
+		oxy = self.columns.oxygenation
+		imp = self.columns.impedance
+		ca = self.columns.clinical_assessment
+		hm = self.columns.healing_metrics
+		
 		# Get processed data
 		df = self.get_processed_data()
 		if df.empty:
@@ -78,95 +96,95 @@ class WoundDataProcessor:
 
 		# Calculate derived metrics
 		df['BMI Category'] = pd.cut(
-			df['BMI'],
+			df[dem.bmi],
 			bins=[0, 18.5, 24.9, 29.9, float('inf')],
 			labels=['Underweight', 'Normal', 'Overweight', 'Obese']
 		)
 
 		# Calculate healing metrics
-		df['Healing_Color'] = df['Healing Rate (%)'].apply(lambda x: 'green' if x < 0 else 'red')
-		df['Healing_Status'] = df['Healing Rate (%)'].apply(
+		df['Healing_Color'] = df[hm.healing_rate].apply(lambda x: 'green' if x < 0 else 'red')
+		df['Healing_Status'] = df[hm.healing_rate].apply(
 			lambda x: 'Improving' if x < 0 else ('Stable' if -5 <= x <= 5 else 'Worsening')
 		)
 
 		stats = {
 			'summary': {
-				'total_patients': len(df['Record ID'].unique()),
+				'total_patients': len(df[pi.record_id].unique()),
 				'total_visits': len(df),
-				'avg_visits_per_patient': len(df) / len(df['Record ID'].unique()),
-				'overall_improvement_rate': (df['Healing Rate (%)'] < 0).mean() * 100,
-				'avg_treatment_duration_days': (df.groupby('Record ID')['Days_Since_First_Visit'].max().mean()),
+				'avg_visits_per_patient': len(df) / len(df[pi.record_id].unique()),
+				'overall_improvement_rate': (df[hm.healing_rate] < 0).mean() * 100,
+				'avg_treatment_duration_days': (df.groupby(pi.record_id)[vis.days_since_first_visit].max().mean()),
 				'completion_rate': (df['Visit Status'] == 'Completed').mean() * 100 if 'Visit Status' in df.columns else None
 			},
 			'demographics': {
 				'age_stats': {
-					'summary': f"Mean: {df['Calculated Age at Enrollment'].mean():.1f}, Median: {df['Calculated Age at Enrollment'].median():.1f}",
-					'distribution': df['Calculated Age at Enrollment'].value_counts().to_dict(),
-					'age_groups': pd.cut(df['Calculated Age at Enrollment'],
+					'summary': f"Mean: {df[dem.age_at_enrollment].mean():.1f}, Median: {df[dem.age_at_enrollment].median():.1f}",
+					'distribution': df[dem.age_at_enrollment].value_counts().to_dict(),
+					'age_groups': pd.cut(df[dem.age_at_enrollment],
 						bins=[0, 30, 50, 70, float('inf')],
 						labels=['<30', '30-50', '50-70', '>70']).value_counts().to_dict()
 				},
-				'gender_distribution': df['Sex'].value_counts().to_dict(),
-				'race_distribution': df['Race'].value_counts().to_dict(),
-				'ethnicity_distribution': df['Ethnicity'].value_counts().to_dict(),
+				'gender_distribution': df[dem.sex].value_counts().to_dict(),
+				'race_distribution': df[dem.race].value_counts().to_dict(),
+				'ethnicity_distribution': df[dem.ethnicity].value_counts().to_dict(),
 				'bmi_stats': {
-					'summary': f"Mean: {df['BMI'].mean():.1f}, Range: {df['BMI'].min():.1f}-{df['BMI'].max():.1f}",
+					'summary': f"Mean: {df[dem.bmi].mean():.1f}, Range: {df[dem.bmi].min():.1f}-{df[dem.bmi].max():.1f}",
 					'distribution': df['BMI Category'].value_counts().to_dict(),
-					'by_healing_status': df.groupby('BMI Category')['Healing Rate (%)'].agg(['mean', 'count']).to_dict()
+					'by_healing_status': df.groupby('BMI Category')[hm.healing_rate].agg(['mean', 'count']).to_dict()
 				}
 			},
 			'risk_factors': {
 				'primary_conditions': {
 					'diabetes': {
-						'distribution': df['Diabetes?'].value_counts().to_dict(),
-						'healing_impact': df.groupby('Diabetes?')['Healing Rate (%)'].agg(['mean', 'std', 'count']).to_dict()
+						'distribution': df[mh.diabetes].value_counts().to_dict(),
+						'healing_impact': df.groupby(mh.diabetes)[hm.healing_rate].agg(['mean', 'std', 'count']).to_dict()
 					},
 					'smoking': {
-						'distribution': df['Smoking status'].value_counts().to_dict(),
-						'healing_impact': df.groupby('Smoking status')['Healing Rate (%)'].agg(['mean', 'std', 'count']).to_dict()
+						'distribution': df[ls.smoking_status].value_counts().to_dict(),
+						'healing_impact': df.groupby(ls.smoking_status)[hm.healing_rate].agg(['mean', 'std', 'count']).to_dict()
 					}
 				},
 				'comorbidity_analysis': {
-					'diabetes_smoking': df.groupby(['Diabetes?', 'Smoking status'])['Healing Rate (%)'].agg(['mean', 'count']).to_dict(),
-					'diabetes_bmi': df.groupby(['Diabetes?', 'BMI Category'])['Healing Rate (%)'].agg(['mean', 'count']).to_dict()
+					'diabetes_smoking': df.groupby([mh.diabetes, ls.smoking_status])[hm.healing_rate].agg(['mean', 'count']).to_dict(),
+					'diabetes_bmi': df.groupby([mh.diabetes, 'BMI Category'])[hm.healing_rate].agg(['mean', 'count']).to_dict()
 				}
 			},
 			'wound_characteristics': {
 				'type_distribution': {
-					'overall': df['Wound Type'].value_counts().to_dict(),
-					'by_healing_status': df.groupby(['Wound Type', 'Healing_Status']).size().to_dict()
+					'overall': df[wc.wound_type].value_counts().to_dict(),
+					'by_healing_status': df.groupby([wc.wound_type, 'Healing_Status']).size().to_dict()
 				},
 				'location_analysis': {
-					'distribution': df['Describe the wound location'].value_counts().to_dict(),
-					'healing_by_location': df.groupby('Describe the wound location')['Healing Rate (%)'].mean().to_dict()
+					'distribution': df[wc.wound_location].value_counts().to_dict(),
+					'healing_by_location': df.groupby(wc.wound_location)[hm.healing_rate].mean().to_dict()
 				},
 				'size_progression': {
 					'initial_vs_final': {
 						'area': {
-							'initial': df.groupby('Record ID')['Calculated Wound Area'].first().agg(['mean', 'median', 'std']).to_dict(),
-							'final': df.groupby('Record ID')['Calculated Wound Area'].last().agg(['mean', 'median', 'std']).to_dict(),
-							'percent_change': ((df.groupby('Record ID')['Calculated Wound Area'].last() -
-								df.groupby('Record ID')['Calculated Wound Area'].first()) /
-								df.groupby('Record ID')['Calculated Wound Area'].first() * 100).mean()
+							'initial': df.groupby(pi.record_id)[wc.wound_area].first().agg(['mean', 'median', 'std']).to_dict(),
+							'final': df.groupby(pi.record_id)[wc.wound_area].last().agg(['mean', 'median', 'std']).to_dict(),
+							'percent_change': ((df.groupby(pi.record_id)[wc.wound_area].last() -
+								df.groupby(pi.record_id)[wc.wound_area].first()) /
+								df.groupby(pi.record_id)[wc.wound_area].first() * 100).mean()
 						}
 					},
 					'healing_by_initial_size': {
-						'small': df[df['Calculated Wound Area'] < df['Calculated Wound Area'].quantile(0.33)]['Healing Rate (%)'].mean(),
-						'medium': df[(df['Calculated Wound Area'] >= df['Calculated Wound Area'].quantile(0.33)) &
-							(df['Calculated Wound Area'] < df['Calculated Wound Area'].quantile(0.67))]['Healing Rate (%)'].mean(),
-						'large': df[df['Calculated Wound Area'] >= df['Calculated Wound Area'].quantile(0.67)]['Healing Rate (%)'].mean()
+						'small': df[df[wc.wound_area] < df[wc.wound_area].quantile(0.33)][hm.healing_rate].mean(),
+						'medium': df[(df[wc.wound_area] >= df[wc.wound_area].quantile(0.33)) &
+							(df[wc.wound_area] < df[wc.wound_area].quantile(0.67))][hm.healing_rate].mean(),
+						'large': df[df[wc.wound_area] >= df[wc.wound_area].quantile(0.67)][hm.healing_rate].mean()
 					}
 				}
 			},
 			'healing_progression': {
 				'overall_stats': {
-					'summary': f"Mean: {df['Healing Rate (%)'].mean():.1f}%, Median: {df['Healing Rate (%)'].median():.1f}%",
+					'summary': f"Mean: {df[hm.healing_rate].mean():.1f}%, Median: {df[hm.healing_rate].median():.1f}%",
 					'distribution': df['Healing_Status'].value_counts().to_dict(),
-					'percentiles': df['Healing Rate (%)'].quantile([0.25, 0.5, 0.75]).to_dict()
+					'percentiles': df[hm.healing_rate].quantile([0.25, 0.5, 0.75]).to_dict()
 				},
 				'temporal_analysis': {
-					'by_visit_number': df.groupby('Visit Number')['Healing Rate (%)'].agg(['mean', 'std', 'count']).to_dict(),
-					'by_treatment_duration': pd.cut(df['Days_Since_First_Visit'],
+					'by_visit_number': df.groupby('Visit Number')[hm.healing_rate].agg(['mean', 'std', 'count']).to_dict(),
+					'by_treatment_duration': pd.cut(df[vis.days_since_first_visit],
 						bins=[0, 30, 90, 180, float('inf')],
 						labels=['<30 days', '30-90 days', '90-180 days', '>180 days']
 					).value_counts().to_dict()
@@ -175,21 +193,21 @@ class WoundDataProcessor:
 			'exudate_analysis': {
 				'characteristics': {
 					'volume': {
-						'distribution': df['Exudate Volume'].value_counts().to_dict(),
-						'healing_correlation': df.groupby('Exudate Volume')['Healing Rate (%)'].mean().to_dict()
+						'distribution': df[ca.exudate_volume].value_counts().to_dict(),
+						'healing_correlation': df.groupby(ca.exudate_volume)[hm.healing_rate].mean().to_dict()
 					},
 					'type': {
-						'distribution': df['Exudate Type'].value_counts().to_dict(),
-						'healing_correlation': df.groupby('Exudate Type')['Healing Rate (%)'].mean().to_dict()
+						'distribution': df[ca.exudate_type].value_counts().to_dict(),
+						'healing_correlation': df.groupby(ca.exudate_type)[hm.healing_rate].mean().to_dict()
 					},
 					'viscosity': {
-						'distribution': df['Exudate Viscosity'].value_counts().to_dict(),
-						'healing_correlation': df.groupby('Exudate Viscosity')['Healing Rate (%)'].mean().to_dict()
+						'distribution': df[ca.exudate_viscosity].value_counts().to_dict(),
+						'healing_correlation': df.groupby(ca.exudate_viscosity)[hm.healing_rate].mean().to_dict()
 					}
 				},
 				'temporal_patterns': {
-					'volume_progression': df.groupby('Visit Number')['Exudate Volume'].value_counts().to_dict(),
-					'type_progression': df.groupby('Visit Number')['Exudate Type'].value_counts().to_dict()
+					'volume_progression': df.groupby('Visit Number')[ca.exudate_volume].value_counts().to_dict(),
+					'type_progression': df.groupby('Visit Number')[ca.exudate_type].value_counts().to_dict()
 				}
 			}
 		}
@@ -198,104 +216,85 @@ class WoundDataProcessor:
 		stats['sensor_data'] = {}
 
 		# Temperature Analysis
-		temp_columns = {
-			'center': 'Center of Wound Temperature (Fahrenheit)',
-			'edge': 'Edge of Wound Temperature (Fahrenheit)',
-			'peri': 'Peri-wound Temperature (Fahrenheit)'
-		}
-
-		if temp_columns['center'] in df.columns:
+		if temp.center_temp in df.columns:
 			stats['sensor_data']['temperature'] = {
 				'center_temp': {
-					'overall': df[temp_columns['center']].agg(['mean', 'std', 'min', 'max']).to_dict(),
-					'by_healing_status': df.groupby('Healing_Status')[temp_columns['center']].mean().to_dict(),
-					'temporal_trend': df.groupby('Visit Number')[temp_columns['center']].mean().to_dict()
+					'overall': df[temp.center_temp].agg(['mean', 'std', 'min', 'max']).to_dict(),
+					'by_healing_status': df.groupby('Healing_Status')[temp.center_temp].mean().to_dict(),
+					'temporal_trend': df.groupby('Visit Number')[temp.center_temp].mean().to_dict()
 				}
 			}
 
 			# Add edge and peri-wound temperatures if available
-			if all(col in df.columns for col in [temp_columns['edge'], temp_columns['peri']]):
+			if all(col in df.columns for col in [temp.edge_temp, temp.peri_temp]):
 				stats['sensor_data']['temperature'].update({
 					'edge_temp': {
-						'overall': df[temp_columns['edge']].agg(['mean', 'std', 'min', 'max']).to_dict(),
-						'by_healing_status': df.groupby('Healing_Status')[temp_columns['edge']].mean().to_dict()
+						'overall': df[temp.edge_temp].agg(['mean', 'std', 'min', 'max']).to_dict(),
+						'by_healing_status': df.groupby('Healing_Status')[temp.edge_temp].mean().to_dict()
 					},
 					'peri_temp': {
-						'overall': df[temp_columns['peri']].agg(['mean', 'std', 'min', 'max']).to_dict(),
-						'by_healing_status': df.groupby('Healing_Status')[temp_columns['peri']].mean().to_dict()
+						'overall': df[temp.peri_temp].agg(['mean', 'std', 'min', 'max']).to_dict(),
+						'by_healing_status': df.groupby('Healing_Status')[temp.peri_temp].mean().to_dict()
 					},
 					'gradients': {
-						'center_to_edge': (df[temp_columns['center']] - df[temp_columns['edge']]).agg(['mean', 'std']).to_dict(),
-						'center_to_peri': (df[temp_columns['center']] - df[temp_columns['peri']]).agg(['mean', 'std']).to_dict(),
+						'center_to_edge': (df[temp.center_temp] - df[temp.edge_temp]).agg(['mean', 'std']).to_dict(),
+						'center_to_peri': (df[temp.center_temp] - df[temp.peri_temp]).agg(['mean', 'std']).to_dict(),
 						'by_healing_status': df.groupby('Healing_Status').apply(
 							lambda x: {
-								'center_to_edge': (x[temp_columns['center']] - x[temp_columns['edge']]).mean(),
-								'center_to_peri': (x[temp_columns['center']] - x[temp_columns['peri']]).mean()
+								'center_to_edge': (x[temp.center_temp] - x[temp.edge_temp]).mean(),
+								'center_to_peri': (x[temp.center_temp] - x[temp.peri_temp]).mean()
 							}
 						).to_dict()
 					}
 				})
 
 		# Impedance Analysis
-		impedance_columns = {
-			'magnitude': 'Skin Impedance (kOhms) - Z',
-			'real': "Skin Impedance (kOhms) - Z'",
-			'imaginary': 'Skin Impedance (kOhms) - Z"'
-		}
-
-		if impedance_columns['magnitude'] in df.columns:
+		if imp.highest_freq_z in df.columns:
 			stats['sensor_data']['impedance'] = {
 				'magnitude': {
-					'overall': df[impedance_columns['magnitude']].agg(['mean', 'std', 'min', 'max']).to_dict(),
-					'by_healing_status': df.groupby('Healing_Status')[impedance_columns['magnitude']].mean().to_dict(),
-					'temporal_trend': df.groupby('Visit Number')[impedance_columns['magnitude']].mean().to_dict()
+					'overall': df[imp.highest_freq_z].agg(['mean', 'std', 'min', 'max']).to_dict(),
+					'by_healing_status': df.groupby('Healing_Status')[imp.highest_freq_z].mean().to_dict(),
+					'temporal_trend': df.groupby('Visit Number')[imp.highest_freq_z].mean().to_dict()
 				}
 			}
 
 			# Add complex impedance components if available
-			if all(col in df.columns for col in [impedance_columns['real'], impedance_columns['imaginary']]):
+			if all(col in df.columns for col in [imp.highest_freq_z_prime, imp.highest_freq_z_double_prime]):
 				stats['sensor_data']['impedance'].update({
 					'complex_components': {
 						'real': {
-							'overall': df[impedance_columns['real']].agg(['mean', 'std', 'min', 'max']).to_dict(),
-							'by_healing_status': df.groupby('Healing_Status')[impedance_columns['real']].mean().to_dict()
+							'overall': df[imp.highest_freq_z_prime].agg(['mean', 'std', 'min', 'max']).to_dict(),
+							'by_healing_status': df.groupby('Healing_Status')[imp.highest_freq_z_prime].mean().to_dict()
 						},
 						'imaginary': {
-							'overall': df[impedance_columns['imaginary']].agg(['mean', 'std', 'min', 'max']).to_dict(),
-							'by_healing_status': df.groupby('Healing_Status')[impedance_columns['imaginary']].mean().to_dict()
+							'overall': df[imp.highest_freq_z_double_prime].agg(['mean', 'std', 'min', 'max']).to_dict(),
+							'by_healing_status': df.groupby('Healing_Status')[imp.highest_freq_z_double_prime].mean().to_dict()
 						}
 					}
 				})
 
 		# Oxygenation Analysis
-		oxy_columns = {
-			'oxygenation': 'Oxygenation (%)',
-			'hemoglobin': 'Hemoglobin Level',
-			'oxyhemoglobin': 'Oxyhemoglobin Level',
-			'deoxyhemoglobin': 'Deoxyhemoglobin Level'
-		}
-
-		if oxy_columns['oxygenation'] in df.columns:
+		if oxy.oxygenation in df.columns:
 			stats['sensor_data']['oxygenation'] = {
 				'oxygenation': {
-					'overall': df[oxy_columns['oxygenation']].agg(['mean', 'std', 'min', 'max']).to_dict(),
-					'by_healing_status': df.groupby('Healing_Status')[oxy_columns['oxygenation']].mean().to_dict(),
-					'temporal_trend': df.groupby('Visit Number')[oxy_columns['oxygenation']].mean().to_dict(),
-					'correlation_with_healing': df[oxy_columns['oxygenation']].corr(df['Healing Rate (%)']),
-					'distribution_quartiles': pd.qcut(df[oxy_columns['oxygenation']], q=4).value_counts().to_dict()
+					'overall': df[oxy.oxygenation].agg(['mean', 'std', 'min', 'max']).to_dict(),
+					'by_healing_status': df.groupby('Healing_Status')[oxy.oxygenation].mean().to_dict(),
+					'temporal_trend': df.groupby('Visit Number')[oxy.oxygenation].mean().to_dict(),
+					'correlation_with_healing': df[oxy.oxygenation].corr(df[hm.healing_rate]),
+					'distribution_quartiles': pd.qcut(df[oxy.oxygenation], q=4).value_counts().to_dict()
 				}
 			}
 
 			# Add hemoglobin measurements if available
-			for hb_type, col in {'hemoglobin': oxy_columns['hemoglobin'],
-								'oxyhemoglobin': oxy_columns['oxyhemoglobin'],
-								'deoxyhemoglobin': oxy_columns['deoxyhemoglobin']}.items():
+			for hb_type, col in {'hemoglobin': oxy.hemoglobin,
+								'oxyhemoglobin': oxy.oxyhemoglobin,
+								'deoxyhemoglobin': oxy.deoxyhemoglobin}.items():
 				if col in df.columns:
 					stats['sensor_data']['oxygenation'][hb_type] = {
 						'overall': df[col].agg(['mean', 'std', 'min', 'max']).to_dict(),
 						'by_healing_status': df.groupby('Healing_Status')[col].mean().to_dict(),
 						'temporal_trend': df.groupby('Visit Number')[col].mean().to_dict(),
-						'correlation_with_healing': df[col].corr(df['Healing Rate (%)'])
+						'correlation_with_healing': df[col].corr(df[hm.healing_rate])
 					}
 
 		return stats
@@ -311,6 +310,15 @@ class WoundDataProcessor:
 		if self.df is None:
 			raise ValueError("No data available. Please load data first.")
 
+		# Get schema columns
+		pi = self.columns.patient_identifiers
+		vis = self.columns.visit_info
+		wc = self.columns.wound_characteristics
+		temp = self.columns.temperature
+		oxy = self.columns.oxygenation
+		dem = self.columns.demographics
+		hm = self.columns.healing_metrics
+		
 		# Create a copy to avoid modifying original data
 		df = self.df.copy()
 
@@ -318,54 +326,51 @@ class WoundDataProcessor:
 		df.columns = df.columns.str.strip()
 
 		# Filter out skipped visits
-		df = df[df['Skipped Visit?'] != 'Yes']
+		df = df[df[vis.skipped_visit] != 'Yes']
 
 		# Extract visit number from Event Name
-		df['Visit Number'] = df['Event Name'].str.extract(r'Visit (\d+)').fillna(1).astype(int)
+		df['Visit Number'] = df[pi.event_name].str.extract(r'Visit (\d+)').fillna(1).astype(int)
 
 		# Convert and format dates
-		df['Visit date'] = pd.to_datetime(df['Visit date'])
+		df[vis.visit_date] = pd.to_datetime(df[vis.visit_date])
 
 		# Calculate days since first visit for each patient
-		df['Days_Since_First_Visit'] = df.groupby('Record ID')['Visit date'].transform(
+		df[vis.days_since_first_visit] = df.groupby(pi.record_id)[vis.visit_date].transform(
 			lambda x: (x - x.min()).dt.days
 		)
 
 		# Handle Wound Type categorization
-		if 'Wound Type' in df.columns:
+		if wc.wound_type in df.columns:
 			# Convert to string type first to handle any existing categorical
-			df['Wound Type'] = df['Wound Type'].astype(str)
+			df[wc.wound_type] = df[wc.wound_type].astype(str)
 			# Replace NaN with 'Unknown'
-			df['Wound Type'] = df['Wound Type'].replace('nan', 'Unknown')
+			df[wc.wound_type] = df[wc.wound_type].replace('nan', 'Unknown')
 			# Get unique categories including 'Unknown'
-			categories = sorted(df['Wound Type'].unique())
+			categories = sorted(df[wc.wound_type].unique())
 			# Now create categorical with all possible categories
-			df['Wound Type'] = pd.Categorical(df['Wound Type'], categories=categories)
+			df[wc.wound_type] = pd.Categorical(df[wc.wound_type], categories=categories)
 
 		# Calculate wound area if not present
-		if 'Calculated Wound Area' not in df.columns and all(col in df.columns for col in ['Length (cm)', 'Width (cm)']):
-			df['Calculated Wound Area'] = df['Length (cm)'] * df['Width (cm)']
+		if wc.wound_area not in df.columns and all(col in df.columns for col in [wc.length, wc.width]):
+			df[wc.wound_area] = df[wc.length] * df[wc.width]
 
 		# Convert numeric columns
-		numeric_columns = ['Length (cm)', 'Width (cm)', 'Healing Rate (%)', 'Oxygenation (%)']
+		numeric_columns = [wc.length, wc.width, hm.healing_rate, oxy.oxygenation]
 		for col in numeric_columns:
 			if col in df.columns:
 				df[col] = pd.to_numeric(df[col].astype(str).str.replace('%', ''), errors='coerce')
 
 		# Create derived features
 		# Temperature gradients
-		center = 'Center of Wound Temperature (Fahrenheit)'
-		edge = 'Edge of Wound Temperature (Fahrenheit)'
-		peri = 'Peri-wound Temperature (Fahrenheit)'
-		if all(col in df.columns for col in [center, edge, peri]):
-			df['Center-Edge Temp Gradient'] = df[center] - df[edge]
-			df['Edge-Peri Temp Gradient'] = df[edge] - df[peri]
-			df['Total Temp Gradient'] = df[center] - df[peri]
+		if all(col in df.columns for col in [temp.center_temp, temp.edge_temp, temp.peri_temp]):
+			df[temp.center_edge_gradient] = df[temp.center_temp] - df[temp.edge_temp]
+			df[temp.edge_peri_gradient] = df[temp.edge_temp] - df[temp.peri_temp]
+			df[temp.total_temp_gradient] = df[temp.center_temp] - df[temp.peri_temp]
 
 		# BMI categories
-		if 'BMI' in df.columns:
+		if dem.bmi in df.columns:
 			df['BMI Category'] = pd.cut(
-				df['BMI'],
+				df[dem.bmi],
 				bins=[0, 18.5, 25, 30, 35, 100],
 				labels=['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II-III']
 			)
@@ -387,9 +392,9 @@ class WoundDataProcessor:
 					prev_visits = patient_data[patient_data['Visit Number'] < row['Visit Number']]
 					prev_visit = prev_visits[prev_visits['Visit Number'] == prev_visits['Visit Number'].max()]
 
-					if len(prev_visit) > 0 and 'Calculated Wound Area' in patient_data.columns:
-						prev_area = prev_visit['Calculated Wound Area'].values[0]
-						curr_area = row['Calculated Wound Area']
+					if len(prev_visit) > 0 and wc.wound_area in patient_data.columns:
+						prev_area = prev_visit[wc.wound_area].values[0]
+						curr_area = row[wc.wound_area]
 
 						if prev_area > 0 and not pd.isna(prev_area) and not pd.isna(curr_area):
 							healing_rate = (prev_area - curr_area) / prev_area * 100
@@ -406,77 +411,74 @@ class WoundDataProcessor:
 			estimated_days = np.nan
 			if is_improving and len(patient_data) > 0:
 				last_visit = patient_data.iloc[-1]
-				current_area = last_visit['Calculated Wound Area']
+				current_area = last_visit[wc.wound_area]
 
 				if current_area > MIN_WOUND_AREA and avg_healing_rate > 0:
 					daily_healing_rate = (avg_healing_rate / 100) * current_area
 					if daily_healing_rate > 0:
 						days_to_heal = current_area / daily_healing_rate
-						total_days = last_visit['Days_Since_First_Visit'] + days_to_heal
+						total_days = last_visit[vis.days_since_first_visit] + days_to_heal
 						if 0 < total_days < MAX_TREATMENT_DAYS:
 							estimated_days = float(total_days)
 
 			return healing_rates, is_improving, estimated_days
 
 		# Process each patient's data
-		for patient_id in df['Record ID'].unique():
-			patient_data = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
+		for patient_id in df[pi.record_id].unique():
+			patient_data = df[df[pi.record_id] == patient_id].sort_values(vis.days_since_first_visit)
 			healing_rates, is_improving, estimated_days = calculate_patient_healing_metrics(patient_data)
 
 			# Update patient records with healing rates
 			for i, (idx, row) in enumerate(patient_data.iterrows()):
 				if i < len(healing_rates):
-					df.loc[idx, 'Healing Rate (%)'] = healing_rates[i]
+					df.loc[idx, hm.healing_rate] = healing_rates[i]
 
 			# Update the last visit with overall improvement status
-			df.loc[patient_data.iloc[-1].name, 'Overall_Improvement'] = 'Yes' if is_improving else 'No'
+			df.loc[patient_data.iloc[-1].name, hm.overall_improvement] = 'Yes' if is_improving else 'No'
 
 			if not np.isnan(estimated_days):
-				df.loc[patient_data.index, 'Estimated_Days_To_Heal'] = estimated_days
+				df.loc[patient_data.index, hm.estimated_days_to_heal] = estimated_days
 
 		# Calculate and store average healing rates
-		df['Average Healing Rate (%)'] = df.groupby('Record ID')['Healing Rate (%)'].transform('mean')
+		df[hm.average_healing_rate] = df.groupby(pi.record_id)[hm.healing_rate].transform('mean')
 
 		# Ensure estimated days column exists
-		if 'Estimated_Days_To_Heal' not in df.columns:
-			df['Estimated_Days_To_Heal'] = pd.Series(np.nan, index=df.index, dtype=float)
+		if hm.estimated_days_to_heal not in df.columns:
+			df[hm.estimated_days_to_heal] = pd.Series(np.nan, index=df.index, dtype=float)
 
 		return df
 
 	def _extract_patient_metadata(self, patient_data) -> Dict:
 		"""Extract relevant patient metadata from a single row."""
-
+		
+		# Get column names from the schema
+		dem = self.columns.demographics
+		pi = self.columns.patient_identifiers
+		ls = self.columns.lifestyle
+		mh = self.columns.medical_history
+		
 		metadata = {
-			'age': patient_data['Calculated Age at Enrollment'] if not pd.isna(patient_data.get('Calculated Age at Enrollment')) else None,
-
-			'sex': patient_data['Sex'] if not pd.isna(patient_data.get('Sex')) else None,
-
-			'race': patient_data['Race'] if not pd.isna(patient_data.get('Race')) else None,
-
-			'ethnicity': patient_data['Ethnicity'] if not pd.isna(patient_data.get('Ethnicity')) else None,
-
-			'weight': patient_data['Weight'] if not pd.isna(patient_data.get('Weight')) else None,
-			'height': patient_data['Height'] if not pd.isna(patient_data.get('Height')) else None,
-			'bmi': patient_data['BMI'] if not pd.isna(patient_data.get('BMI')) else None,
-
-			'study_cohort': patient_data['Study Cohort'] if not pd.isna(patient_data.get('Study Cohort')) else None,
-
-			'smoking_status': patient_data['Smoking status'] if not pd.isna(patient_data.get('Smoking status')) else None,
-
-			'packs_per_day': patient_data['Number of Packs per Day(average number of cigarette packs smoked per day)1 Pack= 20 Cigarettes'] if not pd.isna(patient_data.get('Number of Packs per Day(average number of cigarette packs smoked per day)1 Pack= 20 Cigarettes')) else None,
-
-			'years_smoking': patient_data['Number of Years smoked/has been smoking cigarettes'] if not pd.isna(patient_data.get('Number of Years smoked/has been smoking cigarettes')) else None,
-
-			'alcohol_use': patient_data['Alcohol Use Status'] if not pd.isna(patient_data.get('Alcohol Use Status')) else None,
-
-			'alcohol_frequency': patient_data['Number of alcohol drinks consumed/has been consuming'] if not pd.isna(patient_data.get('Number of alcohol drinks consumed/has been consuming')) else None
+			'age': patient_data[dem.age_at_enrollment] if not pd.isna(patient_data.get(dem.age_at_enrollment)) else None,
+			'sex': patient_data[dem.sex] if not pd.isna(patient_data.get(dem.sex)) else None,
+			'race': patient_data[dem.race] if not pd.isna(patient_data.get(dem.race)) else None,
+			'ethnicity': patient_data[dem.ethnicity] if not pd.isna(patient_data.get(dem.ethnicity)) else None,
+			'weight': patient_data[dem.weight] if not pd.isna(patient_data.get(dem.weight)) else None,
+			'height': patient_data[dem.height] if not pd.isna(patient_data.get(dem.height)) else None,
+			'bmi': patient_data[dem.bmi] if not pd.isna(patient_data.get(dem.bmi)) else None,
+			'study_cohort': patient_data[dem.study_cohort] if not pd.isna(patient_data.get(dem.study_cohort)) else None,
+			'smoking_status': patient_data[ls.smoking_status] if not pd.isna(patient_data.get(ls.smoking_status)) else None,
+			'packs_per_day': patient_data[ls.packs_per_day] if not pd.isna(patient_data.get(ls.packs_per_day)) else None,
+			'years_smoking': patient_data[ls.years_smoked] if not pd.isna(patient_data.get(ls.years_smoked)) else None,
+			'alcohol_use': patient_data[ls.alcohol_status] if not pd.isna(patient_data.get(ls.alcohol_status)) else None,
+			'alcohol_frequency': patient_data[ls.alcohol_drinks] if not pd.isna(patient_data.get(ls.alcohol_drinks)) else None
 		}
 
 		# Medical history from individual columns
 		medical_conditions = [
-			'Respiratory', 'Cardiovascular', 'Gastrointestinal', 'Musculoskeletal',
-			'Endocrine/ Metabolic', 'Hematopoietic', 'Hepatic/Renal', 'Neurologic', 'Immune'
+			mh.respiratory, mh.cardiovascular, mh.gastrointestinal, mh.musculoskeletal,
+			mh.endocrine_metabolic, mh.hematopoietic, mh.hepatic_renal, mh.neurologic, mh.immune
 		]
+		
 		# Get medical history from standard columns
 		metadata['medical_history'] = {
 			condition: patient_data[condition]
@@ -484,7 +486,7 @@ class WoundDataProcessor:
 		}
 
 		# Check additional medical history from free text field
-		other_history = patient_data.get('Medical History (select all that apply)')
+		other_history = patient_data.get(mh.medical_history)
 		if not pd.isna(other_history):
 			existing_conditions = set(medical_conditions)
 			other_conditions = [cond.strip() for cond in str(other_history).split(',')]
@@ -492,12 +494,11 @@ class WoundDataProcessor:
 			if other_conditions:
 				metadata['medical_history']['other'] = ', '.join(other_conditions)
 
-
 		# Diabetes information
 		metadata['diabetes'] = {
-			'status': patient_data.get('Diabetes?'),
-			'hemoglobin_a1c': patient_data.get('Hemoglobin A1c (%)'),
-			'a1c_available': patient_data.get('A1c  available within the last 3 months?')
+			'status': patient_data.get(mh.diabetes),
+			'hemoglobin_a1c': patient_data.get(mh.a1c),
+			'a1c_available': patient_data.get(mh.a1c_available)
 		}
 
 		return metadata
@@ -505,35 +506,38 @@ class WoundDataProcessor:
 	def _get_wound_info(self, visit_data) -> Dict:
 		""" Get detailed wound information from a single visit row."""
 		try:
+			# Get column schema for wound characteristics and clinical assessment
+			wc = self.columns.wound_characteristics
+			ca = self.columns.clinical_assessment
 
 			def clean_field(data, field):
 				return data.get(field) if not pd.isna(data.get(field)) else None
 
-			present = clean_field(visit_data, 'Is there undermining/ tunneling?')
+			present = clean_field(visit_data, wc.undermining)
 
 			wound_info = {
-				'location'       : clean_field(visit_data, 'Describe the wound location'),
-				'type'           : clean_field(visit_data, 'Wound Type'),
-				'current_care'   : clean_field(visit_data, 'Current wound care'),
-				'clinical_events': clean_field(visit_data, 'Clinical events'),
+				'location'       : clean_field(visit_data, wc.wound_location),
+				'type'           : clean_field(visit_data, wc.wound_type),
+				'current_care'   : clean_field(visit_data, wc.current_wound_care),
+				'clinical_events': clean_field(visit_data, ca.clinical_events),
 				'undermining': {
 					'present'  : None if present is None else present == 'Yes',
-					'location' : visit_data.get('Undermining Location Description'),
-					'tunneling': visit_data.get('Tunneling Location Description')
+					'location' : visit_data.get(wc.undermining_location),
+					'tunneling': visit_data.get(wc.tunneling_location)
 				},
 				'infection': {
-					'status'             : clean_field(visit_data, 'Infection'),
-					'wifi_classification': visit_data.get('Diabetic Foot Wound - WIfI Classification: foot Infection (fI)')
+					'status'             : clean_field(visit_data, ca.infection),
+					'wifi_classification': visit_data.get(ca.wifi_classification)
 				},
 				'granulation': {
-					'coverage': clean_field(visit_data, 'Granulation'),
-					'quality' : clean_field(visit_data, 'Granulation Quality')
+					'coverage': clean_field(visit_data, ca.granulation),
+					'quality' : clean_field(visit_data, ca.granulation_quality)
 				},
-				'necrosis': visit_data.get('Necrosis'),
+				'necrosis': visit_data.get(ca.necrosis),
 				'exudate': {
-					'volume'   : visit_data.get('Exudate Volume'),
-					'viscosity': visit_data.get('Exudate Viscosity'),
-					'type'     : visit_data.get('Exudate Type')
+					'volume'   : visit_data.get(ca.exudate_volume),
+					'viscosity': visit_data.get(ca.exudate_viscosity),
+					'type'     : visit_data.get(ca.exudate_type)
 				}
 			}
 
@@ -545,7 +549,14 @@ class WoundDataProcessor:
 
 	def _process_visit_data(self, visit, record_id: int) -> Optional[Dict]:
 		"""Process visit measurement data from a single row."""
-		visit_date = pd.to_datetime(visit['Visit date']).strftime('%m-%d-%Y') if not pd.isna(visit.get('Visit date')) else None
+		# Get column schema
+		vis = self.columns.visit_info
+		wc = self.columns.wound_characteristics
+		temp = self.columns.temperature
+		oxy = self.columns.oxygenation
+		imp = self.columns.impedance
+		
+		visit_date = pd.to_datetime(visit[vis.visit_date]).strftime('%m-%d-%Y') if not pd.isna(visit.get(vis.visit_date)) else None
 
 		if not visit_date:
 			logger.warning("Missing visit date")
@@ -591,9 +602,9 @@ class WoundDataProcessor:
 			else:
 				# Get impedance data from visit parameters if no sweep data
 				high_freq = {
-					'Z': get_float(visit, 'Skin Impedance (kOhms) - Z'),
-					'Z_prime': get_float(visit, "Skin Impedance (kOhms) - Z'"),
-					'Z_double_prime': get_float(visit, 'Skin Impedance (kOhms) - Z"')
+					'Z': get_float(visit, imp.highest_freq_z),
+					'Z_prime': get_float(visit, imp.highest_freq_z_prime),
+					'Z_double_prime': get_float(visit, imp.highest_freq_z_double_prime)
 				}
 
 				impedance_data['high_frequency'] = transform_impedance_data(high_freq, 80000)
@@ -601,29 +612,29 @@ class WoundDataProcessor:
 			return impedance_data
 
 		wound_measurements = {
-			'length': get_float(visit, 'Length (cm)'),
-			'width' : get_float(visit, 'Width (cm)'),
-			'depth' : get_float(visit, 'Depth (cm)'),
-			'area'  : get_float(visit, 'Calculated Wound Area')
+			'length': get_float(visit, wc.length),
+			'width' : get_float(visit, wc.width),
+			'depth' : get_float(visit, wc.depth),
+			'area'  : get_float(visit, wc.wound_area)
 		}
 
 		temperature_readings = {
-			'center': get_float(visit, "Center of Wound Temperature (Fahrenheit)"),
-			'edge'  : get_float(visit, "Edge of Wound Temperature (Fahrenheit)"),
-			'peri'  : get_float(visit, "Peri-wound Temperature (Fahrenheit)")
-			}
+			'center': get_float(visit, temp.center_temp),
+			'edge'  : get_float(visit, temp.edge_temp),
+			'peri'  : get_float(visit, temp.peri_temp)
+		}
 
 		hemoglobin_types = {
-			'hemoglobin'     : 'Hemoglobin Level',
-			'oxyhemoglobin'  : 'Oxyhemoglobin Level',
-			'deoxyhemoglobin': 'Deoxyhemoglobin Level'
+			'hemoglobin'     : oxy.hemoglobin,
+			'oxyhemoglobin'  : oxy.oxyhemoglobin,
+			'deoxyhemoglobin': oxy.deoxyhemoglobin
 		}
 
 		return {
 			'visit_date': visit_date,
 			'wound_measurements': wound_measurements,
 			'sensor_data': {
-				'oxygenation': get_float(visit, 'Oxygenation (%)'),
+				'oxygenation': get_float(visit, oxy.oxygenation),
 				'temperature': temperature_readings,
 				'impedance'  : get_impedance_data(),
 				**{key: get_float(visit, value) for key, value in hemoglobin_types.items()}
@@ -636,11 +647,14 @@ class WoundDataProcessor:
 
 		Args:
 			record_id (int): The patient record ID
+			visit_date_being_processed: The visit date to process
 
 		Returns:
 			Optional[pd.DataFrame]: DataFrame containing processed impedance data, or None if processing fails
 		"""
-		# try:
+		# Get the visit date column name
+		vis = self.columns.visit_info
+		
 		# Find the Excel file for this record
 		excel_file = self.dataset_path / f'palmsense files Jan 2025/{record_id}.xlsx'
 		if not excel_file.exists():
@@ -709,10 +723,6 @@ class WoundDataProcessor:
 		df['Visit date'] = pd.to_datetime(df['Visit date']).dt.strftime('%m-%d-%Y')
 
 		return df
-
-		# except Exception as e:
-		# 	logger.error(f"Error processing Excel file for record {record_id}: {str(e)}")
-		# 	return None
 
 	def save_report(self, report_path: str, analysis_results: str, patient_data: dict) -> str:
 		"""
