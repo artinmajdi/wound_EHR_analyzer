@@ -1,15 +1,15 @@
-import pandas as pd
-import json
-from typing import Dict, List, Optional
-from datetime import datetime
 import logging
 import pathlib
 import re
-from docx import Document
-from llm_interface import format_word_document
-import os
+from datetime import datetime
+from typing import Dict, Optional
+
 import numpy as np
+import pandas as pd
+from docx import Document
+
 from column_schema import DataColumns
+from llm_interface import format_word_document
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class WoundDataProcessor:
 	def __init__(self, dataset_path: pathlib.Path=None, df: pd.DataFrame= None):
 		# Initialize the column schema
 		self.columns = DataColumns()
-		
+
 		self.dataset_path = dataset_path
 		if df is None:
 			csv_path = dataset_path / 'SmartBandage-Data_for_llm.csv'
@@ -30,16 +30,35 @@ class WoundDataProcessor:
 		self.df.columns = self.df.columns.str.strip()
 
 	def get_patient_visits(self, record_id: int) -> Dict:
-		"""Get all visit data for a specific patient."""
+		"""
+		Retrieves all visit data for a specific patient.
+
+		This method fetches all visits for a patient identified by their record ID, processes
+		the data for each non-skipped visit, and includes wound information.
+
+		Args:
+			record_id (int): The unique identifier for the patient.
+
+		Returns:
+			Dict: A dictionary containing:
+				- 'patient_metadata': Basic patient information extracted from their first visit
+				- 'visits': List of dictionaries containing data for each valid visit, including wound information
+
+		Raises:
+			ValueError: If no records are found for the specified patient
+			Exception: If any error occurs during data processing
+		"""
+
+
 		try:
 			patient_id_col = self.columns.patient_identifiers.record_id
 			skipped_visit_col = self.columns.visit_info.skipped_visit
-			
+
 			patient_data = self.df[self.df[patient_id_col] == record_id]
 			if patient_data.empty:
 				raise ValueError(f"No measurements found for patient {record_id}")
 
-			# Get metadata from first visit
+			# Get metaa from first visit
 			first_visit = patient_data.iloc[0]
 			metadata = self._extract_patient_metadata(first_visit)
 
@@ -63,32 +82,39 @@ class WoundDataProcessor:
 	def get_population_statistics(self) -> Dict:
 		"""
 		Gather comprehensive population-level statistics for LLM analysis.
-		Includes data from all dashboard tabs (Overview, Impedance, Temperature,
-		Exudate, Risk Factors) for the entire patient population.
+
+		This method aggregates data from all patients and visits to provide a holistic view
+		of the wound care dataset. It includes information from various aspects of wound care,
+		patient demographics, and treatment outcomes.
 
 		Returns:
 			Dict: A comprehensive dictionary containing population statistics including:
-				- Demographics (age, gender, race, BMI, etc.)
-				- Wound characteristics (type, location, size)
-				- Healing progression metrics
-				- Sensor data analysis (impedance, temperature, oxygenation)
-				- Risk factor analysis
-				- Treatment effectiveness
-				- Temporal trends
+				- Summary (total patients, visits, overall improvement rate, etc.)
+				- Demographics (ag gender, race, BMI distribution)
+				- Wound characteristics (types, locations, initial sizes)
+				- Healing progression metrics (healing rates, time to closure)
+				- Sensor data analysis (impedance trends, temperature patterns, oxygenation levels)
+				- Risk factor analysis (comorbidities, listyle factors)
+				- Treatment effectiveness (comparison of different approaches)
+				- Temporal trends (seasonal variations, long-term outcome improvements)
+
+		Note:
+			This method processes the entire dataset and may be computationally intensive
+			for large datasets.
 		"""
 		# Get schema columns
-		pi = self.columns.patient_identifiers
-		vis = self.columns.visit_info
-		wc = self.columns.wound_characteristics
-		dem = self.columns.demographics
-		ls = self.columns.lifestyle
-		mh = self.columns.medical_history
+		pi   = self.columns.patient_identifiers
+		vis  = self.columns.visit_info
+		wc   = self.columns.wound_characteristics
+		dem  = self.columns.demographics
+		ls   = self.columns.lifestyle
+		mh   = self.columns.medical_history
 		temp = self.columns.temperature
-		oxy = self.columns.oxygenation
-		imp = self.columns.impedance
-		ca = self.columns.clinical_assessment
-		hm = self.columns.healing_metrics
-		
+		oxy  = self.columns.oxygenation
+		imp  = self.columns.impedance
+		ca   = self.columns.clinical_assessment
+		hm   = self.columns.healing_metrics
+
 		# Get processed data
 		df = self.get_processed_data()
 		if df.empty:
@@ -301,12 +327,32 @@ class WoundDataProcessor:
 
 	def get_processed_data(self) -> pd.DataFrame:
 		"""
-		Process the raw data for population-level analysis.
-		Handles data cleaning, type conversion, and derived metrics calculation.
+		Process and transform the loaded wound data to prepare it for analysis.
+
+		This method performs several data processing steps including:
+		- Cleaning column names
+		- Filtering out skipped visits
+		- Extracting visit number information
+		- Converting and formatting dates
+		- Calculating days since first visit
+		- Handling wound type categorization
+		- Calculating wound area when not present
+		- Converting numeric columns
+		- Creating derived features (temperature gradients, BMI categories)
+		- Calculating healing rates and metrics for each patient
+		- Estimating days to heal based on healing trajectory
 
 		Returns:
-			pd.DataFrame: Processed dataframe ready for population analysis
+			pd.DataFrame: Processed dataframe with additional calculated columns including
+						healing rates, temperature gradients, and estimated days to heal.
+
+		Raises:
+			ValueError: If no data has been loaded prior to calling this method.
+
+		Note:
+			This method does not modify the original dataframe but returns a processed copy.
 		"""
+
 		if self.df is None:
 			raise ValueError("No data available. Please load data first.")
 
@@ -318,7 +364,7 @@ class WoundDataProcessor:
 		oxy = self.columns.oxygenation
 		dem = self.columns.demographics
 		hm = self.columns.healing_metrics
-		
+
 		# Create a copy to avoid modifying original data
 		df = self.df.copy()
 
@@ -449,14 +495,41 @@ class WoundDataProcessor:
 		return df
 
 	def _extract_patient_metadata(self, patient_data) -> Dict:
-		"""Extract relevant patient metadata from a single row."""
-		
+		"""
+		Extracts and formats patient metadata from the provided patient data.
+
+		This method compiles demographic information, lifestyle factors, and medical history
+		into a structured dictionary format. It handles missing values by setting them to None
+		and processes medical history from both standard columns and free text fields.
+
+		Parameters
+		----------
+		patient_data : pandas.Series or dict
+			A row of patient data containing demographic information, lifestyle factors, and medical history.
+
+		Returns
+		-------
+		Dict
+			A dictionary containing the patient's metadata with the following keys:
+			- Basic demographics (age, sex, race, ethnicity)
+			- Physical measurements (weight, height, bmi)
+			- Study information (study_cohort)
+			- Lifestyle factors (smoking_status, packs_per_day, years_smoking, alcohol_use, alcohol_frequency)
+			- Medical history (as a nested dictionary)
+			- Diabetes information (status, hemoglobin_a1c, a1c_available)
+
+		Notes
+		-----
+		The method uses column name mappings from the self.columns object to
+		access the appropriate fields in the patient data.
+		"""
+
 		# Get column names from the schema
 		dem = self.columns.demographics
 		pi = self.columns.patient_identifiers
 		ls = self.columns.lifestyle
 		mh = self.columns.medical_history
-		
+
 		metadata = {
 			'age': patient_data[dem.age_at_enrollment] if not pd.isna(patient_data.get(dem.age_at_enrollment)) else None,
 			'sex': patient_data[dem.sex] if not pd.isna(patient_data.get(dem.sex)) else None,
@@ -478,7 +551,7 @@ class WoundDataProcessor:
 			mh.respiratory, mh.cardiovascular, mh.gastrointestinal, mh.musculoskeletal,
 			mh.endocrine_metabolic, mh.hematopoietic, mh.hepatic_renal, mh.neurologic, mh.immune
 		]
-		
+
 		# Get medical history from standard columns
 		metadata['medical_history'] = {
 			condition: patient_data[condition]
@@ -504,7 +577,31 @@ class WoundDataProcessor:
 		return metadata
 
 	def _get_wound_info(self, visit_data) -> Dict:
-		""" Get detailed wound information from a single visit row."""
+		"""
+		Extract and structure detailed wound information from a single visit record.
+
+		This method processes raw visit data to extract wound characteristics and clinical assessment
+		information into a structured dictionary format. It handles missing data by converting NaN values
+		to None.
+
+		Args:
+			visit_data (Dict): A dictionary containing wound data from a single visit
+
+		Returns:
+			Dict: Structured wound information with the following keys:
+				- location: Anatomical location of the wound
+				- type: Classification of wound type
+				- current_care: Current wound care regimen
+				- clinical_events: Notable clinical events
+				- undermining: Dictionary containing undermining presence, location and tunneling details
+				- infection: Dictionary with infection status and WiFi classification
+				- granulation: Dictionary with tissue coverage and quality metrics
+				- necrosis: Necrotic tissue assessment
+				- exudate: Dictionary containing volume, viscosity and type of wound drainage
+
+		Raises:
+			Exception: Logs a warning and returns an empty dictionary if data processing fails
+		"""
 		try:
 			# Get column schema for wound characteristics and clinical assessment
 			wc = self.columns.wound_characteristics
@@ -548,14 +645,40 @@ class WoundDataProcessor:
 			return {}
 
 	def _process_visit_data(self, visit, record_id: int) -> Optional[Dict]:
-		"""Process visit measurement data from a single row."""
+		"""
+		Process the data from a single patient visit and extract relevant information.
+
+		This method extracts and processes various measurements taken during a patient visit, including
+		wound measurements, temperature readings, oxygenation data, and impedance values. It handles
+		missing data gracefully by converting NaN values to None.
+
+		Args:
+			visit: A dictionary-like object containing the raw visit data
+			record_id (int): The unique identifier for the patient record
+
+		Returns:
+			Optional[Dict]: A structured dictionary containing the processed visit data, or None if
+			the visit date is missing. The dictionary includes:
+				- visit_date: The formatted date of the visit
+				- wound_measurements: Dict containing length, width, depth, and area
+				- sensor_data: Dict containing:
+					- oxygenation: Overall oxygenation value
+					- temperature: Dict with center, edge, and peri readings
+					- impedance: Dict with high, center, and low frequency measurements
+					- hemoglobin: Various hemoglobin measurements
+
+		Notes:
+			The impedance data is either extracted from Excel sweep files if available,
+			or from the visit parameters directly as a fallback.
+		"""
+
 		# Get column schema
 		vis = self.columns.visit_info
 		wc = self.columns.wound_characteristics
 		temp = self.columns.temperature
 		oxy = self.columns.oxygenation
 		imp = self.columns.impedance
-		
+
 		visit_date = pd.to_datetime(visit[vis.visit_date]).strftime('%m-%d-%Y') if not pd.isna(visit.get(vis.visit_date)) else None
 
 		if not visit_date:
@@ -643,18 +766,28 @@ class WoundDataProcessor:
 
 	def process_impedance_sweep_xlsx(self, record_id: int, visit_date_being_processed) -> Optional[pd.DataFrame]:
 		"""
-		Process impedance data from an Excel file for a specific record ID.
+		Process impedance sweep data from an Excel file for a specific record ID and visit date.
+
+		This function reads the Excel file containing impedance sweep data for a given patient,
+		extracts the relevant information for the specified visit date, and returns it as a
+		processed DataFrame.
 
 		Args:
-			record_id (int): The patient record ID
-			visit_date_being_processed: The visit date to process
+			record_id (int): The unique identifier for the patient record.
+			visit_date_being_processed (str): The specific visit date to process, in 'mm-dd-yyyy' format.
 
 		Returns:
-			Optional[pd.DataFrame]: DataFrame containing processed impedance data, or None if processing fails
+			Optional[pd.DataFrame]: A DataFrame containing the processed impedance sweep data
+			for the specified visit date, or None if the file doesn't exist or processing fails.
+
+		Raises:
+			FileNotFoundError: If the Excel file for the given record_id is not found.
+			ValueError: If the visit date cannot be extracted from the sheet name.
 		"""
+
 		# Get the visit date column name
 		vis = self.columns.visit_info
-		
+
 		# Find the Excel file for this record
 		excel_file = self.dataset_path / f'palmsense files Jan 2025/{record_id}.xlsx'
 		if not excel_file.exists():
@@ -701,14 +834,14 @@ class WoundDataProcessor:
 			for freq_type, freq in [('lowest_freq', lowest_freq), ('center_freq', center_freq), ('highest_freq', highest_freq)]:
 				row = df_bottom[df_bottom['freq / Hz'] == freq].iloc[0]
 				freq_data.append({
-					'Visit date': visit_date,
-					'Visit number': visit_number,
-					'frequency': str(freq),
-					'Z': row["Z / Ohm"],
-					'Z_prime': row["Z' / Ohm"],
+					'Visit date'    : visit_date,
+					'Visit number'  : visit_number,
+					'frequency'     : str(freq),
+					'Z'             : row["Z / Ohm"],
+					'Z_prime'       : row["Z' / Ohm"],
 					'Z_double_prime': row["-Z'' / Ohm"],
 					'neg. Phase / °': row["neg. Phase / °"],
-					'index': freq_type
+					'index'         : freq_type
 				})
 
 			dfs.extend(freq_data)
@@ -726,13 +859,21 @@ class WoundDataProcessor:
 
 	def save_report(self, report_path: str, analysis_results: str, patient_data: dict) -> str:
 		"""
-		Save analysis results to a Word document.
+		Save LLM-generated wound analysis results to a formatted Word document.
+
+		Takes the raw analysis text from an LLM along with structured patient data and
+		generates a properly formatted clinical report document.
+
 		Args:
 			report_path: Path where to save the Word document
 			analysis_results: The analysis text from the LLM
-			patient_data: Dictionary containing patient data and visit history
+			patient_data: Dictionary containing patient metadata and visit history
+
 		Returns:
-			str: Path to the saved document
+			str: Path to the successfully saved document
+
+		Raises:
+			Exception: If document creation or saving fails
 		"""
 		try:
 			doc = Document()

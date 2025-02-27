@@ -987,11 +987,38 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def calculate_visit_changes(current_visit, previous_visit):
 		"""
-		Calculate percentage changes between consecutive visits for all impedance parameters.
+		Calculate the percentage changes in impedance parameters between two visits and determine clinical significance.
 
-		Returns:
-			Dict: Percentage changes with clinical significance flags
+		This function compares impedance data (Z, resistance, capacitance) at different frequencies
+		between the current visit and a previous visit. It calculates percentage changes and determines
+		if these changes are clinically significant based on predefined thresholds.
+
+		Parameters
+		----------
+		current_visit : dict
+			Dictionary containing the current visit data with sensor_data.impedance measurements
+			at low, center, and high frequencies.
+		previous_visit : dict
+			Dictionary containing the previous visit data with sensor_data.impedance measurements
+			at low, center, and high frequencies.
+
+		Returns
+		-------
+		tuple
+			A tuple containing two dictionaries:
+			- changes: Dictionary mapping parameter names (e.g., 'resistance_low_frequency') to their percentage changes between visits.
+			- clinically_significant: Dictionary mapping parameter names to boolean values indicating whether the change is clinically significant.
+
+		Notes
+		-----
+		The function uses the following clinical significance thresholds:
+		- Resistance: 15% change
+		- Capacitance: 20% change
+		- Absolute impedance (Z): 15% change
+
+		If either value is zero or invalid, the comparison for that parameter is skipped.
 		"""
+
 		changes = {}
 		clinically_significant = {}
 
@@ -1030,24 +1057,56 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def calculate_tissue_health_index(visit):
 		"""
-		Calculate tissue health index based on multi-frequency impedance ratios.
+		Calculate a tissue health index based on bioimpedance measurements from a patient visit.
 
-		This function uses the following steps:
-		1. Extract impedance data from the visit's sensor data.
-		2. Calculate the ratio of low to high frequency impedance (LF/HF ratio).
-		3. Calculate phase angle if resistance and capacitance data are available.
-		4. Normalize the LF/HF ratio and phase angle to a 0-100 scale.
-		5. Combine these scores (with weightings) to produce a final health score.
-		6. Provide an interpretation based on the health score.
+		This function analyzes impedance data at different frequencies to determine tissue health.
+		It calculates a health score using the ratio of low frequency to high frequency impedance,
+		and optionally incorporates phase angle data when available.
 
-		Args:
-			visit (dict): A dictionary containing visit data, including sensor readings.
+		Parameters:
+		-----------
+		visit : dict
+			A dictionary containing visit data, with the following structure:
+			{
+				'sensor_data': {
+					'impedance': {
+						'low_frequency': {
+							'Z': float,  # Impedance magnitude at low frequency
+							'frequency': float  # Actual frequency value
+						},
+						'high_frequency': {
+							'Z': float,  # Impedance magnitude at high frequency
+							'resistance': float,  # Optional
+							'capacitance': float,  # Optional
+							'frequency': float  # Optional, defaults to 80000 Hz if not provided
+						}
+					}
+				}
+			}
 
 		Returns:
-			tuple: A tuple containing:
-				- health_score (float): A value between 0-100 representing tissue health.
-				- interpretation (str): A textual interpretation of the health score.
+		--------
+		tuple(float or None, str)
+			A tuple containing:
+			- health_score: A normalized score from 0-100 representing tissue health, or None if calculation fails
+			- interpretation: A string describing the tissue health status or an error message
+
+		Notes:
+		------
+		The health score is calculated based on:
+		1. Low/high frequency impedance ratio (LF/HF ratio):
+			- Optimal range is 5-12, with 8.5 being ideal
+			- Scores decrease as the ratio deviates from this range
+
+		2. Phase angle (when resistance and capacitance are available):
+			- Calculated as arctan(1/(2πfRC))
+			- Optimal range is 5-7 degrees
+			- Higher values (up to 7 degrees) indicate better tissue health
+
+		The final score is a weighted average: 60% from the ratio score and 40% from phase angle score.
+		If phase angle cannot be calculated, only the ratio score is used.
 		"""
+
 		sensor_data    = visit.get('sensor_data', {})
 		impedance_data = sensor_data.get('impedance', {})
 
@@ -1123,27 +1182,42 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def analyze_healing_trajectory(visits):
 		"""
-		Analyze the healing trajectory using regression analysis of impedance values over time.
+		Analyzes the wound healing trajectory based on impedance data from multiple visits.
 
-		This function employs bioelectrical impedance analysis (BIA) principles to assess wound healing:
-		1. High-frequency impedance (Z) is extracted from each visit, as it best reflects overall tissue health.
-		2. Linear regression is performed on Z values over time to determine the healing trend.
-		3. The slope of the regression line indicates the rate of change in tissue composition:
-			- Negative slope: Generally indicates healing (decreasing impedance over time).
-			- Positive slope: May indicate deterioration or complications.
-		4. Statistical significance (p-value) and goodness of fit (R-squared) are calculated to assess the reliability of the trend.
-		5. Clinical interpretation is based on both the magnitude of the slope and its statistical significance:
-			- Strong healing: Slope < -0.5 ohms/day, p < 0.05
-			- Moderate healing: Slope < -0.2 ohms/day, p < 0.10
-			- Potential deterioration: Slope > 0.5 ohms/day, p < 0.05
-			- No significant trend: Other cases
+		This function performs a linear regression analysis on the high-frequency impedance values
+		over time to determine if there's a significant trend indicating wound healing or deterioration.
 
-		This approach allows for quantitative assessment of wound healing progression over time,
-		providing clinicians with objective data to supplement visual wound assessment.
+		Parameters:
+		-----------
+		visits : list
+			List of visit dictionaries, each containing visit data including sensor readings.
+			Each visit dictionary should have:
+			- 'visit_date': date of the visit
+			- 'sensor_data': dict containing 'impedance' data with 'high_frequency' values including a 'Z' value representing impedance measurement
 
 		Returns:
-			Dict: Analysis results including slope, significance, and interpretation
+		--------
+		dict
+			A dictionary containing:
+			- 'status': 'insufficient_data' if fewer than 3 valid measurements, 'analyzed' otherwise
+			- 'slope': slope of the linear regression (trend direction)
+			- 'r_squared': coefficient of determination (strength of linear relationship)
+			- 'p_value': statistical significance of the slope
+			- 'dates': list of dates with valid measurements
+			- 'values': list of impedance values used in analysis
+			- 'interpretation': Clinical interpretation of results as one of:
+				- "Strong evidence of healing progression"
+				- "Moderate evidence of healing progression"
+				- "Potential deterioration detected"
+				- "No significant trend detected"
+
+		Notes:
+		------
+		Negative slopes indicate healing (decreasing impedance), while positive slopes
+		may indicate deterioration. The function requires at least 3 valid impedance
+		readings to perform analysis.
 		"""
+
 		if len(visits) < 3:
 			return {"status": "insufficient_data"}
 
@@ -1291,11 +1365,47 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def detect_impedance_anomalies(previous_visits, current_visit, z_score_threshold=2.5):
 		"""
-		Detect statistically significant anomalies in impedance measurements.
+		Detects anomalies in impedance measurements by comparing the current visit's
+		values with historical data from previous visits.
+
+		This function analyzes three key impedance parameters:
+		1. High-frequency impedance (Z)
+		2. Low-frequency resistance
+		3. High-frequency capacitance
+
+		It calculates z-scores for each parameter based on historical means and standard
+		deviations. Values exceeding the specified z-score threshold trigger alerts
+		with clinical interpretations of the observed changes.
+
+		Parameters:
+		-----------
+		previous_visits : list
+			List of dictionaries containing data from previous visits, each with a
+			'sensor_data' field containing impedance measurements.
+		current_visit : dict
+			Dictionary containing the current visit data with a 'sensor_data' field
+			containing impedance measurements.
+		z_score_threshold : float, optional (default=2.5)
+			Threshold for flagging anomalies. Values with absolute z-scores exceeding
+			this threshold will be reported.
 
 		Returns:
-			Dict: Alerts with clinical interpretations
+		--------
+		dict
+			A dictionary of alerts where keys are parameter identifiers and values are
+			dictionaries containing:
+			- 'parameter': Display name of the parameter
+			- 'z_score': Calculated z-score for the current value
+			- 'direction': Whether the anomaly is an 'increase' or 'decrease'
+			- 'interpretation': Clinical interpretation of the observed change
+
+		Notes:
+		------
+		- Requires at least 3 previous visits with valid measurements to establish baseline
+		- Ignores parameters with missing or non-positive values
+		- Provides different clinical interpretations based on parameter type and direction of change
 		"""
+
 		if len(previous_visits) < 3:
 			return {}
 
@@ -1375,33 +1485,39 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def assess_infection_risk(current_visit, previous_visit=None):
 		"""
-		Assess the risk of wound infection based on impedance parameters.
+		Evaluates the infection risk for a wound based on bioimpedance measurements.
 
-		This function evaluates infection risk using three key factors:
-		1. Low/high frequency impedance ratio: A ratio > 15 is associated with increased infection risk.
-			This is based on the principle that infected tissues show altered electrical properties,
-			particularly at different frequencies.
-		2. Sudden increase in low-frequency resistance: A >30% increase may indicate an inflammatory response,
-			which could be a sign of infection. This is because inflammation causes changes in tissue
-			fluid content and cellular composition, affecting electrical resistance.
-		3. Phase angle: Lower phase angles (<3°) indicate less healthy or more damaged tissue,
-			which may be more susceptible to infection.
+		This function analyzes bioelectrical impedance data from the current visit and optionally
+		compares it with a previous visit to determine infection risk. It considers multiple factors
+		including impedance ratios, changes in resistance, and phase angle calculations.
 
-		These criteria are derived from bioimpedance studies in wound healing and infection detection.
-		The risk score is a weighted sum of these factors, providing a quantitative measure of infection risk.
+		Parameters
+		----------
+		current_visit : dict
+			Dictionary containing current visit data with sensor_data.impedance measurements
+			(including low_frequency and high_frequency values with Z, resistance, capacitance)
+		previous_visit : dict, optional
+			Dictionary containing previous visit data in the same format as current_visit,
+			used for trend analysis
 
-		The function calculates a risk score (0-100) based on these factors and interprets it as follows:
-		- 60-100: High infection risk
-		- 30-59: Moderate infection risk
-		- 0-29: Low infection risk
+		Returns
+		-------
+		dict
+			A dictionary containing:
+			- risk_score: numeric score from 0-100 indicating infection risk
+			- risk_level: string interpretation ("Low", "Moderate", or "High" infection risk)
+			- contributing_factors: list of specific factors that contributed to the risk assessment
 
-		Args:
-			current_visit (dict): Data from the current visit.
-			previous_visit (dict, optional): Data from the previous visit for comparison.
+		Notes
+		-----
+		The function evaluates three primary factors:
+		1. Low/high frequency impedance ratio (values >15 indicate increased risk)
+		2. Changes in low-frequency resistance compared to previous readings
+		3. Phase angle calculation based on resistance and capacitance values
 
-		Returns:
-			dict: Contains risk score, risk level, and contributing factors.
+		The final risk score is capped between 0 and 100.
 		"""
+
 
 		risk_score = 0
 		factors = []
@@ -1491,11 +1607,36 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def calculate_cole_parameters(visit):
 		"""
-		Calculate bioimpedance Cole-Cole model parameters from multi-frequency measurements.
+		Calculate Cole-Cole parameters from impedance measurement data in a visit.
 
-		Returns:
-			Dictionary containing R0, R∞, Fc (characteristic frequency), and alpha
+		This function extracts impedance data at low, center, and high frequencies from a
+		visit dictionary and calculates key Cole-Cole model parameters including:
+		- R0 (low frequency resistance)
+		- Rinf (high frequency resistance)
+		- Cm (membrane capacitance)
+		- Tau (time constant)
+		- Alpha (tissue heterogeneity index)
+		- Tissue homogeneity interpretation
+
+		Parameters
+		----------
+		visit : dict
+			A dictionary containing visit data, with a nested 'sensor_data' dictionary
+			that includes impedance measurements at different frequencies
+
+		Returns
+		-------
+		dict
+			A dictionary containing calculated Cole-Cole parameters and tissue homogeneity assessment.
+			May be empty if required data is missing or calculations fail.
+
+		Notes
+		-----
+		The function handles exceptions for missing data, type errors, value errors, and
+		division by zero, returning whatever parameters were successfully calculated before
+		the exception occurred.
 		"""
+
 		import math
 
 		results = {}
@@ -1508,19 +1649,19 @@ class ImpedanceAnalyzer:
 
 		try:
 			# Get resistance values
-			r_low = float(low_freq.get('resistance', 0))
+			r_low    = float(low_freq.get('resistance', 0))
 			r_center = float(center_freq.get('resistance', 0))
-			r_high = float(high_freq.get('resistance', 0))
+			r_high   = float(high_freq.get('resistance', 0))
 
 			# Get capacitance values
-			c_low = float(low_freq.get('capacitance', 0))
+			c_low    = float(low_freq.get('capacitance', 0))
 			c_center = float(center_freq.get('capacitance', 0))
-			c_high = float(high_freq.get('capacitance', 0))
+			c_high   = float(high_freq.get('capacitance', 0))
 
 			# Get frequency values
-			f_low = float(low_freq.get('frequency', 100))
+			f_low    = float(low_freq.get('frequency', 100))
 			f_center = float(center_freq.get('frequency', 7499))
-			f_high = float(high_freq.get('frequency', 80000))
+			f_high   = float(high_freq.get('frequency', 80000))
 
 			if r_low > 0 and r_high > 0:
 				# Approximate R0 and R∞
@@ -1562,11 +1703,39 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def generate_clinical_insights(analyses):
 		"""
-		Generate clinical insights based on comprehensive impedance analysis.
+		Generates clinical insights based on various wound analysis results.
 
-		Returns:
-			List of clinical insights with confidence levels
+		This function processes different aspects of wound analysis data and translates
+		them into actionable clinical insights with corresponding confidence levels
+		and recommendations.
+
+		Parameters
+		----------
+		analyses : dict
+			A dictionary containing analysis results with potential keys:
+			- 'healing_trajectory': Contains slope, p_value, and status of wound healing over time
+			- 'infection_risk': Contains risk_score and contributing_factors for infection
+			- 'frequency_response': Contains interpretation of impedance frequency response
+			- 'anomalies': Contains significant deviations in parameters with z-scores
+
+		Returns
+		-------
+		list
+			A list of dictionaries, each representing a clinical insight with keys:
+			- 'insight': The main clinical observation
+			- 'confidence': Level of certainty (High, Moderate, etc.)
+			- 'recommendation': Suggested clinical action (when applicable)
+			- 'supporting_factors' or 'clinical_meaning': Additional context (when available)
+
+		Notes
+		-----
+		The function generates insights based on the following criteria:
+		1. Healing trajectory based on impedance trends and statistical significance
+		2. Infection risk assessment based on risk score
+		3. Tissue composition analysis from frequency response data
+		4. Anomaly detection for significant deviations in measured parameters
 		"""
+
 		insights = []
 
 		# Healing trajectory insights
@@ -1621,34 +1790,38 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def classify_wound_healing_stage(analyses):
 		"""
-		Classify the wound healing stage based on impedance patterns.
+		Classifies the wound healing stage based on bioimpedance and tissue health analyses.
 
-		This function uses bioimpedance analysis to determine the wound healing stage.
-		The classification is based on three key parameters:
+		The function determines whether the wound is in the Inflammatory, Proliferative,
+		or Remodeling phase by analyzing tissue health scores, frequency response characteristics,
+		and Cole parameters from bioimpedance measurements.
 
-		1. Tissue Health Index: A composite score derived from multi-frequency
-		   impedance ratios. Higher scores indicate healthier tissue.
-
-		2. Alpha Dispersion: Reflects the amount of extracellular fluid and cell
-		   membrane permeability. High values indicate inflammation.
-
-		3. Beta Dispersion: Indicates cellular proliferation and tissue organization.
-		   Higher values suggest active cell growth and wound repair.
-
-		The stages are classified as follows:
-		- Inflammatory: High alpha dispersion, low tissue health score
-		- Proliferative: High beta dispersion, moderate tissue health and alpha dispersion
-		- Remodeling: Low alpha dispersion, high tissue health score
-
-		Confidence levels are assigned based on the strength of these indicators.
-
-		Args:
-			analyses (dict): Dictionary containing tissue health, frequency response,
-							 and Cole parameters from impedance analysis.
+		Parameters:
+		----------
+		analyses : dict
+			A dictionary containing various wound analysis results with the following keys:
+			- 'tissue_health': tuple (score, description) where score is a numerical value
+			- 'frequency_response': dict with keys 'alpha_dispersion' and 'beta_dispersion'
+			- 'cole_parameters': dict containing Cole-Cole model parameters
 
 		Returns:
-			Dict: Healing stage classification, characteristics, and confidence level.
+		-------
+		dict
+			A dictionary with the following keys:
+			- 'stage': str, the determined healing stage ('Inflammatory', 'Proliferative', or 'Remodeling')
+			- 'characteristics': list, notable characteristics of the identified stage
+			- 'confidence': str, confidence level of the classification ('Low', 'Moderate', or 'High')
+
+		Notes:
+		-----
+		The classification uses the following general criteria:
+		- Inflammatory: High alpha dispersion, low tissue health score
+		- Proliferative: High beta dispersion, moderate tissue health, moderate alpha dispersion
+		- Remodeling: Low alpha dispersion, high tissue health score
+
+		If insufficient data is available, the function defaults to the Inflammatory stage with Low confidence.
 		"""
+
 		# Default to inflammatory if we don't have enough data
 		stage = "Inflammatory"
 		characteristics = []
@@ -1770,12 +1943,6 @@ class Dashboard:
 		# Create tabs
 		self._create_dashboard_tabs(df, selected_patient)
 
-		# Footer
-		self._add_footer()
-
-		# Additional sidebar info
-		self._create_sidebar()
-
 	def _create_dashboard_tabs(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""Create and manage dashboard tabs."""
 		tabs = st.tabs([
@@ -1804,11 +1971,31 @@ class Dashboard:
 			self._llm_analysis_tab(selected_patient)
 
 	def _overview_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
-		"""Render the overview tab."""
+		"""
+		Renders the Overview tab in the Streamlit application.
+
+		This method displays different content based on whether all patients or a specific patient is selected.
+		For all patients, it renders a summary overview of all patients' data.
+		For a specific patient, it renders that patient's individual overview and a wound area over time plot.
+
+		Parameters:
+		----------
+		df : pd.DataFrame
+			The dataframe containing all wound data
+		selected_patient : str
+			The currently selected patient from the sidebar dropdown. Could be "All Patients"
+			or a specific patient name in the format "Patient X" where X is the patient ID.
+
+		Returns:
+		-------
+		None
+			This method directly renders content to the Streamlit UI and doesn't return any value.
+		"""
+
 		st.header("Overview")
 
 		if selected_patient == "All Patients":
-			self._render_tab_all_patients(df)
+			self._render_all_patients_overview(df)
 		else:
 			patient_id = int(selected_patient.split(" ")[1])
 			self._render_patient_overview(df, patient_id)
@@ -1817,14 +2004,45 @@ class Dashboard:
 			st.plotly_chart(fig, use_container_width=True)
 
 	def _impedance_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
-		"""Render the impedance analysis tab."""
+		"""
+			Render the impedance analysis tab in the Streamlit application.
+
+			This method creates a comprehensive data analysis and visualization tab focused on bioelectrical
+			impedance measurement data. It provides different views depending on whether the analysis is for
+			all patients combined or a specific patient.
+
+			For all patients:
+			- Creates a scatter plot correlating impedance to healing rate with outlier control
+			- Displays statistical correlation coefficients
+			- Shows impedance components over time
+			- Shows average impedance by wound type
+
+			For individual patients:
+			- Provides three detailed sub-tabs:
+				1. Overview: Basic impedance measurements over time with mode selection
+				2. Clinical Analysis: Detailed per-visit assessment including tissue health index, infection risk assessment, tissue composition analysis, and changes since previous visit
+				3. Advanced Interpretation: Sophisticated analysis including healing trajectory, wound healing stage classification, tissue electrical properties, and clinical insights
+
+			Parameters:
+			----------
+			df : pd.DataFrame
+					The dataframe containing all patient data with impedance measurements
+			selected_patient : str
+					Either "All Patients" or a specific patient identifier (e.g., "Patient 43")
+
+			Returns:
+			-------
+			None
+					This method renders UI elements directly to the Streamlit app
+		"""
+
 		st.header("Impedance Analysis")
 
 		if selected_patient == "All Patients":
-			# Existing code for all patients view remains the same
+
 			# Scatter plot: Impedance vs Healing Rate
 			valid_df = df.copy()
-			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
+
 			# Add outlier threshold control
 			col1, _, col3 = st.columns([2,3,3])
 
@@ -1847,6 +2065,10 @@ class Dashboard:
 					r, p = stats.pearsonr(valid_df['Skin Impedance (kOhms) - Z'], valid_df['Healing Rate (%)'])
 					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
 					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
+
+
+			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 1000)
+
 
 			# Add consistent diabetes status for each patient
 			first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
@@ -1955,24 +2177,17 @@ class Dashboard:
 							infection_risk = ImpedanceAnalyzer.assess_infection_risk(current_visit, previous_visit)
 							freq_response  = ImpedanceAnalyzer.analyze_frequency_response(current_visit)
 
-							# Only calculate changes if there's a previous visit
-							changes = {}
-							significant = {}
-							if previous_visit:
-								changes, significant = ImpedanceAnalyzer.calculate_visit_changes(current_visit, previous_visit)
-
 							# Display Tissue Health Index
 							col1, col2 = st.columns(2)
 							with col1:
 								st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios. The process involves: "
-								"1) Extracting impedance data from sensor readings. "
-								"2) Calculating the ratio of low to high frequency impedance (LF/HF ratio). "
-								"3) Calculating phase angle if resistance and capacitance data are available. "
-								"4) Normalizing the LF/HF ratio and phase angle to a 0-100 scale. "
-								"5) Combining these scores with weightings to produce a final health score. "
-								"6) Providing an interpretation based on the health score. "
-								"The final score ranges from 0-100, with higher scores indicating better tissue health.")
-
+										"1) Extracting impedance data from sensor readings. "
+										"2) Calculating the ratio of low to high frequency impedance (LF/HF ratio). "
+										"3) Calculating phase angle if resistance and capacitance data are available. "
+										"4) Normalizing the LF/HF ratio and phase angle to a 0-100 scale. "
+										"5) Combining these scores with weightings to produce a final health score. "
+										"6) Providing an interpretation based on the health score. "
+										"The final score ranges from 0-100, with higher scores indicating better tissue health.")
 
 								health_score, health_interp = tissue_health
 
@@ -1986,14 +2201,15 @@ class Dashboard:
 
 							with col2:
 								st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on three key factors: "
-								"1. Low/high frequency impedance ratio: A ratio > 15 is associated with increased infection risk."
-								"2. Sudden increase in low-frequency resistance: A >30% increase may indicate an inflammatory response, "
-								"which could be a sign of infection. This is because inflammation causes changes in tissue"
-								"electrical properties, particularly at different frequencies."
-								"3. Phase angle: Lower phase angles (<3°) indicate less healthy or more damaged tissue,"
-								"which may be more susceptible to infection."
-								"The risk score is a weighted sum of these factors, providing a quantitative measure of infection risk."
-								"The final score ranges from 0-100, with higher scores indicating higher infection risk.")
+										"1. Low/high frequency impedance ratio: A ratio > 15 is associated with increased infection risk."
+										"2. Sudden increase in low-frequency resistance: A >30% increase may indicate an inflammatory response, "
+										"which could be a sign of infection. This is because inflammation causes changes in tissue"
+										"electrical properties, particularly at different frequencies."
+										"3. Phase angle: Lower phase angles (<3°) indicate less healthy or more damaged tissue,"
+										"which may be more susceptible to infection."
+										"The risk score is a weighted sum of these factors, providing a quantitative measure of infection risk."
+										"The final score ranges from 0-100, with higher scores indicating higher infection risk.")
+
 								risk_score = infection_risk["risk_score"]
 								risk_level = infection_risk["risk_level"]
 
@@ -2004,106 +2220,134 @@ class Dashboard:
 
 								# Display contributing factors if any
 								factors = infection_risk["contributing_factors"]
-								if factors:
-									st.markdown("**Contributing Factors:**")
-									for factor in factors:
-										st.markdown(f"- {factor}")
+								if factors: st.markdown(f"**Contributing Factors:** {', '.join(factors)}")
 
-							# Display Tissue Composition Analysis
-							st.markdown("### Tissue Composition Analysis", help="""This analysis utilizes bioelectrical impedance analysis (BIA) principles to evaluate
-							tissue characteristics based on the frequency-dependent response to electrical current.
-							It focuses on two key dispersion regions:
-							1. Alpha Dispersion (low to center frequency): Occurs in the kHz range, reflects extracellular fluid content and cell membrane permeability.
-							Large alpha dispersion may indicate edema or inflammation.
-							2. Beta Dispersion (center to high frequency): Occurs in the MHz range, reflects cell membrane properties and intracellular fluid content.
-							Changes in beta dispersion can indicate alterations in cell structure or function.""")
 
-							st.info(freq_response['interpretation'])
+							st.markdown('---')
+							col1, col2 = st.columns(2)
+							with col1:
+								# Display Tissue Composition Analysis
+								st.markdown("### Tissue Composition Analysis", help="""This analysis utilizes bioelectrical impedance analysis (BIA) principles to evaluate
+										tissue characteristics based on the frequency-dependent response to electrical current.
+										It focuses on two key dispersion regions:
+										1. Alpha Dispersion (low to center frequency): Occurs in the kHz range, reflects extracellular fluid content and cell membrane permeability.
+										Large alpha dispersion may indicate edema or inflammation.
+										2. Beta Dispersion (center to high frequency): Occurs in the MHz range, reflects cell membrane properties and intracellular fluid content.
+										Changes in beta dispersion can indicate alterations in cell structure or function.""")
 
-							# Display changes since last visit (only if there's a previous visit)
-							if previous_visit:
-								st.markdown("#### Changes Since Previous Visit", help="The changes since previous visit are based on bioelectrical impedance analysis (BIA) principles to evaluate "
-								"the composition of biological tissues based on the frequency-dependent response to electrical current.")
+								st.info(freq_response['interpretation'])
 
-								# st.info(changes['interpretation'])
+							with col2:
+								# Only calculate changes if there's a previous visit
+								changes, significant = ({}, {})
+								if previous_visit:
+									changes, significant = ImpedanceAnalyzer.calculate_visit_changes(current_visit, previous_visit)
 
-								# TODO: check why patient 43, visit 11-25-2024 shows changes for resitance and capacitance even though the prior visit only should've had the Z value.
-								if changes:
-									# Create a structured data dictionary to organize by frequency and parameter
-									data_by_freq = {
-										"Low Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
-										"Mid Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
-										"High Freq": {"Z": None, "Resistance": None, "Capacitance": None},
-									}
 
-									# Fill in the data from changes
-									for key, change in changes.items():
-										param_parts = key.split('_')
-										param_name = param_parts[0].capitalize()
-										freq_type = ' '.join(param_parts[1:]).replace('_', ' ')
+								# Display changes since last visit (only if there's a previous visit)
+								if previous_visit:
+									st.markdown("#### Changes Since Previous Visit", help="The changes since previous visit are based on bioelectrical impedance analysis (BIA) principles to evaluate "
+									"the composition of biological tissues based on the frequency-dependent response to electrical current.")
 
-										# Map to our standardized names
-										if 'low frequency' in freq_type:
-											freq_name = "Low Freq"
-										elif 'center frequency' in freq_type:
-											freq_name = "Mid Freq"
-										elif 'high frequency' in freq_type:
-											freq_name = "High Freq"
-										else:
-											continue
+									# TODO: check why patient 43, visit 11-25-2024 shows changes for resitance and capacitance even though the prior visit only should've had the Z value.
+									if changes:
+										# Create a structured data dictionary to organize by frequency and parameter
+										data_by_freq = {
+											"Low Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
+											"Mid Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
+											"High Freq": {"Z": None, "Resistance": None, "Capacitance": None},
+										}
 
-										# Format as percentage with appropriate sign
-										formatted_change = f"{change*100:+.1f}%" if change is not None else "N/A"
+										# Fill in the data from changes
+										for key, change in changes.items():
+											param_parts = key.split('_')
+											param_name = param_parts[0].capitalize()
+											freq_type = ' '.join(param_parts[1:]).replace('_', ' ')
 
-										# Store in our data structure
-										if param_name in ["Z", "Resistance", "Capacitance"]:
-											data_by_freq[freq_name][param_name] = formatted_change
-
-									# Convert to DataFrame for display
-									change_df = pd.DataFrame(data_by_freq).T  # Transpose to get frequencies as rows
-
-									# Reorder columns if needed
-									if all(col in change_df.columns for col in ["Z", "Resistance", "Capacitance"]):
-										change_df = change_df[["Z", "Resistance", "Capacitance"]]
-
-									# Add styling
-									def color_cells(val):
-										try:
-											if val is None or val == "N/A":
-												return ''
-											# Get numeric value by stripping % and sign
-											num_val = float(val.replace('%', ''))
-											if num_val > 0:
-												return f'color: #FF4B4B; background-color: rgba(255, 75, 75, 0.1)'  # Red for increases
+											# Map to our standardized names
+											if 'low frequency' in freq_type:
+												freq_name = "Low Freq"
+											elif 'center frequency' in freq_type:
+												freq_name = "Mid Freq"
+											elif 'high frequency' in freq_type:
+												freq_name = "High Freq"
 											else:
-												return f'color: #00CC96; background-color: rgba(0, 204, 150, 0.1)'  # Green for decreases
-										except:
-											return ''
+												continue
 
-									# Apply styling
-									styled_df = change_df.style.applymap(color_cells).set_properties(**{
-										'text-align': 'center',
-										'font-size': '14px',
-										'border': '1px solid #EEEEEE'
-									})
+											# Check if this change is significant
+											is_significant = significant.get(key, False)
 
-									# Display as a styled table with a caption
-									st.write("**Percentage Change by Parameter and Frequency:**")
-									st.dataframe(styled_df)
+											# Format as percentage with appropriate sign and add asterisk if significant
+											if change is not None:
+												formatted_change = f"{change*100:+.1f}%"
+												if is_significant:
+													formatted_change = f"{formatted_change}*"
+											else:
+												formatted_change = "N/A"
 
-									# Add brief interpretation
-									with st.expander("Understanding Impedance Changes", expanded=False):
-										st.info("""
-										**Interpreting the table:**
-										- **Positive values (red)** indicate an increase since last visit
-										- **Negative values (green)** indicate a decrease since last visit
+											# Store in our data structure
+											if param_name in ["Z", "Resistance", "Capacitance"]:
+												data_by_freq[freq_name][param_name] = formatted_change
 
-										These changes reflect evolving tissue composition and may signal important healing developments.
-										""")
+										# Convert to DataFrame for display
+										change_df = pd.DataFrame(data_by_freq).T  # Transpose to get frequencies as rows
+
+										# Reorder columns if needed
+										if all(col in change_df.columns for col in ["Z", "Resistance", "Capacitance"]):
+											change_df = change_df[["Z", "Resistance", "Capacitance"]]
+
+										# Add styling
+										def color_cells(val):
+											try:
+												if val is None or val == "N/A":
+													return ''
+
+												# Check if there's an asterisk and remove it for color calculation
+												has_asterisk = '*' in val
+												num_str = val.replace('*', '').replace('%', '')
+
+												# Get numeric value by stripping % and sign
+												num_val = float(num_str)
+
+												# Determine colors based on value
+												if num_val > 0:
+													return 'color: #FF4B4B'  # Red for increases
+												else:
+													return 'color: #00CC96'  # Green for decreases
+											except:
+												return ''
+
+										# Apply styling
+										styled_df = change_df.style.applymap(color_cells).set_properties(**{
+											'text-align': 'center',
+											'font-size': '14px',
+											'border': '1px solid #EEEEEE'
+										})
+
+										# Display as a styled table with a caption
+										st.write("**Percentage Change by Parameter and Frequency:**")
+										st.dataframe(styled_df)
+										st.write("   (*) indicates clinically significant change")
+
+									else:
+										st.info("No comparable data from previous visit")
 								else:
-									st.info("No comparable data from previous visit")
-							else:
-								st.info("This is the first visit. No previous data available for comparison.")
+									st.info("This is the first visit. No previous data available for comparison.")
+							# Add brief interpretation
+							with st.expander("Understanding Impedance Changes", expanded=False):
+								st.info("""
+								**Interpreting the table:**
+								- **Positive values (red)** indicate an increase since last visit
+								- **Negative values (green)** indicate a decrease since last visit
+								- **Asterisk (*)** indicates a clinically significant change
+
+								These changes reflect evolving tissue composition and may signal important healing developments.
+								Changes are considered clinically significant when they exceed typical threshold values:
+								- Resistance: >15% change
+								- Capacitance: >20% change
+								- Absolute impedance (Z): >15% change
+								""")
+
 				else:
 					st.warning("At least two visits are required for comprehensive clinical analysis")
 
@@ -2113,17 +2357,17 @@ class Dashboard:
 				if len(visits) >= 3:
 					# Perform advanced analyses
 					healing_trajectory = ImpedanceAnalyzer.analyze_healing_trajectory(visits)
-					anomalies = ImpedanceAnalyzer.detect_impedance_anomalies(visits[:-1], visits[-1])
-					cole_params = ImpedanceAnalyzer.calculate_cole_parameters(visits[-1])
+					anomalies          = ImpedanceAnalyzer.detect_impedance_anomalies(visits[:-1], visits[-1])
+					cole_params        = ImpedanceAnalyzer.calculate_cole_parameters(visits[-1])
 
 					# Consolidate all analyses for insight generation
 					all_analyses = {
 						'healing_trajectory': healing_trajectory,
-						'tissue_health': ImpedanceAnalyzer.calculate_tissue_health_index(visits[-1]),
-						'infection_risk': ImpedanceAnalyzer.assess_infection_risk(visits[-1], visits[-2] if len(visits) > 1 else None),
+						'tissue_health'     : ImpedanceAnalyzer.calculate_tissue_health_index(visits[-1]),
+						'infection_risk'    : ImpedanceAnalyzer.assess_infection_risk(visits[-1], visits[-2] if len(visits) > 1 else None),
 						'frequency_response': ImpedanceAnalyzer.analyze_frequency_response(visits[-1]),
-						'anomalies': anomalies,
-						'cole_parameters': cole_params
+						'anomalies'         : anomalies,
+						'cole_parameters'   : cole_params
 					}
 
 					# Generate comprehensive clinical insights
@@ -2133,19 +2377,19 @@ class Dashboard:
 					# Display healing trajectory
 					if healing_trajectory['status'] == 'analyzed':
 						st.markdown("### Healing Trajectory Analysis", help="""
-						The healing trajectory analysis uses bioelectrical impedance analysis (BIA) principles to assess wound healing:
-						1. High-frequency impedance (Z) is extracted from each visit, reflecting overall tissue health.
-						2. Linear regression is performed on Z values over time to determine the healing trend.
-						3. The slope indicates the rate of change in tissue composition:
-							- Negative slope: Generally indicates healing (decreasing impedance over time).
-							- Positive slope: May indicate deterioration or complications.
-						4. Statistical significance (p-value) and goodness of fit (R-squared) are calculated.
-						5. Clinical interpretation is based on slope magnitude and statistical significance:
-							- Strong healing: Slope < -0.5 ohms/day, p < 0.05
-							- Moderate healing: Slope < -0.2 ohms/day, p < 0.10
-							- Potential deterioration: Slope > 0.5 ohms/day, p < 0.05
-							- No significant trend: Other cases
-						""")
+											The healing trajectory analysis uses bioelectrical impedance analysis (BIA) principles to assess wound healing:
+											1. High-frequency impedance (Z) is extracted from each visit, reflecting overall tissue health.
+											2. Linear regression is performed on Z values over time to determine the healing trend.
+											3. The slope indicates the rate of change in tissue composition:
+												- Negative slope: Generally indicates healing (decreasing impedance over time).
+												- Positive slope: May indicate deterioration or complications.
+											4. Statistical significance (p-value) and goodness of fit (R-squared) are calculated.
+											5. Clinical interpretation is based on slope magnitude and statistical significance:
+												- Strong healing: Slope < -0.5 ohms/day, p < 0.05
+												- Moderate healing: Slope < -0.2 ohms/day, p < 0.10
+												- Potential deterioration: Slope > 0.5 ohms/day, p < 0.05
+												- No significant trend: Other cases
+											""")
 
 						dates = healing_trajectory['dates']
 						values = healing_trajectory['values']
@@ -2193,16 +2437,18 @@ class Dashboard:
 					# Display Wound Healing Stage Classification
 					st.markdown("### Wound Healing Stage Classification")
 					stage_colors = {
-						"Inflammatory": "red",
+						"Inflammatory" : "red",
 						"Proliferative": "orange",
-						"Remodeling": "green"
+						"Remodeling"   : "green"
 					}
 
 					stage_color = stage_colors.get(healing_stage['stage'], "blue")
 					st.markdown(f"**Current Stage:** <span style='color:{stage_color};font-weight:bold'>{healing_stage['stage']}</span> (Confidence: {healing_stage['confidence']})", unsafe_allow_html=True)
 
 					if healing_stage['characteristics']:
+
 						st.markdown("**Characteristics:**", help="Key indicators of the current wound healing stage based on bioimpedance analysis. These include tissue health index, alpha dispersion (reflecting extracellular fluid and cell membrane permeability), and beta dispersion (indicating cellular proliferation and tissue organization).")
+
 						for char in healing_stage['characteristics']:
 							st.markdown(f"- {char}")
 
@@ -2212,6 +2458,7 @@ class Dashboard:
 						It shows how the impedance changes with frequency, allowing for the identification of alpha and beta dispersion regions.
 						Alpha dispersion is associated with extracellular fluid content and cell membrane permeability, while beta dispersion is related to cell structure and fluid content.
 						Changes in these dispersion regions can indicate changes in tissue composition or cell health.""")
+
 						col1, col2 = st.columns(2)
 
 						with col1:
@@ -2251,27 +2498,58 @@ class Dashboard:
 				# Add clinical reference information
 				with st.expander("Bioimpedance Reference Information", expanded=False):
 					st.markdown("""
-					### Interpreting Impedance Parameters
+									### Interpreting Impedance Parameters
 
-					**Frequency Significance:**
-					- **Low Frequency (100Hz):** Primarily reflects extracellular fluid and tissue properties
-					- **Center Frequency:** Reflects the maximum reactance point, varies based on tissue composition
-					- **High Frequency (80000Hz):** Penetrates cell membranes, reflects total tissue properties
+									**Frequency Significance:**
+									- **Low Frequency (100Hz):** Primarily reflects extracellular fluid and tissue properties
+									- **Center Frequency:** Reflects the maximum reactance point, varies based on tissue composition
+									- **High Frequency (80000Hz):** Penetrates cell membranes, reflects total tissue properties
 
-					**Clinical Correlations:**
-					- **Decreasing High-Frequency Impedance:** Often associated with improved healing
-					- **Increasing Low-to-High Frequency Ratio:** May indicate inflammation or infection
-					- **Decreasing Phase Angle:** May indicate deterioration in cellular health
-					- **Increasing Alpha Parameter:** Often indicates increasing tissue heterogeneity
+									**Clinical Correlations:**
+									- **Decreasing High-Frequency Impedance:** Often associated with improved healing
+									- **Increasing Low-to-High Frequency Ratio:** May indicate inflammation or infection
+									- **Decreasing Phase Angle:** May indicate deterioration in cellular health
+									- **Increasing Alpha Parameter:** Often indicates increasing tissue heterogeneity
 
-					**Reference Ranges:**
-					- **Healthy Tissue Low/High Ratio:** 5-12
-					- **Optimal Phase Angle:** 5-7 degrees
-					- **Typical Alpha Range:** 0.6-0.8
-					""")
+									**Reference Ranges:**
+									- **Healthy Tissue Low/High Ratio:** 5-12
+									- **Optimal Phase Angle:** 5-7 degrees
+									- **Typical Alpha Range:** 0.6-0.8
+									""")
 
 	def _temperature_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
-		"""Render the temperature analysis tab."""
+		"""
+		Temperature tab display component for wound analysis application.
+
+		This method creates and displays the temperature tab content in a Streamlit app, showing
+		temperature gradient analysis and visualization based on user selection. It handles both
+		aggregate data for all patients and detailed analysis for individual patients.
+
+		Parameters
+		----------
+		df : pandas.DataFrame
+			The dataframe containing wound data for all patients.
+		selected_patient : str
+			The patient identifier to filter data. "All Patients" for aggregate view.
+
+		Returns
+		-------
+		None
+			This method renders Streamlit UI components directly.
+
+		Notes
+		-----
+		For "All Patients" view, displays:
+		- Temperature gradient analysis across wound types
+		- Statistical correlation between temperature and healing rate
+		- Scatter plot of temperature gradient vs. healing rate
+
+		For individual patient view, provides:
+		- Temperature trends over time
+		- Visit-by-visit detailed temperature analysis
+		- Clinical guidelines for temperature assessment
+		- Statistical summary with visual indicators
+		"""
 
 		if selected_patient == "All Patients":
 			st.header("Temperature Gradient Analysis")
@@ -2491,7 +2769,33 @@ class Dashboard:
 					st.markdown("- Tissue damage risk\n- Possible infection\n- Requires attention")
 
 	def _oxygenation_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
-		"""Render the oxygenation analysis tab."""
+		"""
+		Renders the oxygenation analysis tab in the dashboard.
+
+		This tab displays visualizations related to wound oxygenation data, showing either
+		aggregate statistics for all patients or detailed analysis for a single selected patient.
+
+		For all patients:
+		- Scatter plot showing relationship between oxygenation and healing rate
+		- Box plot comparing oxygenation levels across different wound types
+		- Statistical correlation between oxygenation and healing rate
+
+		For individual patients:
+		- Bar chart showing oxygenation levels across visits
+		- Line chart tracking oxygenation over time
+
+		Parameters:
+		-----------
+		df : pd.DataFrame
+			The dataframe containing all wound care data
+		selected_patient : str
+			The selected patient (either "All Patients" or a specific patient identifier)
+
+		Returns:
+		--------
+		None
+			This method renders Streamlit components directly to the app
+		"""
 		st.header("Oxygenation Analysis")
 
 		if selected_patient == "All Patients":
@@ -2581,7 +2885,40 @@ class Dashboard:
 			st.plotly_chart(fig_line, use_container_width=True)
 
 	def _exudate_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
-		"""Render the exudate analysis tab."""
+		"""Create and display the exudate analysis tab in the wound management dashboard.
+
+		This tab provides detailed analysis of wound exudate characteristics including volume,
+		viscosity, and type. For aggregate patient data, it shows statistical correlations and
+		visualizations comparing exudate properties across different wound types. For individual
+		patients, it displays a timeline of exudate changes and provides clinical interpretations
+		for each visit.
+
+		Parameters
+		----------
+		df : pd.DataFrame
+			The dataframe containing wound assessment data for all patients
+		selected_patient : str
+			The currently selected patient ID or "All Patients" for aggregate view
+
+		Returns
+		-------
+		None
+			This method updates the Streamlit UI directly
+
+		Notes
+		-----
+		For aggregate analysis, this method:
+		- Calculates correlations between exudate characteristics and healing rates
+		- Creates boxplots comparing exudate properties across wound types
+		- Generates scatter plots to visualize relationships between variables
+		- Shows distributions of exudate types by wound category
+
+		For individual patient analysis, this method:
+		- Displays a timeline chart of exudate changes
+		- Provides clinical interpretations for each visit
+		- Offers treatment recommendations based on exudate characteristics
+		"""
+
 		st.header("Exudate Analysis")
 
 		if selected_patient == "All Patients":
@@ -2868,7 +3205,22 @@ class Dashboard:
 							st.write(imp)
 
 	def _risk_factors_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
-		"""Render the risk factors analysis tab."""
+		"""
+		Renders the Risk Factors Analysis tab in the Streamlit application.
+		This tab provides analysis of how different risk factors (diabetes, smoking, BMI)
+		affect wound healing rates. For the aggregate view ('All Patients'), it shows
+		statistical distributions and comparisons across different patient groups.
+		For individual patients, it displays a personalized risk profile and assessment.
+		Features:
+		- For all patients: Interactive tabs showing wound healing statistics across diabetes status, smoking status, and BMI categories, with visualizations and statistical summaries
+		- For individual patients: Risk profile with factors like diabetes, smoking status and BMI, plus a computed risk score and estimated healing time
+		Args:
+			df (pd.DataFrame): The dataframe containing all patient wound data
+			selected_patient (str): The currently selected patient ID as a string, or "All Patients" for aggregate view
+		Returns:
+			None: This method renders UI components directly in Streamlit
+		"""
+
 		st.header("Risk Factors Analysis")
 
 		if selected_patient == "All Patients":
@@ -2892,7 +3244,7 @@ class Dashboard:
 			# 	)
 
 			# Clip healing rates to reasonable range
-			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
+			# valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
 
 			for col in ['Diabetes?', 'Smoking status', 'BMI']:
 				# Add consistent diabetes status for each patient
@@ -2909,10 +3261,9 @@ class Dashboard:
 
 				# Ensure diabetes status is consistent for each patient
 				valid_df['Diabetes?'] = valid_df['Diabetes?'].fillna('No')
+
 				# Compare average healing rates by diabetes status
-				diab_stats = valid_df.groupby('Diabetes?').agg({
-					'Healing Rate (%)': ['mean', 'count', 'std']
-				}).round(2)
+				diab_stats = valid_df.groupby('Diabetes?').agg({ 'Healing Rate (%)': ['mean', 'count', 'std'] }).round(2)
 
 				# Create a box plot for healing rates with color coding
 				fig1 = px.box(
@@ -2937,6 +3288,7 @@ class Dashboard:
 						dtick=25
 					)
 				)
+
 				# Update legend labels
 				fig1.for_each_trace(lambda t: t.update(name='Improving' if t.name == 'green' else 'Worsening'))
 				st.plotly_chart(fig1, use_container_width=True)
@@ -3178,7 +3530,34 @@ class Dashboard:
 				st.markdown(f"**Estimated Healing Time:** {est_healing_weeks:.1f} weeks")
 
 	def _llm_analysis_tab(self, selected_patient: str) -> None:
-		"""Render the LLM analysis tab."""
+		"""
+		Creates and manages the LLM analysis tab in the Streamlit application.
+
+		This method sets up the interface for running LLM-powered wound analysis
+		on either all patients collectively or on a single selected patient.
+		It handles the initialization of the LLM, retrieval of patient data,
+		generation of analysis, and presentation of results.
+
+		Parameters
+		----------
+		selected_patient : str
+			The currently selected patient identifier (e.g., "Patient 1") or "All Patients"
+
+		Returns
+		-------
+		None
+			The method updates the Streamlit UI directly
+
+		Notes
+		-----
+		- Analysis results are stored in session state to persist between reruns
+		- The method supports two analysis modes:
+			1. Population analysis (when "All Patients" is selected)
+			2. Individual patient analysis (when a specific patient is selected)
+		- Analysis results and prompts are displayed in separate tabs
+		- A download button is provided for exporting reports as Word documents
+		"""
+
 		st.header("LLM-Powered Wound Analysis")
 
 		# Initialize reports dictionary in session state if it doesn't exist
@@ -3239,38 +3618,26 @@ class Dashboard:
 			else:
 				st.warning("Please upload a patient data file from the sidebar to enable LLM analysis.")
 
-	def _add_footer(self) -> None:
-		"""Add footer information."""
-		st.markdown("---")
-		st.markdown("""
-		**Note:** This dashboard loads data from a user-uploaded CSV file.
-		""")
-
-	def _create_sidebar(self) -> None:
-		"""Create the sidebar with additional information."""
-		with st.sidebar:
-			st.header("About This Dashboard")
-			st.write("""
-			This Streamlit dashboard visualizes wound healing data collected with smart bandage technology.
-
-			The analysis focuses on key metrics:
-			- Impedance measurements (Z, Z', Z'')
-			- Temperature gradients
-			- Oxygenation levels
-			- Patient risk factors
-			""")
-
-			st.header("Statistical Methods")
-			st.write("""
-			The visualization is supported by these statistical approaches:
-			- Longitudinal analysis of healing trajectories
-				- Risk factor significance assessment
-			- Comparative analysis across wound types
-			""")
-			# - Correlation analysis between measurements and outcomes
-
 	def _create_left_sidebar(self) -> None:
-		"""Create sidebar components specific to LLM configuration."""
+		"""
+		Creates the left sidebar of the Streamlit application.
+
+		This method sets up the sidebar with model configuration options, file upload functionality,
+		and informational sections about the dashboard. The sidebar includes:
+
+		1. Model Configuration section:
+			- File uploader for patient data (CSV files)
+			- Platform selector (defaulting to ai-verde)
+			- Model selector with appropriate defaults based on the platform
+			- Advanced settings expandable section for API keys and base URLs
+
+		2. Information sections:
+			- About This Dashboard: Describes the purpose and data visualization focus
+			- Statistical Methods: Outlines analytical approaches used in the dashboard
+
+		Returns:
+			None
+		"""
 
 		with st.sidebar:
 			st.subheader("Model Configuration")
@@ -3303,8 +3670,50 @@ class Dashboard:
 				if self.llm_platform == "ai-verde":
 					base_url = st.text_input("Base URL", value=os.getenv("OPENAI_BASE_URL", ""))
 
-	def _render_tab_all_patients(self, df: pd.DataFrame) -> None:
-		"""Render statistics for all patients."""
+
+			st.header("About This Dashboard")
+			st.write("""
+			This Streamlit dashboard visualizes wound healing data collected with smart bandage technology.
+
+			The analysis focuses on key metrics:
+			- Impedance measurements (Z, Z', Z'')
+			- Temperature gradients
+			- Oxygenation levels
+			- Patient risk factors
+			""")
+
+			st.header("Statistical Methods")
+			st.write("""
+			The visualization is supported by these statistical approaches:
+			- Longitudinal analysis of healing trajectories
+				- Risk factor significance assessment
+			- Comparative analysis across wound types
+			""")
+
+	def _render_all_patients_overview(self, df: pd.DataFrame) -> None:
+		"""
+		Renders the overview dashboard for all patients in the dataset.
+
+		This method creates a population statistics section with a wound area progression
+		plot and key metrics including average days in study, estimated treatment duration,
+		average healing rate, and overall improvement rate.
+
+		Parameters
+		----------
+		df : pd.DataFrame
+			The dataframe containing wound data for all patients with columns:
+			- 'Record ID': Patient identifier
+			- 'Days_Since_First_Visit': Number of days elapsed since first visit
+			- 'Estimated_Days_To_Heal': Predicted days until wound heals (if available)
+			- 'Healing Rate (%)': Rate of healing in cm²/day
+			- 'Overall_Improvement': 'Yes' or 'No' indicating if wound is improving
+
+		Returns
+		-------
+		None
+			The method directly renders components to the Streamlit app interface
+		"""
+
 		st.subheader("Population Statistics")
 
 		# Display wound area progression for all patients
@@ -3365,8 +3774,36 @@ class Dashboard:
 				print(f"Error calculating improvement rate: {e}")
 
 	def _render_patient_overview(self, df: pd.DataFrame, patient_id: int) -> None:
+		"""
+		Render the patient overview section in the Streamlit application.
 
-		"""Render overview for a specific patient."""
+		This method displays a comprehensive overview of a patient's profile, including demographics,
+		medical history, diabetes status, and detailed wound information from their first visit.
+		The information is organized into multiple columns and sections for better readability.
+
+		Parameters:
+		----------
+		df : pd.DataFrame
+			The DataFrame containing all patient data.
+		patient_id : int
+			The unique identifier for the patient whose data should be displayed.
+
+		Returns:
+		-------
+		None
+			This method renders content to the Streamlit UI and doesn't return any value.
+
+		Notes:
+		-----
+		The method handles cases where data might be missing by displaying placeholder values.
+		It organizes information into three main sections:
+		1. Patient demographics and medical history
+		2. Wound details including location, type, and care
+		3. Specific wound characteristics like infection, granulation, and undermining
+
+		The method will display an error message if no data is available for the specified patient.
+		"""
+
 
 		def get_metric_value(metric_name: str) -> str:
 			# Check for None, nan, empty string, whitespace, and string 'nan'
