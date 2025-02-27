@@ -987,36 +987,36 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def calculate_visit_changes(current_visit, previous_visit):
 		"""
-		Calculate the percentage changes in impedance parameters between two visits and determine clinical significance.
+			Calculate the percentage changes in impedance parameters between two visits and determine clinical significance.
 
-		This function compares impedance data (Z, resistance, capacitance) at different frequencies
-		between the current visit and a previous visit. It calculates percentage changes and determines
-		if these changes are clinically significant based on predefined thresholds.
+			This function compares impedance data (Z, resistance, capacitance) at different frequencies
+			between the current visit and a previous visit. It calculates percentage changes and determines
+			if these changes are clinically significant based on predefined thresholds.
 
-		Parameters
-		----------
-		current_visit : dict
-			Dictionary containing the current visit data with sensor_data.impedance measurements
-			at low, center, and high frequencies.
-		previous_visit : dict
-			Dictionary containing the previous visit data with sensor_data.impedance measurements
-			at low, center, and high frequencies.
+			Parameters
+			----------
+			current_visit : dict
+				Dictionary containing the current visit data with sensor_data.impedance measurements
+				at low, center, and high frequencies.
+			previous_visit : dict
+				Dictionary containing the previous visit data with sensor_data.impedance measurements
+				at low, center, and high frequencies.
 
-		Returns
-		-------
-		tuple
-			A tuple containing two dictionaries:
-			- changes: Dictionary mapping parameter names (e.g., 'resistance_low_frequency') to their percentage changes between visits.
-			- clinically_significant: Dictionary mapping parameter names to boolean values indicating whether the change is clinically significant.
+			Returns
+			-------
+			tuple
+				A tuple containing two dictionaries:
+				- changes: Dictionary mapping parameter names (e.g., 'resistance_low_frequency') to their percentage changes between visits.
+				- clinically_significant: Dictionary mapping parameter names to boolean values indicating whether the change is clinically significant.
 
-		Notes
-		-----
-		The function uses the following clinical significance thresholds:
-		- Resistance: 15% change
-		- Capacitance: 20% change
-		- Absolute impedance (Z): 15% change
+			Notes
+			-----
+			The function uses the following clinical significance thresholds:
+			- Resistance: 15% change
+			- Capacitance: 20% change
+			- Absolute impedance (Z): 15% change
 
-		If either value is zero or invalid, the comparison for that parameter is skipped.
+			If either value is zero or invalid, the comparison for that parameter is skipped.
 		"""
 
 		changes = {}
@@ -1485,37 +1485,37 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def assess_infection_risk(current_visit, previous_visit=None):
 		"""
-		Evaluates the infection risk for a wound based on bioimpedance measurements.
+			Evaluates the infection risk for a wound based on bioimpedance measurements.
 
-		This function analyzes bioelectrical impedance data from the current visit and optionally
-		compares it with a previous visit to determine infection risk. It considers multiple factors
-		including impedance ratios, changes in resistance, and phase angle calculations.
+			This function analyzes bioelectrical impedance data from the current visit and optionally
+			compares it with a previous visit to determine infection risk. It considers multiple factors
+			including impedance ratios, changes in resistance, and phase angle calculations.
 
-		Parameters
-		----------
-		current_visit : dict
-			Dictionary containing current visit data with sensor_data.impedance measurements
-			(including low_frequency and high_frequency values with Z, resistance, capacitance)
-		previous_visit : dict, optional
-			Dictionary containing previous visit data in the same format as current_visit,
-			used for trend analysis
+			Parameters
+			----------
+			current_visit : dict
+				Dictionary containing current visit data with sensor_data.impedance measurements
+				(including low_frequency and high_frequency values with Z, resistance, capacitance)
+			previous_visit : dict, optional
+				Dictionary containing previous visit data in the same format as current_visit,
+				used for trend analysis
 
-		Returns
-		-------
-		dict
-			A dictionary containing:
-			- risk_score: numeric score from 0-100 indicating infection risk
-			- risk_level: string interpretation ("Low", "Moderate", or "High" infection risk)
-			- contributing_factors: list of specific factors that contributed to the risk assessment
+			Returns
+			-------
+			dict
+				A dictionary containing:
+				- risk_score: numeric score from 0-100 indicating infection risk
+				- risk_level: string interpretation ("Low", "Moderate", or "High" infection risk)
+				- contributing_factors: list of specific factors that contributed to the risk assessment
 
-		Notes
-		-----
-		The function evaluates three primary factors:
-		1. Low/high frequency impedance ratio (values >15 indicate increased risk)
-		2. Changes in low-frequency resistance compared to previous readings
-		3. Phase angle calculation based on resistance and capacitance values
+			Notes
+			-----
+			The function evaluates three primary factors:
+			1. Low/high frequency impedance ratio (values >15 indicate increased risk)
+			2. Changes in low-frequency resistance compared to previous readings
+			3. Phase angle calculation based on resistance and capacitance values
 
-		The final risk score is capped between 0 and 100.
+			The final risk score is capped between 0 and 100.
 		"""
 
 
@@ -1703,37 +1703,37 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def generate_clinical_insights(analyses):
 		"""
-		Generates clinical insights based on various wound analysis results.
+			Generates clinical insights based on various wound analysis results.
 
-		This function processes different aspects of wound analysis data and translates
-		them into actionable clinical insights with corresponding confidence levels
-		and recommendations.
+			This function processes different aspects of wound analysis data and translates
+			them into actionable clinical insights with corresponding confidence levels
+			and recommendations.
 
-		Parameters
-		----------
-		analyses : dict
-			A dictionary containing analysis results with potential keys:
-			- 'healing_trajectory': Contains slope, p_value, and status of wound healing over time
-			- 'infection_risk': Contains risk_score and contributing_factors for infection
-			- 'frequency_response': Contains interpretation of impedance frequency response
-			- 'anomalies': Contains significant deviations in parameters with z-scores
+			Parameters
+			----------
+			analyses : dict
+				A dictionary containing analysis results with potential keys:
+				- 'healing_trajectory': Contains slope, p_value, and status of wound healing over time
+				- 'infection_risk': Contains risk_score and contributing_factors for infection
+				- 'frequency_response': Contains interpretation of impedance frequency response
+				- 'anomalies': Contains significant deviations in parameters with z-scores
 
-		Returns
-		-------
-		list
-			A list of dictionaries, each representing a clinical insight with keys:
-			- 'insight': The main clinical observation
-			- 'confidence': Level of certainty (High, Moderate, etc.)
-			- 'recommendation': Suggested clinical action (when applicable)
-			- 'supporting_factors' or 'clinical_meaning': Additional context (when available)
+			Returns
+			-------
+			list
+				A list of dictionaries, each representing a clinical insight with keys:
+				- 'insight': The main clinical observation
+				- 'confidence': Level of certainty (High, Moderate, etc.)
+				- 'recommendation': Suggested clinical action (when applicable)
+				- 'supporting_factors' or 'clinical_meaning': Additional context (when available)
 
-		Notes
-		-----
-		The function generates insights based on the following criteria:
-		1. Healing trajectory based on impedance trends and statistical significance
-		2. Infection risk assessment based on risk score
-		3. Tissue composition analysis from frequency response data
-		4. Anomaly detection for significant deviations in measured parameters
+			Notes
+			-----
+			The function generates insights based on the following criteria:
+			1. Healing trajectory based on impedance trends and statistical significance
+			2. Infection risk assessment based on risk score
+			3. Tissue composition analysis from frequency response data
+			4. Anomaly detection for significant deviations in measured parameters
 		"""
 
 		insights = []
@@ -1888,20 +1888,142 @@ class ImpedanceAnalyzer:
 			"confidence": confidence
 		}
 
+	def calculate_impedance_correlation(self, df: pd.DataFrame, outlier_threshold: float = 0.2) -> tuple:
+		"""
+		Calculate correlation between impedance and healing rate, with outlier handling.
+
+		Args:
+			df: DataFrame containing impedance and healing rate data
+			outlier_threshold: Threshold for outlier removal (0 = none, 0.1 = 10th/90th percentile)
+
+		Returns:
+			Tuple of (filtered_df, correlation_coefficient, p_value)
+		"""
+		# Create a copy of the dataframe
+		valid_df = df.copy()
+
+		# Apply outlier removal if threshold > 0
+		if outlier_threshold > 0:
+			valid_df = Visualizer._remove_outliers(valid_df, 'Skin Impedance (kOhms) - Z', outlier_threshold)
+
+		# Calculate correlation if enough data points
+		r, p = None, None
+		if not valid_df.empty and len(valid_df) > 1:
+			r, p = stats.pearsonr(valid_df['Skin Impedance (kOhms) - Z'], valid_df['Healing Rate (%)'])
+
+		return valid_df, r, p
+
+	def prepare_population_stats(self, df: pd.DataFrame) -> tuple:
+		"""
+		Prepare aggregated statistics for population-level impedance analysis.
+
+		Args:
+			df: DataFrame containing impedance data
+
+		Returns:
+			Tuple of DataFrames with impedance components and wound type statistics
+		"""
+		# Impedance components by visit
+		avg_impedance = df.groupby('Visit Number')[
+			["Skin Impedance (kOhms) - Z",
+			"Skin Impedance (kOhms) - Z'",
+			"Skin Impedance (kOhms) - Z''"]
+		].mean().reset_index()
+
+		# Impedance by wound type
+		avg_by_type = df.groupby('Wound Type')["Skin Impedance (kOhms) - Z"].mean().reset_index()
+
+		return avg_impedance, avg_by_type
+
+	def generate_clinical_analysis(self, current_visit, previous_visit=None) -> dict:
+		"""
+		Generate comprehensive clinical analysis for a patient visit.
+
+		Args:
+			current_visit: Dictionary with current visit data
+			previous_visit: Dictionary with previous visit data, if available
+
+		Returns:
+			Dictionary with analysis results
+		"""
+		analysis = {}
+
+		# Calculate tissue health index
+		analysis['tissue_health'] = self.calculate_tissue_health_index(visit=current_visit)
+
+		# Assess infection risk
+		analysis['infection_risk'] = self.assess_infection_risk(current_visit=current_visit, previous_visit=previous_visit)
+
+		# Analyze tissue composition (frequency response)
+		analysis['frequency_response'] = self.analyze_frequency_response(visit=current_visit)
+
+		# Calculate changes since previous visit
+		if previous_visit:
+			analysis['changes'], analysis['significant_changes'] = self.calculate_visit_changes( current_visit=current_visit, previous_visit=previous_visit )
+
+		return analysis
+
+	def generate_advanced_analysis(self, visits) -> dict:
+		"""
+		Generate advanced bioelectrical analysis for a series of patient visits.
+
+		Args:
+			visits: List of visit dictionaries
+
+		Returns:
+			Dictionary with advanced analysis results
+		"""
+		if len(visits) < 3:
+			return {'status': 'insufficient_data'}
+
+		analysis = {}
+
+		# Analyze healing trajectory
+		analysis['healing_trajectory'] = self.analyze_healing_trajectory(visits)
+
+		# Detect anomalies
+		analysis['anomalies'] = self.detect_impedance_anomalies(
+			visits[:-1], visits[-1]
+		)
+
+		# Calculate Cole parameters
+		analysis['cole_parameters'] = self.calculate_cole_parameters(visits[-1])
+
+		# Get tissue health from most recent visit
+		analysis['tissue_health'] = self.calculate_tissue_health_index(visits[-1])
+
+		# Get infection risk assessment
+		analysis['infection_risk'] = self.assess_infection_risk(
+			visits[-1], visits[-2] if len(visits) > 1 else None
+		)
+
+		# Get frequency response analysis
+		analysis['frequency_response'] = self.analyze_frequency_response(visits[-1])
+
+		# Generate clinical insights
+		analysis['insights'] = self.generate_clinical_insights(analysis)
+
+		# Classify wound healing stage
+		analysis['healing_stage'] = self.classify_wound_healing_stage(analysis)
+
+		return analysis
+
+
 class Dashboard:
 	"""Main dashboard application."""
 
 	def __init__(self):
 		"""Initialize the dashboard."""
-		self.config = Config()
-		self.data_manager = DataManager()
-		self.visualizer = Visualizer()
-		# self.doc_handler = DocumentHandler()
-		self.risk_analyzer = RiskAnalyzer()
+		self.config             = Config()
+		self.data_manager       = DataManager()
+		self.visualizer         = Visualizer()
+		self.risk_analyzer      = RiskAnalyzer()
+		self.impedance_analyzer = ImpedanceAnalyzer()
+
 		# LLM configuration placeholders
-		self.llm_platform = None
-		self.llm_model = None
-		self.uploaded_file = None
+		self.llm_platform   = None
+		self.llm_model      = None
+		self.uploaded_file  = None
 		self.data_processor = None
 
 	def setup(self) -> None:
@@ -2039,148 +2161,333 @@ class Dashboard:
 		st.header("Impedance Analysis")
 
 		if selected_patient == "All Patients":
-
-			# Scatter plot: Impedance vs Healing Rate
-			valid_df = df.copy()
-
-			# Add outlier threshold control
-			col1, _, col3 = st.columns([2,3,3])
-
-			with col1:
-				outlier_threshold = st.number_input(
-					"Impedance Outlier Threshold",
-					min_value=0.0,
-					max_value=0.9,
-					value=0.2,
-					step=0.05,
-					help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
-				)
-
-			# Get the filtered data for y-axis limits
-			valid_df = Visualizer._remove_outliers(valid_df, 'Skin Impedance (kOhms) - Z', outlier_threshold)
-
-			with col3:
-				if not valid_df.empty:
-					# Calculate correlation
-					r, p = stats.pearsonr(valid_df['Skin Impedance (kOhms) - Z'], valid_df['Healing Rate (%)'])
-					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
-					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
-
-
-			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 1000)
-
-
-			# Add consistent diabetes status for each patient
-			first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
-			valid_df['Diabetes?'] = valid_df['Record ID'].map(first_diabetes_status)
-
-			if not valid_df.empty:
-				fig = px.scatter(
-					valid_df,
-					x='Skin Impedance (kOhms) - Z',
-					y='Healing Rate (%)',
-					color='Diabetes?',
-					size='Calculated Wound Area',
-					size_max=30,  # Maximum marker size
-					hover_data=['Record ID', 'Event Name', 'Wound Type'],
-					title="Impedance vs Healing Rate Correlation"
-				)
-				fig.update_layout(xaxis_title="Impedance Z (kOhms)", yaxis_title="Healing Rate (% reduction per visit)")
-				st.plotly_chart(fig, use_container_width=True)
-			else:
-				st.warning("No valid data available for the scatter plot.")
-
-			# Rest of the impedance tab code...
-			col1, col2 = st.columns(2)
-			with col1:
-				st.subheader("Impedance Components Over Time")
-				avg_impedance = df.groupby('Visit Number')[["Skin Impedance (kOhms) - Z", "Skin Impedance (kOhms) - Z'", "Skin Impedance (kOhms) - Z''"]].mean().reset_index()
-
-				fig1 = px.line(
-					avg_impedance,
-					x='Visit Number',
-					y=["Skin Impedance (kOhms) - Z", "Skin Impedance (kOhms) - Z'", "Skin Impedance (kOhms) - Z''"],
-					title="Average Impedance Components by Visit",
-					markers=True
-				)
-				fig1.update_layout(xaxis_title="Visit Number", yaxis_title="Impedance (kOhms)")
-				st.plotly_chart(fig1, use_container_width=True)
-			with col2:
-				st.subheader("Impedance by Wound Type")
-				avg_by_type = df.groupby('Wound Type')["Skin Impedance (kOhms) - Z"].mean().reset_index()
-				fig2 = px.bar(
-					avg_by_type,
-					x='Wound Type',
-					y="Skin Impedance (kOhms) - Z",
-					title="Average Impedance by Wound Type",
-					color='Wound Type'
-				)
-				fig2.update_layout(xaxis_title="Wound Type", yaxis_title="Average Impedance Z (kOhms)")
-				st.plotly_chart(fig2, use_container_width=True)
+			self._render_population_impedance_analysis(df)
 		else:
-			# For individual patient - Enhanced with advanced bioimpedance analysis
 			patient_id = int(selected_patient.split(" ")[1])
-			patient_data = self.data_processor.get_patient_visits(record_id=patient_id)
-			visits = patient_data['visits']
+			self._render_patient_impedance_analysis(df, patient_id)
 
-			# Create tabs for different analysis views
-			tab1, tab2, tab3 = st.tabs([
-				"Overview",
-				"Clinical Analysis",
-				"Advanced Interpretation"
-			])
+	def _render_population_impedance_analysis(self, df: pd.DataFrame) -> None:
+		"""
+		Render impedance analysis for the entire patient population.
 
-			with tab1:
-				# Basic impedance visualization with mode selection dropdown
-				st.subheader("Impedance Measurements Over Time")
+		Args:
+			df: DataFrame containing all patient data
+		"""
+		# Create a copy of the dataframe for analysis
+		analysis_df = df.copy()
 
-				# Add measurement mode selector
-				measurement_mode = st.selectbox(
-					"Select Measurement Mode:",
-					["Absolute Impedance (|Z|)", "Resistance", "Capacitance"],
-					key="impedance_mode_selector"
+		# Add outlier threshold control and calculate correlation
+		filtered_df = self._display_impedance_correlation_controls(analysis_df)
+
+		# Create scatter plot if we have valid data
+		if not filtered_df.empty:
+			self._render_impedance_scatter_plot(filtered_df)
+		else:
+			st.warning("No valid data available for the scatter plot.")
+
+		# Create additional visualizations in a two-column layout
+		self._render_population_impedance_charts(df)
+
+	def _display_impedance_correlation_controls(self, df: pd.DataFrame) -> pd.DataFrame:
+		"""
+		Display controls for impedance correlation analysis and perform correlation calculation.
+
+		Args:
+			df: DataFrame containing impedance data
+
+		Returns:
+			Filtered DataFrame with outlier treatment applied
+		"""
+		col1, _, col3 = st.columns([2, 3, 3])
+
+		with col1:
+			outlier_threshold = st.number_input(
+				"Impedance Outlier Threshold",
+				min_value=0.0,
+				max_value=0.9,
+				value=0.2,
+				step=0.05,
+				help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
+			)
+
+		# Calculate correlation with outlier handling
+		valid_df, r, p = self.impedance_analyzer.calculate_impedance_correlation(df, outlier_threshold)
+
+		# Display correlation statistics
+		with col3:
+			if r is not None and p is not None:
+				p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
+				st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
+
+		# Prepare data for visualization
+		valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 1000)
+
+		# Add consistent diabetes status for each patient
+		first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
+		valid_df['Diabetes?'] = valid_df['Record ID'].map(first_diabetes_status)
+
+		return valid_df
+
+	def _render_impedance_scatter_plot(self, df: pd.DataFrame) -> None:
+		"""
+		Render scatter plot showing relationship between impedance and healing rate.
+
+		Args:
+			df: DataFrame containing impedance and healing rate data
+		"""
+		fig = px.scatter(
+			df,
+			x='Skin Impedance (kOhms) - Z',
+			y='Healing Rate (%)',
+			color='Diabetes?',
+			size='Calculated Wound Area',
+			size_max=30,
+			hover_data=['Record ID', 'Event Name', 'Wound Type'],
+			title="Impedance vs Healing Rate Correlation"
+		)
+
+		fig.update_layout(
+			xaxis_title="Impedance Z (kOhms)",
+			yaxis_title="Healing Rate (% reduction per visit)"
+		)
+
+		st.plotly_chart(fig, use_container_width=True)
+
+	def _render_population_impedance_charts(self, df: pd.DataFrame) -> None:
+		"""
+		Render additional impedance charts for population analysis.
+
+		Args:
+			df: DataFrame containing impedance data
+		"""
+		# Get prepared statistics
+		avg_impedance, avg_by_type = self.impedance_analyzer.prepare_population_stats(df)
+
+		col1, col2 = st.columns(2)
+
+		with col1:
+			st.subheader("Impedance Components Over Time")
+			fig1 = px.line(
+				avg_impedance,
+				x='Visit Number',
+				y=["Skin Impedance (kOhms) - Z", "Skin Impedance (kOhms) - Z'", "Skin Impedance (kOhms) - Z''"],
+				title="Average Impedance Components by Visit",
+				markers=True
+			)
+			fig1.update_layout(xaxis_title="Visit Number", yaxis_title="Impedance (kOhms)")
+			st.plotly_chart(fig1, use_container_width=True)
+
+		with col2:
+			st.subheader("Impedance by Wound Type")
+			fig2 = px.bar(
+				avg_by_type,
+				x='Wound Type',
+				y="Skin Impedance (kOhms) - Z",
+				title="Average Impedance by Wound Type",
+				color='Wound Type'
+			)
+			fig2.update_layout(xaxis_title="Wound Type", yaxis_title="Average Impedance Z (kOhms)")
+			st.plotly_chart(fig2, use_container_width=True)
+
+	def _render_patient_impedance_analysis(self, df: pd.DataFrame, patient_id: int) -> None:
+
+		# Get patient visits
+		patient_data = self.data_processor.get_patient_visits(record_id=patient_id)
+		visits = patient_data['visits']
+
+		# Create tabs for different analysis views
+		tab1, tab2, tab3 = st.tabs([
+			"Overview",
+			"Clinical Analysis",
+			"Advanced Interpretation"
+		])
+
+		with tab1:
+			self._render_patient_impedance_overview(visits)
+
+		with tab2:
+			self._render_patient_clinical_analysis(visits)
+
+		with tab3:
+			self._render_patient_advanced_analysis(visits)
+
+	def _render_patient_impedance_overview(self, visits) -> None:
+		"""
+		Renders an overview section for patient impedance measurements.
+
+		This method creates a section in the Streamlit application showing impedance measurements
+		over time, allowing users to view different types of impedance data (absolute impedance,
+		resistance, or capacitance).
+
+		Parameters:
+			visits (list): A list of patient visit data containing impedance measurements
+
+		Returns:
+			None: This method renders UI components directly to the Streamlit app
+
+		Note:
+			The visualization includes a selector for different measurement modes and
+			displays an explanatory note about the measurement types and frequency effects.
+		"""
+
+		st.subheader("Impedance Measurements Over Time")
+
+		# Add measurement mode selector
+		measurement_mode = st.selectbox(
+			"Select Measurement Mode:",
+			["Absolute Impedance (|Z|)", "Resistance", "Capacitance"],
+			key="impedance_mode_selector"
+		)
+
+		# Create impedance chart with selected mode
+		fig = self.visualizer.create_impedance_chart(visits, measurement_mode=measurement_mode)
+		st.plotly_chart(fig, use_container_width=True)
+
+		# Logic behind analysis
+		st.markdown("""
+		<div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
+		<p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
+		<strong>Measurement Types:</strong><br>
+		• <strong>|Z|</strong>: Total opposition to current flow<br>
+		• <strong>Resistance</strong>: Opposition from ionic content<br>
+		• <strong>Capacitance</strong>: Opposition from cell membranes<br><br>
+		<strong>Frequency Effects:</strong><br>
+		• <strong>Low (100Hz)</strong>: Measures extracellular fluid<br>
+		• <strong>High (80000Hz)</strong>: Measures both intra/extracellular properties
+		</div>
+		""", unsafe_allow_html=True)
+
+	def _render_patient_clinical_analysis(self, visits) -> None:
+		"""
+		Renders the bioimpedance clinical analysis section for a patient's wound data.
+
+		This method creates a tabbed interface showing clinical analysis for each visit.
+		For each visit (except the first one), it performs a comparative analysis with
+		the previous visit to track changes in wound healing metrics.
+
+		Args:
+			visits (list): A list of dictionaries containing visit data. Each dictionary
+						  should have at least a 'visit_date' key and other wound measurement data.
+
+		Returns:
+			None
+
+		Note:
+			- At least two visits are required for comprehensive analysis
+			- Creates a tab for each visit date
+			- Analysis is performed using the impedance_analyzer component
+		"""
+
+		st.subheader("Bioimpedance Clinical Analysis")
+
+		# Only analyze if we have at least two visits
+		if len(visits) < 2:
+			st.warning("At least two visits are required for comprehensive clinical analysis")
+			return
+
+		# Create tabs for each visit
+		visit_tabs = st.tabs([f"{visit.get('visit_date', 'N/A')}" for visit in visits])
+
+		for visit_idx, visit_tab in enumerate(visit_tabs):
+			with visit_tab:
+				# Get current and previous visit data
+				current_visit = visits[visit_idx]
+				previous_visit = visits[visit_idx-1] if visit_idx > 0 else None
+
+				# Generate comprehensive clinical analysis
+				analysis = self.impedance_analyzer.generate_clinical_analysis(
+					current_visit, previous_visit
 				)
 
-				# Create impedance chart with selected mode
-				fig = Visualizer.create_impedance_chart(visits, measurement_mode=measurement_mode)
-				st.plotly_chart(fig, use_container_width=True)
+				# Display results in a structured layout
+				self._display_clinical_analysis_results(analysis, previous_visit is not None)
 
-				# Add basic interpretation
-				st.markdown("### Measurement Interpretation")
-				st.info("""
-				**Interpreting Impedance Measurements:**
-				- **Absolute Impedance (|Z|)**: Total opposition to electrical current flow
-				- **Resistance**: Opposition from the tissue's ionic content
-				- **Capacitance**: Opposition from cell membranes
+	def _display_clinical_analysis_results(self, analysis, has_previous_visit):
+		"""
+		Display the clinical analysis results in the Streamlit interface using a structured layout.
 
-				Lower frequencies (100Hz) primarily measure extracellular fluid, while higher frequencies (80000Hz)
-				penetrate cell membranes to measure both intracellular and extracellular properties.
-				""")
+		This method organizes the display of analysis results into two sections, each with two columns:
+		1. Top section: Tissue health and infection risk assessments
+		2. Bottom section: Tissue composition analysis and comparison with previous visits (if available)
 
-			with tab2:
-				st.subheader("Bioimpedance Clinical Analysis")
+		The method also adds an explanatory note about the color coding and significance markers used in the display.
 
-				# Only analyze if we have at least two visits
-				if len(visits) >= 2:
-						# Create tabs for each visit
-					visit_tabs = st.tabs([f"{visit.get('visit_date', 'N/A')}" for idx, visit in enumerate(visits)])
+		Parameters
+		----------
+		analysis : dict
+			A dictionary containing the analysis results with the following keys:
+			- 'tissue_health': Data for tissue health assessment
+			- 'infection_risk': Data for infection risk assessment
+			- 'frequency_response': Data for tissue composition analysis
+			- 'changes': Observed changes since previous visit (if available)
+			- 'significant_changes': Boolean flags indicating clinically significant changes
 
-					for visit_idx, visit_tab in enumerate(visit_tabs):
-						with visit_tab:
-							current_visit = visits[visit_idx]
+		has_previous_visit : bool
+			Flag indicating whether there is data from a previous visit available for comparison
 
-							# Find previous visit if exists
-							previous_visit = visits[visit_idx-1] if visit_idx > 0 else None
+		Returns
+		-------
+		None
+		"""
 
-							# Perform analyses
-							tissue_health  = ImpedanceAnalyzer.calculate_tissue_health_index(current_visit)
-							infection_risk = ImpedanceAnalyzer.assess_infection_risk(current_visit, previous_visit)
-							freq_response  = ImpedanceAnalyzer.analyze_frequency_response(current_visit)
+		# Display Tissue Health and Infection Risk in a two-column layout
+		col1, col2 = st.columns(2)
 
-							# Display Tissue Health Index
-							col1, col2 = st.columns(2)
-							with col1:
-								st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios. The process involves: "
+		with col1:
+			self._display_tissue_health_assessment(analysis['tissue_health'])
+
+		with col2:
+			self._display_infection_risk_assessment(analysis['infection_risk'])
+
+		st.markdown('---')
+
+		# Display Tissue Composition and Changes in a two-column layout
+		col1, col2 = st.columns(2)
+
+		with col2:
+			self._display_tissue_composition_analysis(analysis['frequency_response'])
+
+		with col1:
+			if has_previous_visit and 'changes' in analysis:
+				self._display_visit_changes(
+					analysis['changes'],
+					analysis['significant_changes']
+				)
+			else:
+				st.info("This is the first visit. No previous data available for comparison.")
+
+		st.markdown("""
+			<div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
+			<p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
+			<p>Color indicates direction of change: <span style="color:#FF4B4B">red = increase</span>, <span style="color:#00CC96">green = decrease</span>.<br>
+			Asterisk (*) marks changes exceeding clinical thresholds: Resistance >15%, Capacitance >20%, Z >15%.</p>
+			</div>
+			""", unsafe_allow_html=True)
+
+	def _display_tissue_health_assessment(self, tissue_health):
+		"""
+		Displays the tissue health assessment in the Streamlit UI.
+
+		This method renders the tissue health assessment section including:
+		- A header with tooltip explanation of how the tissue health index is calculated
+		- The numerical health score with color-coded display (red: <40, orange: 40-60, green: >60)
+		- A textual interpretation of the health score
+		- A warning message if health score data is insufficient
+
+		Parameters
+		----------
+		tissue_health : tuple
+			A tuple containing (health_score, health_interpretation) where:
+			- health_score (float or None): A numerical score from 0-100 representing tissue health
+			- health_interp (str): A textual interpretation of the health score
+
+		Returns
+		-------
+		None
+			This method updates the Streamlit UI but does not return a value
+		"""
+
+		st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios. The process involves: "
 										"1) Extracting impedance data from sensor readings. "
 										"2) Calculating the ratio of low to high frequency impedance (LF/HF ratio). "
 										"3) Calculating phase angle if resistance and capacitance data are available. "
@@ -2189,18 +2496,45 @@ class Dashboard:
 										"6) Providing an interpretation based on the health score. "
 										"The final score ranges from 0-100, with higher scores indicating better tissue health.")
 
-								health_score, health_interp = tissue_health
+		health_score, health_interp = tissue_health
 
-								if health_score is not None:
-									# Create a color scale for the health score
-									color = "red" if health_score < 40 else "orange" if health_score < 60 else "green"
-									st.markdown(f"**Tissue Health Index:** <span style='color:{color};font-weight:bold'>{health_score:.1f}/100</span>", unsafe_allow_html=True)
-									st.markdown(f"**Interpretation:** {health_interp}")
-								else:
-									st.warning("Insufficient data for tissue health calculation")
+		if health_score is not None:
+			# Create a color scale for the health score
+			color = "red" if health_score < 40 else "orange" if health_score < 60 else "green"
+			st.markdown(f"**Tissue Health Index:** <span style='color:{color};font-weight:bold'>{health_score:.1f}/100</span>", unsafe_allow_html=True)
+			st.markdown(f"**Interpretation:** {health_interp}")
+		else:
+			st.warning("Insufficient data for tissue health calculation")
 
-							with col2:
-								st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on three key factors: "
+	def _display_infection_risk_assessment(self, infection_risk):
+		"""
+		Displays the infection risk assessment information in the Streamlit app.
+
+		This method presents the infection risk score, risk level, and contributing factors
+		in a formatted way with color coding based on the risk severity.
+
+		Parameters
+		----------
+		infection_risk : dict
+			Dictionary containing infection risk assessment results with the following keys:
+			- risk_score (float): A numerical score from 0-100 indicating infection risk
+			- risk_level (str): A categorical assessment of risk (e.g., "Low", "Moderate", "High")
+			- contributing_factors (list): List of factors that contribute to the infection risk
+
+		Notes
+		-----
+		Risk score is color-coded:
+		- Green: scores < 30 (low risk)
+		- Orange: scores between 30 and 60 (moderate risk)
+		- Red: scores ≥ 60 (high risk)
+
+		The method includes a help tooltip that explains the factors used in risk assessment:
+		1. Low/high frequency impedance ratio
+		2. Sudden increase in low-frequency resistance
+		3. Phase angle measurements
+		"""
+
+		st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on three key factors: "
 										"1. Low/high frequency impedance ratio: A ratio > 15 is associated with increased infection risk."
 										"2. Sudden increase in low-frequency resistance: A >30% increase may indicate an inflammatory response, "
 										"which could be a sign of infection. This is because inflammation causes changes in tissue"
@@ -2210,312 +2544,422 @@ class Dashboard:
 										"The risk score is a weighted sum of these factors, providing a quantitative measure of infection risk."
 										"The final score ranges from 0-100, with higher scores indicating higher infection risk.")
 
-								risk_score = infection_risk["risk_score"]
-								risk_level = infection_risk["risk_level"]
+		risk_score = infection_risk["risk_score"]
+		risk_level = infection_risk["risk_level"]
 
-								# Create a color scale for the risk score
-								risk_color = "green" if risk_score < 30 else "orange" if risk_score < 60 else "red"
-								st.markdown(f"**Infection Risk Score:** <span style='color:{risk_color};font-weight:bold'>{risk_score:.1f}/100</span>", unsafe_allow_html=True)
-								st.markdown(f"**Risk Level:** {risk_level}")
+		# Create a color scale for the risk score
+		risk_color = "green" if risk_score < 30 else "orange" if risk_score < 60 else "red"
+		st.markdown(f"**Infection Risk Score:** <span style='color:{risk_color};font-weight:bold'>{risk_score:.1f}/100</span>", unsafe_allow_html=True)
+		st.markdown(f"**Risk Level:** {risk_level}")
 
-								# Display contributing factors if any
-								factors = infection_risk["contributing_factors"]
-								if factors: st.markdown(f"**Contributing Factors:** {', '.join(factors)}")
+		# Display contributing factors if any
+		factors = infection_risk["contributing_factors"]
+		if factors:
+			st.markdown(f"**Contributing Factors:** {', '.join(factors)}")
 
+	def _display_tissue_composition_analysis(self, freq_response):
+		"""
+		Displays the tissue composition analysis results in the Streamlit app based on frequency response data.
 
-							st.markdown('---')
-							col1, col2 = st.columns(2)
-							with col1:
-								# Display Tissue Composition Analysis
-								st.markdown("### Tissue Composition Analysis", help="""This analysis utilizes bioelectrical impedance analysis (BIA) principles to evaluate
+		This method presents the bioelectrical impedance analysis (BIA) results including alpha and beta
+		dispersion values with their interpretation. It creates a section with explanatory headers and
+		displays the calculated tissue composition metrics.
+
+		Parameters:
+		-----------
+		freq_response : dict
+			Dictionary containing frequency response analysis results with the following keys:
+			- 'alpha_dispersion': float, measurement of low to center frequency response
+			- 'beta_dispersion': float, measurement of center to high frequency response
+			- 'interpretation': str, clinical interpretation of the frequency response data
+
+		Returns:
+		--------
+		None
+			This method updates the Streamlit UI but does not return a value.
+		"""
+
+		st.markdown("### Tissue Composition Analysis", help="""This analysis utilizes bioelectrical impedance analysis (BIA) principles to evaluate
 										tissue characteristics based on the frequency-dependent response to electrical current.
 										It focuses on two key dispersion regions:
 										1. Alpha Dispersion (low to center frequency): Occurs in the kHz range, reflects extracellular fluid content and cell membrane permeability.
 										Large alpha dispersion may indicate edema or inflammation.
 										2. Beta Dispersion (center to high frequency): Occurs in the MHz range, reflects cell membrane properties and intracellular fluid content.
 										Changes in beta dispersion can indicate alterations in cell structure or function.""")
+		# Display tissue composition analysis from frequency response
+		st.markdown("#### Analysis Results:")
+		if 'alpha_dispersion' in freq_response and 'beta_dispersion' in freq_response:
+			st.markdown(f"**Alpha Dispersion:** {freq_response['alpha_dispersion']:.3f}")
+			st.markdown(f"**Beta Dispersion:** {freq_response['beta_dispersion']:.3f}")
 
-								st.info(freq_response['interpretation'])
+		# Display interpretation with more emphasis
+		st.markdown(f"**Tissue Composition Interpretation:** {freq_response['interpretation']}")
 
-							with col2:
-								# Only calculate changes if there's a previous visit
-								changes, significant = ({}, {})
-								if previous_visit:
-									changes, significant = ImpedanceAnalyzer.calculate_visit_changes(current_visit, previous_visit)
+	def _display_visit_changes(self, changes, significant_changes):
+		"""
+			Display analysis of changes between visits.
 
+			Args:
+				changes: Dictionary mapping parameter names to percentage changes
+				significant_changes: Dictionary mapping parameter names to boolean values
+					indicating clinical significance
+		"""
+		st.markdown("#### Changes Since Previous Visit", help="""The changes since previous visit are based on bioelectrical impedance analysis (BIA) principles to evaluate the composition of biological tissues based on the frequency-dependent response to electrical current.""")
 
-								# Display changes since last visit (only if there's a previous visit)
-								if previous_visit:
-									st.markdown("#### Changes Since Previous Visit", help="The changes since previous visit are based on bioelectrical impedance analysis (BIA) principles to evaluate "
-									"the composition of biological tissues based on the frequency-dependent response to electrical current.")
+		if not changes:
+			st.info("No comparable data from previous visit")
+			return
 
-									# TODO: check why patient 43, visit 11-25-2024 shows changes for resitance and capacitance even though the prior visit only should've had the Z value.
-									if changes:
-										# Create a structured data dictionary to organize by frequency and parameter
-										data_by_freq = {
-											"Low Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
-											"Mid Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
-											"High Freq": {"Z": None, "Resistance": None, "Capacitance": None},
-										}
+		# Create a structured data dictionary to organize by frequency and parameter
+		data_by_freq = {
+			"Low Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
+			"Mid Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
+			"High Freq": {"Z": None, "Resistance": None, "Capacitance": None},
+		}
 
-										# Fill in the data from changes
-										for key, change in changes.items():
-											param_parts = key.split('_')
-											param_name = param_parts[0].capitalize()
-											freq_type = ' '.join(param_parts[1:]).replace('_', ' ')
+		# Fill in the data from changes
+		for key, change in changes.items():
+			param_parts = key.split('_')
+			param_name = param_parts[0].capitalize()
+			freq_type = ' '.join(param_parts[1:]).replace('_', ' ')
 
-											# Map to our standardized names
-											if 'low frequency' in freq_type:
-												freq_name = "Low Freq"
-											elif 'center frequency' in freq_type:
-												freq_name = "Mid Freq"
-											elif 'high frequency' in freq_type:
-												freq_name = "High Freq"
-											else:
-												continue
+			# Map to our standardized names
+			if 'low frequency' in freq_type:
+				freq_name = "Low Freq"
+			elif 'center frequency' in freq_type:
+				freq_name = "Mid Freq"
+			elif 'high frequency' in freq_type:
+				freq_name = "High Freq"
+			else:
+				continue
 
-											# Check if this change is significant
-											is_significant = significant.get(key, False)
+			# Check if this change is significant
+			is_significant = significant_changes.get(key, False)
 
-											# Format as percentage with appropriate sign and add asterisk if significant
-											if change is not None:
-												formatted_change = f"{change*100:+.1f}%"
-												if is_significant:
-													formatted_change = f"{formatted_change}*"
-											else:
-												formatted_change = "N/A"
+			# Format as percentage with appropriate sign and add asterisk if significant
+			if change is not None:
+				formatted_change = f"{change*100:+.1f}%"
+				if is_significant:
+					formatted_change = f"{formatted_change}*"
+			else:
+				formatted_change = "N/A"
 
-											# Store in our data structure
-											if param_name in ["Z", "Resistance", "Capacitance"]:
-												data_by_freq[freq_name][param_name] = formatted_change
+			# Store in our data structure
+			if param_name in ["Z", "Resistance", "Capacitance"]:
+				data_by_freq[freq_name][param_name] = formatted_change
 
-										# Convert to DataFrame for display
-										change_df = pd.DataFrame(data_by_freq).T  # Transpose to get frequencies as rows
+		# Convert to DataFrame for display
+		change_df = pd.DataFrame(data_by_freq).T  # Transpose to get frequencies as rows
 
-										# Reorder columns if needed
-										if all(col in change_df.columns for col in ["Z", "Resistance", "Capacitance"]):
-											change_df = change_df[["Z", "Resistance", "Capacitance"]]
+		# Reorder columns if needed
+		if all(col in change_df.columns for col in ["Z", "Resistance", "Capacitance"]):
+			change_df = change_df[["Z", "Resistance", "Capacitance"]]
 
-										# Add styling
-										def color_cells(val):
-											try:
-												if val is None or val == "N/A":
-													return ''
+		# Add styling
+		def color_cells(val):
+			try:
+				if val is None or val == "N/A":
+					return ''
 
-												# Check if there's an asterisk and remove it for color calculation
-												has_asterisk = '*' in val
-												num_str = val.replace('*', '').replace('%', '')
+				# Check if there's an asterisk and remove it for color calculation
+				has_asterisk = '*' in val
+				num_str = val.replace('*', '').replace('%', '')
 
-												# Get numeric value by stripping % and sign
-												num_val = float(num_str)
+				# Get numeric value by stripping % and sign
+				num_val = float(num_str)
 
-												# Determine colors based on value
-												if num_val > 0:
-													return 'color: #FF4B4B'  # Red for increases
-												else:
-													return 'color: #00CC96'  # Green for decreases
-											except:
-												return ''
-
-										# Apply styling
-										styled_df = change_df.style.applymap(color_cells).set_properties(**{
-											'text-align': 'center',
-											'font-size': '14px',
-											'border': '1px solid #EEEEEE'
-										})
-
-										# Display as a styled table with a caption
-										st.write("**Percentage Change by Parameter and Frequency:**")
-										st.dataframe(styled_df)
-										st.write("   (*) indicates clinically significant change")
-
-									else:
-										st.info("No comparable data from previous visit")
-								else:
-									st.info("This is the first visit. No previous data available for comparison.")
-							# Add brief interpretation
-							with st.expander("Understanding Impedance Changes", expanded=False):
-								st.info("""
-								**Interpreting the table:**
-								- **Positive values (red)** indicate an increase since last visit
-								- **Negative values (green)** indicate a decrease since last visit
-								- **Asterisk (*)** indicates a clinically significant change
-
-								These changes reflect evolving tissue composition and may signal important healing developments.
-								Changes are considered clinically significant when they exceed typical threshold values:
-								- Resistance: >15% change
-								- Capacitance: >20% change
-								- Absolute impedance (Z): >15% change
-								""")
-
+				# Determine colors based on value
+				if num_val > 0:
+					return 'color: #FF4B4B'  # Red for increases
 				else:
-					st.warning("At least two visits are required for comprehensive clinical analysis")
+					return 'color: #00CC96'  # Green for decreases
+			except:
+				return ''
 
-			with tab3:
-				st.subheader("Advanced Bioelectrical Interpretation")
+		# Apply styling
+		styled_df = change_df.style.applymap(color_cells).set_properties(**{
+			'text-align': 'center',
+			'font-size': '14px',
+			'border': '1px solid #EEEEEE'
+		})
 
-				if len(visits) >= 3:
-					# Perform advanced analyses
-					healing_trajectory = ImpedanceAnalyzer.analyze_healing_trajectory(visits)
-					anomalies          = ImpedanceAnalyzer.detect_impedance_anomalies(visits[:-1], visits[-1])
-					cole_params        = ImpedanceAnalyzer.calculate_cole_parameters(visits[-1])
+		# Display as a styled table with a caption
+		st.write("**Percentage Change by Parameter and Frequency:**")
+		st.dataframe(styled_df)
+		st.write("   (*) indicates clinically significant change")
 
-					# Consolidate all analyses for insight generation
-					all_analyses = {
-						'healing_trajectory': healing_trajectory,
-						'tissue_health'     : ImpedanceAnalyzer.calculate_tissue_health_index(visits[-1]),
-						'infection_risk'    : ImpedanceAnalyzer.assess_infection_risk(visits[-1], visits[-2] if len(visits) > 1 else None),
-						'frequency_response': ImpedanceAnalyzer.analyze_frequency_response(visits[-1]),
-						'anomalies'         : anomalies,
-						'cole_parameters'   : cole_params
-					}
+	def _render_patient_advanced_analysis(self, visits) -> None:
+		"""
+			Renders the advanced bioelectrical analysis section for a patient's wound data.
 
-					# Generate comprehensive clinical insights
-					insights = ImpedanceAnalyzer.generate_clinical_insights(all_analyses)
-					healing_stage = ImpedanceAnalyzer.classify_wound_healing_stage(all_analyses)
+			This method displays comprehensive bioelectrical analysis results including healing
+			trajectory, wound healing stage classification, tissue electrical properties, and
+			clinical insights derived from the impedance data. The analysis requires at least
+			three visits to generate meaningful patterns and trends.
 
-					# Display healing trajectory
-					if healing_trajectory['status'] == 'analyzed':
-						st.markdown("### Healing Trajectory Analysis", help="""
-											The healing trajectory analysis uses bioelectrical impedance analysis (BIA) principles to assess wound healing:
-											1. High-frequency impedance (Z) is extracted from each visit, reflecting overall tissue health.
-											2. Linear regression is performed on Z values over time to determine the healing trend.
-											3. The slope indicates the rate of change in tissue composition:
-												- Negative slope: Generally indicates healing (decreasing impedance over time).
-												- Positive slope: May indicate deterioration or complications.
-											4. Statistical significance (p-value) and goodness of fit (R-squared) are calculated.
-											5. Clinical interpretation is based on slope magnitude and statistical significance:
-												- Strong healing: Slope < -0.5 ohms/day, p < 0.05
-												- Moderate healing: Slope < -0.2 ohms/day, p < 0.10
-												- Potential deterioration: Slope > 0.5 ohms/day, p < 0.05
-												- No significant trend: Other cases
-											""")
+			Parameters:
+				visits (list): A list of visit data objects containing impedance measurements and
+							other wound assessment information.
 
-						dates = healing_trajectory['dates']
-						values = healing_trajectory['values']
+			Returns:
+				None: This method renders UI components directly to the Streamlit interface.
 
-						fig = go.Figure()
-						fig.add_trace(go.Scatter(
-							x=list(range(len(dates))),
-							y=values,
-							mode='lines+markers',
-							name='Impedance',
-							hovertext=dates
-						))
+			Notes:
+				- Displays a warning if fewer than three visits are available
+				- Shows healing trajectory analysis with progression indicators
+				- Presents wound healing stage classification based on impedance patterns
+				- Displays Cole-Cole parameters representing tissue electrical properties if available
+				- Provides clinical insights to guide treatment decisions
+				- Includes reference information about bioimpedance interpretation
+		"""
 
-						# Add trend line
-						x = np.array(range(len(values)))
-						y = healing_trajectory['slope'] * x + np.mean(values)
-						fig.add_trace(go.Scatter(
-							x=x,
-							y=y,
-							mode='lines',
-							name='Trend',
-							line=dict(color='red', dash='dash')
-						))
+		st.subheader("Advanced Bioelectrical Interpretation")
 
-						fig.update_layout(
-							title="Impedance Trend Over Time",
-							xaxis_title="Visit Number",
-							yaxis_title="High-Frequency Impedance (Z)",
-							hovermode="x unified"
-						)
+		if len(visits) < 3:
+			st.warning("At least three visits are required for advanced analysis")
+			return
 
-						st.plotly_chart(fig, use_container_width=True)
+		# Generate advanced analysis
+		analysis = self.impedance_analyzer.generate_advanced_analysis(visits)
 
-						# Display statistical results
-						col1, col2 = st.columns(2)
-						with col1:
-							slope_color = "green" if healing_trajectory['slope'] < 0 else "red"
-							st.markdown(f"**Trend Slope:** <span style='color:{slope_color}'>{healing_trajectory['slope']:.4f}</span>", unsafe_allow_html=True)
-							st.markdown(f"**Statistical Significance:** p = {healing_trajectory['p_value']:.4f}")
+		# Display healing trajectory analysis if available
+		if 'healing_trajectory' in analysis and analysis['healing_trajectory']['status'] == 'analyzed':
+			self._display_healing_trajectory_analysis(analysis['healing_trajectory'])
 
-						with col2:
-							st.markdown(f"**R² Value:** {healing_trajectory['r_squared']:.4f}")
-							st.info(healing_trajectory['interpretation'])
+		# Display wound healing stage classification
+		self._display_wound_healing_stage(analysis['healing_stage'])
 
-					# Display Wound Healing Stage Classification
-					st.markdown("### Wound Healing Stage Classification")
-					stage_colors = {
-						"Inflammatory" : "red",
-						"Proliferative": "orange",
-						"Remodeling"   : "green"
-					}
+		# Display Cole-Cole parameters if available
+		if 'cole_parameters' in analysis and analysis['cole_parameters']:
+			self._display_tissue_electrical_properties(analysis['cole_parameters'])
 
-					stage_color = stage_colors.get(healing_stage['stage'], "blue")
-					st.markdown(f"**Current Stage:** <span style='color:{stage_color};font-weight:bold'>{healing_stage['stage']}</span> (Confidence: {healing_stage['confidence']})", unsafe_allow_html=True)
+		# Display clinical insights
+		self._display_clinical_insights(analysis['insights'])
 
-					if healing_stage['characteristics']:
+		# Reference information
+		st.markdown("""
+		<div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
+		<p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
 
-						st.markdown("**Characteristics:**", help="Key indicators of the current wound healing stage based on bioimpedance analysis. These include tissue health index, alpha dispersion (reflecting extracellular fluid and cell membrane permeability), and beta dispersion (indicating cellular proliferation and tissue organization).")
+		<p style="font-weight:bold; margin-bottom:5px;">Frequency Significance:</p>
+		<ul style="margin-top:0; padding-left:20px;">
+		<li><strong>Low Frequency (100Hz):</strong> Primarily reflects extracellular fluid and tissue properties</li>
+		<li><strong>Center Frequency:</strong> Reflects the maximum reactance point, varies based on tissue composition</li>
+		<li><strong>High Frequency (80000Hz):</strong> Penetrates cell membranes, reflects total tissue properties</li>
+		</ul>
 
-						for char in healing_stage['characteristics']:
-							st.markdown(f"- {char}")
+		<p style="font-weight:bold; margin-bottom:5px;">Clinical Correlations:</p>
+		<ul style="margin-top:0; padding-left:20px;">
+		<li><strong>Decreasing High-Frequency Impedance:</strong> Often associated with improved healing</li>
+		<li><strong>Increasing Low-to-High Frequency Ratio:</strong> May indicate inflammation or infection</li>
+		<li><strong>Decreasing Phase Angle:</strong> May indicate deterioration in cellular health</li>
+		<li><strong>Increasing Alpha Parameter:</strong> Often indicates increasing tissue heterogeneity</li>
+		</ul>
 
-					# Display Cole-Cole parameters if available
-					if cole_params:
-						st.markdown("### Tissue Electrical Properties", help="""The Cole-Cole plot is a graphical representation of the frequency-dependent impedance of a tissue.
-						It shows how the impedance changes with frequency, allowing for the identification of alpha and beta dispersion regions.
-						Alpha dispersion is associated with extracellular fluid content and cell membrane permeability, while beta dispersion is related to cell structure and fluid content.
-						Changes in these dispersion regions can indicate changes in tissue composition or cell health.""")
+		<p style="font-weight:bold; margin-bottom:5px;">Reference Ranges:</p>
+		<ul style="margin-top:0; padding-left:20px;">
+		<li><strong>Healthy Tissue Low/High Ratio:</strong> 5-12</li>
+		<li><strong>Optimal Phase Angle:</strong> 5-7 degrees</li>
+		<li><strong>Typical Alpha Range:</strong> 0.6-0.8</li>
+		</ul>
+		</div>
+		""", unsafe_allow_html=True)
 
-						col1, col2 = st.columns(2)
+	def _display_healing_trajectory_analysis(self, trajectory):
+		"""
+			Display the healing trajectory analysis with charts and statistics.
 
-						with col1:
-							if 'R0' in cole_params:
-								st.markdown(f"**Extracellular Resistance (R₀):** {cole_params['R0']:.2f} Ω")
-							if 'Rinf' in cole_params:
-								st.markdown(f"**Total Resistance (R∞):** {cole_params['Rinf']:.2f} Ω")
+			This method visualizes the wound healing trajectory over time, including:
+			- A line chart showing impedance values across visits
+			- A trend line indicating the overall direction of change
+			- Statistical analysis results (slope, p-value, R² value)
+			- Interpretation of the healing trajectory
 
-						with col2:
-							if 'Cm' in cole_params:
-								st.markdown(f"**Membrane Capacitance:** {cole_params['Cm']:.2e} F")
-							if 'Alpha' in cole_params:
-								st.markdown(f"**Tissue Heterogeneity (α):** {cole_params['Alpha']:.2f}")
-								st.info(cole_params.get('tissue_homogeneity', ''))
+			Parameters
+			----------
+			trajectory : dict
+				Dictionary containing healing trajectory data with the following keys:
+				- dates : list of str
+					Dates of the measurements
+				- values : list of float
+					Impedance values corresponding to each date
+				- slope : float
+					Slope of the trend line
+				- p_value : float
+					Statistical significance of the trend
+				- r_squared : float
+					R-squared value indicating goodness of fit
+				- interpretation : str
+					Text interpretation of the healing trajectory
 
-					# Display comprehensive clinical insights
-					st.markdown("### Clinical Insights")
+			Returns
+			-------
+			None
+				This method displays its output directly in the Streamlit UI
+		"""
 
-					if insights:
-						for i, insight in enumerate(insights):
-							with st.expander(f"Clinical Insight {i+1}: {insight['insight'][:50]}...", expanded=i==0):
-								st.markdown(f"**Insight:** {insight['insight']}")
-								st.markdown(f"**Confidence:** {insight['confidence']}")
-								if 'recommendation' in insight:
-									st.markdown(f"**Recommendation:** {insight['recommendation']}")
-								if 'supporting_factors' in insight and insight['supporting_factors']:
-									st.markdown("**Supporting Factors:**")
-									for factor in insight['supporting_factors']:
-										st.markdown(f"- {factor}")
-								if 'clinical_meaning' in insight:
-									st.markdown(f"**Clinical Interpretation:** {insight['clinical_meaning']}")
-					else:
-						st.info("No significant clinical insights generated from current data.")
-				else:
-					st.warning("At least three visits are required for advanced analysis")
+		st.markdown("### Healing Trajectory Analysis")
 
-				# Add clinical reference information
-				with st.expander("Bioimpedance Reference Information", expanded=False):
-					st.markdown("""
-									### Interpreting Impedance Parameters
+		# Get trajectory data
+		dates = trajectory['dates']
+		values = trajectory['values']
 
-									**Frequency Significance:**
-									- **Low Frequency (100Hz):** Primarily reflects extracellular fluid and tissue properties
-									- **Center Frequency:** Reflects the maximum reactance point, varies based on tissue composition
-									- **High Frequency (80000Hz):** Penetrates cell membranes, reflects total tissue properties
+		# Create trajectory chart
+		fig = go.Figure()
+		fig.add_trace(go.Scatter(
+			x=list(range(len(dates))),
+			y=values,
+			mode='lines+markers',
+			name='Impedance',
+			hovertext=dates
+		))
 
-									**Clinical Correlations:**
-									- **Decreasing High-Frequency Impedance:** Often associated with improved healing
-									- **Increasing Low-to-High Frequency Ratio:** May indicate inflammation or infection
-									- **Decreasing Phase Angle:** May indicate deterioration in cellular health
-									- **Increasing Alpha Parameter:** Often indicates increasing tissue heterogeneity
+		# Add trend line
+		x = np.array(range(len(values)))
+		y = trajectory['slope'] * x + np.mean(values)
+		fig.add_trace(go.Scatter(
+			x=x,
+			y=y,
+			mode='lines',
+			name='Trend',
+			line=dict(color='red', dash='dash')
+		))
 
-									**Reference Ranges:**
-									- **Healthy Tissue Low/High Ratio:** 5-12
-									- **Optimal Phase Angle:** 5-7 degrees
-									- **Typical Alpha Range:** 0.6-0.8
-									""")
+		fig.update_layout(
+			title="Impedance Trend Over Time",
+			xaxis_title="Visit Number",
+			yaxis_title="High-Frequency Impedance (Z)",
+			hovermode="x unified"
+		)
+
+		st.plotly_chart(fig, use_container_width=True)
+
+		# Display statistical results
+		col1, col2 = st.columns(2)
+		with col1:
+			slope_color = "green" if trajectory['slope'] < 0 else "red"
+			st.markdown(f"**Trend Slope:** <span style='color:{slope_color}'>{trajectory['slope']:.4f}</span>", unsafe_allow_html=True)
+			st.markdown(f"**Statistical Significance:** p = {trajectory['p_value']:.4f}")
+
+		with col2:
+			st.markdown(f"**R² Value:** {trajectory['r_squared']:.4f}")
+			st.info(trajectory['interpretation'])
+
+	def _display_wound_healing_stage(self, healing_stage):
+		"""
+			Display wound healing stage classification in the Streamlit interface.
+
+			This method renders the wound healing stage information with color-coded stages
+			(red for Inflammatory, orange for Proliferative, green for Remodeling) and
+			displays the confidence level and characteristics associated with the stage.
+
+				healing_stage (dict): Dictionary containing wound healing stage analysis with keys:
+					- 'stage': String indicating the wound healing stage (Inflammatory, Proliferative, or Remodeling)
+					- 'confidence': Numeric or string value indicating confidence in the classification
+					- 'characteristics': List of strings describing characteristics of the current healing stage
+
+			Returns:
+				None: This method renders content to the Streamlit UI but does not return any values
+		"""
+		st.markdown("### Wound Healing Stage Classification")
+
+		stage_colors = {
+			"Inflammatory": "red",
+			"Proliferative": "orange",
+			"Remodeling": "green"
+		}
+
+		stage_color = stage_colors.get(healing_stage['stage'], "blue")
+		st.markdown(f"**Current Stage:** <span style='color:{stage_color};font-weight:bold'>{healing_stage['stage']}</span> (Confidence: {healing_stage['confidence']})", unsafe_allow_html=True)
+
+		if healing_stage['characteristics']:
+			st.markdown("**Characteristics:**")
+			for char in healing_stage['characteristics']:
+				st.markdown(f"- {char}")
+
+	def _display_tissue_electrical_properties(self, cole_params):
+		"""
+		Displays the tissue electrical properties derived from Cole parameters in the Streamlit interface.
+
+		This method creates a section in the UI that shows the key electrical properties of tissue,
+		including extracellular resistance (R₀), total resistance (R∞), membrane capacitance (Cm),
+		and tissue heterogeneity (α). Values are formatted with appropriate precision and units.
+
+		Parameters:
+		----------
+		cole_params : dict
+			Dictionary containing the Cole-Cole parameters and related tissue properties.
+			Expected keys include 'R0', 'Rinf', 'Cm', 'Alpha', and optionally 'tissue_homogeneity'.
+
+		Returns:
+		-------
+		None
+			The function directly updates the Streamlit UI and does not return a value.
+		"""
+
+		st.markdown("### Tissue Electrical Properties")
+
+		col1, col2 = st.columns(2)
+
+		with col1:
+			if 'R0' in cole_params:
+				st.markdown(f"**Extracellular Resistance (R₀):** {cole_params['R0']:.2f} Ω")
+			if 'Rinf' in cole_params:
+				st.markdown(f"**Total Resistance (R∞):** {cole_params['Rinf']:.2f} Ω")
+
+		with col2:
+			if 'Cm' in cole_params:
+				st.markdown(f"**Membrane Capacitance:** {cole_params['Cm']:.2e} F")
+			if 'Alpha' in cole_params:
+				st.markdown(f"**Tissue Heterogeneity (α):** {cole_params['Alpha']:.2f}")
+				st.info(cole_params.get('tissue_homogeneity', ''))
+
+	def _display_clinical_insights(self, insights):
+		"""
+		Displays clinical insights in an organized expandable format using Streamlit components.
+
+		This method renders clinical insights with their associated confidence levels, recommendations,
+		supporting factors, and clinical interpretations. If no insights are available, it displays
+		an informational message.
+
+		Parameters
+		----------
+		insights : list
+			A list of dictionaries, where each dictionary contains insight information with keys:
+			- 'insight': str, the main insight text
+			- 'confidence': str, confidence level of the insight
+			- 'recommendation': str, optional, suggested actions based on the insight
+			- 'supporting_factors': list, optional, factors supporting the insight
+			- 'clinical_meaning': str, optional, clinical interpretation of the insight
+
+		Returns
+		-------
+		None
+			This method only renders UI components and does not return any value.
+		"""
+
+		st.markdown("### Clinical Insights")
+
+		if not insights:
+			st.info("No significant clinical insights generated from current data.")
+			return
+
+		for i, insight in enumerate(insights):
+			with st.expander(f"Clinical Insight {i+1}: {insight['insight'][:50]}...", expanded=i==0):
+				st.markdown(f"**Insight:** {insight['insight']}")
+				st.markdown(f"**Confidence:** {insight['confidence']}")
+
+				if 'recommendation' in insight:
+					st.markdown(f"**Recommendation:** {insight['recommendation']}")
+
+				if 'supporting_factors' in insight and insight['supporting_factors']:
+					st.markdown("**Supporting Factors:**")
+					for factor in insight['supporting_factors']:
+						st.markdown(f"- {factor}")
+
+				if 'clinical_meaning' in insight:
+					st.markdown(f"**Clinical Interpretation:** {insight['clinical_meaning']}")
+
 
 	def _temperature_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""
