@@ -55,13 +55,13 @@ The system includes both a command-line interface for individual patient analysi
 The system expects a specific dataset structure:
 
 1. Main CSV data file: `SmartBandage-Data_for_llm.csv` in the `/dataset` directory
-2. Impedance data: The `palmsense files Jan 2025` folder must be placed inside the same directory as the CSV file
+2. Impedance data: The `impednace_frequency_sweep` folder must be placed inside the same directory as the CSV file
 
 Your dataset directory should look like this:
 ```
 dataset/
 ├── SmartBandage-Data_for_llm.csv
-└── palmsense files Jan 2025/
+└── impednace_frequency_sweep/
     ├── 1.xlsx
     ├── 2.xlsx
     └── ... (impedance data files by patient ID)

@@ -2255,7 +2255,7 @@ class ImpedanceAnalyzer:
 		"""
 
 		# Find the Excel file for this record
-		excel_file = dataset_path / f'palmsense files Jan 2025/{record_id}.xlsx'
+		excel_file = dataset_path / f'impednace_frequency_sweep/{record_id}.xlsx'
 		if not excel_file.exists():
 			return None
 
