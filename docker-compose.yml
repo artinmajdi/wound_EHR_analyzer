@@ -1,0 +1,43 @@
+
+services:
+  wound-analysis:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ${DATASET_PATH:-./dataset}:/app/dataset:ro
+      - ./wound_analysis/utils/logs:/app/wound_analysis/utils/logs
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - PYTHONPATH=/app
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: streamlit run wound_analysis/dashboard.py
+    # Uncomment below for debugging shell access
+    # command: bash -c "ls -la /app/dataset && ls -la /app/dataset/impedance_frequency_sweep && streamlit run wound_analysis/dashboard.py"
+
+  cli:
+    build: .
+    volumes:
+      - ${DATASET_PATH:-./dataset}:/app/dataset:ro
+      - ./wound_analysis/utils/logs:/app/wound_analysis/utils/logs
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - PYTHONPATH=/app
+    env_file:
+      - .env
+    command: python wound_analysis/main.py --record-id 41
+    profiles:
+      - cli
+
+  verify:
+    build: .
+    volumes:
+      - ${DATASET_PATH:-./dataset}:/app/dataset:ro
+      - ./:/app
+    command: python -m wound_analysis.utils.verify_dataset
+    profiles:
+      - verify

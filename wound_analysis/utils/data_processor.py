@@ -16,20 +16,28 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from .column_schema import DataColumns
 
+try:
+    from ..dashboard import debug_log
+except ImportError:
+    # Fallback if we can't import from dashboard
+    def debug_log(message):
+        print(message)
+        try:
+            with open('/app/debug.log', 'a') as f:
+                f.write(f"{message}\n")
+        except:
+            pass
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class WoundDataProcessor:
-	def __init__(self, dataset_path: pathlib.Path=None, df: pd.DataFrame= None):
-		# Initialize the column schema
-		self.columns = DataColumns()
+	def __init__(self, csv_dataset_path: pathlib.Path=None, impedance_freq_sweep_path: pathlib.Path=None, df: pd.DataFrame= None):
 
-		self.dataset_path = dataset_path
-		if df is None:
-			csv_path = dataset_path / 'SmartBandage-Data_for_llm.csv'
-			self.df = pd.read_csv(csv_path)
-		else:
-			self.df = df
+		self.columns = DataColumns()
+		self.impedance_freq_sweep_path = impedance_freq_sweep_path
+
+		self.df = pd.read_csv( csv_dataset_path ) if df is None else df
 
 		# Clean column names
 		self.df.columns = self.df.columns.str.strip()
@@ -53,7 +61,6 @@ class WoundDataProcessor:
 				ValueError: If no records are found for the specified patient
 				Exception: If any error occurs during data processing
 		"""
-
 
 		try:
 			patient_id_col    = self.columns.patient_identifiers.record_id
@@ -686,30 +693,30 @@ class WoundDataProcessor:
 
 	def _process_visit_data(self, visit, record_id: int) -> Optional[Dict]:
 		"""
-		Process the data from a single patient visit and extract relevant information.
+			Process the data from a single patient visit and extract relevant information.
 
-		This method extracts and processes various measurements taken during a patient visit, including
-		wound measurements, temperature readings, oxygenation data, and impedance values. It handles
-		missing data gracefully by converting NaN values to None.
+			This method extracts and processes various measurements taken during a patient visit, including
+			wound measurements, temperature readings, oxygenation data, and impedance values. It handles
+			missing data gracefully by converting NaN values to None.
 
-		Args:
-			visit: A dictionary-like object containing the raw visit data
-			record_id (int): The unique identifier for the patient record
+			Args:
+				visit: A dictionary-like object containing the raw visit data
+				record_id (int): The unique identifier for the patient record
 
-		Returns:
-			Optional[Dict]: A structured dictionary containing the processed visit data, or None if
-			the visit date is missing. The dictionary includes:
-				- visit_date: The formatted date of the visit
-				- wound_measurements: Dict containing length, width, depth, and area
-				- sensor_data: Dict containing:
-					- oxygenation: Overall oxygenation value
-					- temperature: Dict with center, edge, and peri readings
-					- impedance: Dict with high, center, and low frequency measurements
-					- hemoglobin: Various hemoglobin measurements
+			Returns:
+				Optional[Dict]: A structured dictionary containing the processed visit data, or None if
+				the visit date is missing. The dictionary includes:
+					- visit_date: The formatted date of the visit
+					- wound_measurements: Dict containing length, width, depth, and area
+					- sensor_data: Dict containing:
+						- oxygenation: Overall oxygenation value
+						- temperature: Dict with center, edge, and peri readings
+						- impedance: Dict with high, center, and low frequency measurements
+						- hemoglobin: Various hemoglobin measurements
 
-		Notes:
-			The impedance data is either extracted from Excel sweep files if available,
-			or from the visit parameters directly as a fallback.
+			Notes:
+				The impedance data is either extracted from Excel sweep files if available,
+				or from the visit parameters directly as a fallback.
 		"""
 
 		# Get column schema
@@ -746,7 +753,7 @@ class WoundDataProcessor:
 					}
 				return {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None}
 
-			df = ImpedanceAnalyzer.process_impedance_sweep_xlsx(dataset_path=self.dataset_path, record_id=record_id, visit_date_being_processed=visit_date)
+			df = ImpedanceAnalyzer.process_impedance_sweep_xlsx(impedance_freq_sweep_path=self.impedance_freq_sweep_path, record_id=record_id, visit_date_being_processed=visit_date)
 
 			if df is not None:
 				# Get data for this visit date
@@ -808,18 +815,19 @@ class WoundDataProcessor:
 @dataclass
 class DataManager:
 	"""Handles data loading, processing and manipulation."""
-	data_processor: WoundDataProcessor = field(default_factory=lambda: None)
+	# data_processor: WoundDataProcessor = field(default_factory=lambda: None)
 	df            : pd.DataFrame       = field(default_factory=lambda: None)
 	schema        : DataColumns        = field(default_factory=DataColumns)
 
 	@staticmethod
-	def load_data(uploaded_file):
+	def load_data(csv_dataset_path):
 		"""Load and preprocess the wound healing data from an uploaded CSV file. Returns None if no file is provided."""
 
-		if uploaded_file is None:
+		if csv_dataset_path is None:
 			return None
 
-		df = pd.read_csv(uploaded_file)
+		print("---#######-----DataManager.load_data: uploaded_file:", csv_dataset_path)
+		df = pd.read_csv(csv_dataset_path)
 		df = DataManager._preprocess_data(df)
 		return df
 
@@ -1083,7 +1091,7 @@ class DataManager:
 		return df
 
 	@staticmethod
-	def create_and_save_report(patient_metadata: dict, analysis_results: str, prompt: dict=None) -> str:
+	def create_and_save_report(patient_metadata: dict, analysis_results: str, report_path: str=None, prompt: dict=None) -> str:
 		"""
 			Create a report document from analysis results and save it.
 
@@ -1105,36 +1113,46 @@ class DataManager:
 				The file path of the saved report document.
 		"""
 
+		# Save the document
+		if report_path is None:
+			# Create logs directory if it doesn't exist
+			log_dir = pathlib.Path(__file__).parent / 'logs'
+			log_dir.mkdir(exist_ok=True)
+			timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+			report_path = log_dir / f'wound_analysis_{timestamp}.docx'
+
+
 		doc = Document()
-		report_path = DataManager.format_word_document(doc=doc, analysis_results=analysis_results, patient_metadata=patient_metadata, report_path=None)
+		DataManager.format_word_document(doc=doc, analysis_results=analysis_results, patient_metadata=patient_metadata, report_path=report_path)
+
 		return report_path
 
 	@staticmethod
 	def download_word_report(st, report_path: str):
 		"""
-		Creates a download button in a Streamlit app to download a Word document (.docx) report.
+			Creates a download button in a Streamlit app to download a Word document (.docx) report.
 
-		Parameters:
-		-----------
-		st : streamlit
-			The Streamlit module instance used to render UI components.
-		report_path : str
-			The file path to the Word document (.docx) to be downloaded.
+			Parameters:
+			-----------
+			st : streamlit
+				The Streamlit module instance used to render UI components.
+			report_path : str
+				The file path to the Word document (.docx) to be downloaded.
 
-		Returns:
-		--------
-		None
+			Returns:
+			--------
+			None
 
-		Raises:
-		-------
-		Exception
-			If there's an error reading the report file or creating the download button,
-			an error message is displayed in the Streamlit app.
+			Raises:
+			-------
+			Exception
+				If there's an error reading the report file or creating the download button,
+				an error message is displayed in the Streamlit app.
 
-		Notes:
-		------
-		This function reads the specified Word document as binary data and creates
-		a download button in the Streamlit interface.
+			Notes:
+			------
+			This function reads the specified Word document as binary data and creates
+			a download button in the Streamlit interface.
 		"""
 
 		try:
@@ -1150,7 +1168,7 @@ class DataManager:
 			st.error(f"Error preparing report download: {str(e)}")
 
 	@staticmethod
-	def format_word_document(doc: Document, analysis_results: str, patient_metadata: dict=None, report_path: str = None) -> str:
+	def format_word_document(doc: Document, analysis_results: str, patient_metadata: dict=None, report_path: str = None):
 		"""
 			Formats and saves a Microsoft Word document with wound care analysis results.
 
@@ -1226,15 +1244,8 @@ class DataManager:
 		doc.add_paragraph(f"\nReport generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 		# Save the document
-		if report_path is None:
-			# Create logs directory if it doesn't exist
-			log_dir = pathlib.Path(__file__).parent / 'logs'
-			log_dir.mkdir(exist_ok=True)
-			timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-			report_path = log_dir / f'wound_analysis_{timestamp}.docx'
-
-		doc.save(report_path)
-		return str(report_path)
+		if report_path is not None:
+			doc.save(report_path)
 
 
 class ImpedanceAnalyzer:
@@ -1442,7 +1453,7 @@ class ImpedanceAnalyzer:
 			This function performs a linear regression analysis on the high-frequency impedance values
 			over time to determine if there's a significant trend indicating wound healing or deterioration.
 
-			Parameters:
+			Parameters
 			-----------
 			visits : list
 				List of visit dictionaries, each containing visit data including sensor readings.
@@ -1450,7 +1461,7 @@ class ImpedanceAnalyzer:
 				- 'visit_date': date of the visit
 				- 'sensor_data': dict containing 'impedance' data with 'high_frequency' values including a 'Z' value representing impedance measurement
 
-			Returns:
+			Returns
 			--------
 			dict
 				A dictionary containing:
@@ -2148,7 +2159,7 @@ class ImpedanceAnalyzer:
 			Tuple of DataFrames with impedance components and wound type statistics
 		"""
 		# Impedance components by visit
-		avg_impedance = df.groupby('Visit Number')[
+		avg_impedance = df.groupby('Visit Number', observed=False)[
 			["Skin Impedance (kOhms) - Z",
 			"Skin Impedance (kOhms) - Z'",
 			"Skin Impedance (kOhms) - Z''"]
@@ -2233,7 +2244,7 @@ class ImpedanceAnalyzer:
 		return analysis
 
 	@staticmethod
-	def process_impedance_sweep_xlsx(dataset_path: pathlib.Path, record_id: int, visit_date_being_processed) -> Optional[pd.DataFrame]:
+	def process_impedance_sweep_xlsx(impedance_freq_sweep_path: pathlib.Path, record_id: int, visit_date_being_processed) -> Optional[pd.DataFrame]:
 		"""
 			Process impedance sweep data from an Excel file for a specific record ID and visit date.
 
@@ -2255,9 +2266,12 @@ class ImpedanceAnalyzer:
 		"""
 
 		# Find the Excel file for this record
-		excel_file = dataset_path / f'impednace_frequency_sweep/{record_id}.xlsx'
+		excel_file = impedance_freq_sweep_path / f'{record_id}.xlsx'
 		if not excel_file.exists():
+			print(f"Failed to find Excel file for record ID: {excel_file}")
+			# st.error(f"Failed to find Excel file for record ID: {excel_file}")
 			return None
+
 
 		# Read all sheets from the Excel file
 		xl = pd.ExcelFile(excel_file)

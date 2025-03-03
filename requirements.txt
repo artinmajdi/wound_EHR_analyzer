@@ -15,3 +15,4 @@ openai>=0.27.0  # For OpenAI API access
 openpyxl>=3.1.0  # For Excel file handling
 protobuf>=3.20.0  # For serialization
 sacremoses  # For tokenization with transformers
+watchdog

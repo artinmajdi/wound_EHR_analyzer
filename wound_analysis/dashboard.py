@@ -4,6 +4,10 @@ import pathlib
 from dataclasses import dataclass, field
 from typing import Optional
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Third-party imports
 import numpy as np
 import pandas as pd
@@ -21,13 +25,18 @@ from utils.statistical_analysis import CorrelationAnalysis
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
 
+def debug_log(message):
+	"""Write debug messages to a file and display in Streamlit"""
+	with open('/app/debug.log', 'a') as f:
+		f.write(f"{message}\n")
+	st.sidebar.text(message)
+
 @dataclass
 class Config:
 	"""Application configuration settings."""
 	PAGE_TITLE: str = "Wound Care Management & Interpreter Dashboard"
 	PAGE_ICON : str = "🩹"
 	LAYOUT    : str = "wide"
-	DATA_PATH    : Optional[pathlib.Path] = pathlib.Path('/Users/artinmajdi/Documents/GitHubs/postdoc/Wound_management_interpreter_LLM/dataset')
 	COLUMN_SCHEMA: DataColumns            = field(default_factory=DataColumns)
 
 	# Constants for bioimpedance analysis
@@ -804,8 +813,9 @@ class Dashboard:
 		# LLM configuration placeholders
 		self.llm_platform   = None
 		self.llm_model      = None
-		self.uploaded_file  = None
+		self.csv_dataset_path  = None
 		self.data_processor = None
+		self.impedance_freq_sweep_path: pathlib.Path = None
 
 	def setup(self) -> None:
 		"""Set up the dashboard configuration."""
@@ -818,7 +828,7 @@ class Dashboard:
 		self._create_left_sidebar()
 
 	@staticmethod
-	@st.cache_data
+	# @st.cache_data
 	def load_data(uploaded_file) -> Optional[pd.DataFrame]:
 		df = DataManager.load_data(uploaded_file)
 		return df
@@ -826,16 +836,17 @@ class Dashboard:
 	def run(self) -> None:
 		"""Run the main dashboard application."""
 		self.setup()
-		if not self.uploaded_file:
+		if not self.csv_dataset_path:
 			st.info("Please upload a CSV file to proceed.")
 			return
 
-		df = self.load_data(self.uploaded_file)
-		self.data_processor = WoundDataProcessor(df=df, dataset_path=Config.DATA_PATH)
+		df = self.load_data(self.csv_dataset_path)
 
 		if df is None:
 			st.error("Failed to load data. Please check the CSV file.")
 			return
+
+		self.data_processor = WoundDataProcessor(df=df, impedance_freq_sweep_path=self.impedance_freq_sweep_path)
 
 		# Header
 		st.title(self.config.PAGE_TITLE)
@@ -1095,21 +1106,23 @@ class Dashboard:
 
 	def _render_patient_impedance_overview(self, visits) -> None:
 		"""
-		Renders an overview section for patient impedance measurements.
+			Renders an overview section for patient impedance measurements.
 
-		This method creates a section in the Streamlit application showing impedance measurements
-		over time, allowing users to view different types of impedance data (absolute impedance,
-		resistance, or capacitance).
+			This method creates a section in the Streamlit application showing impedance measurements
+			over time, allowing users to view different types of impedance data (absolute impedance,
+			resistance, or capacitance).
 
-		Parameters:
-			visits (list): A list of patient visit data containing impedance measurements
+			Parameters:
+				visits (list): A list of patient visit data containing impedance measurements
 
-		Returns:
-			None: This method renders UI elements directly to the Streamlit app
+			Returns:
+			-------
+			None
+					This method renders UI elements directly to the Streamlit app
 
-		Note:
-			The visualization includes a selector for different measurement modes and
-			displays an explanatory note about the measurement types and frequency effects.
+			Note:
+				The visualization includes a selector for different measurement modes and
+				displays an explanatory note about the measurement types and frequency effects.
 		"""
 
 		st.subheader("Impedance Measurements Over Time")
@@ -1153,9 +1166,11 @@ class Dashboard:
 						should have at least a 'visit_date' key and other wound measurement data.
 
 			Returns:
-				None
+			-------
+			None
+				The method updates the Streamlit UI directly
 
-			Note:
+			Notes:
 				- At least two visits are required for comprehensive analysis
 				- Creates a tab for each visit date
 				- Analysis is performed using the impedance_analyzer component
@@ -1260,7 +1275,7 @@ class Dashboard:
 			Parameters
 			----------
 			tissue_health : tuple
-				A tuple containing (health_score, health_interpretation) where:
+				A tuple containing (health_score, health_interp) where:
 				- health_score (float or None): A numerical score from 0-100 representing tissue health
 				- health_interp (str): A textual interpretation of the health score
 
@@ -1359,7 +1374,11 @@ class Dashboard:
 			Returns:
 			--------
 			None
-				This method renders UI components directly to the Streamlit UI but does not return any value.
+				The method updates the Streamlit UI directly
+
+			Note:
+				- The method includes a help tooltip explaining the principles behind BIA and the significance
+				of alpha and beta dispersion values.
 		"""
 
 		st.markdown("### Tissue Composition Analysis", help="""This analysis utilizes bioelectrical impedance analysis (BIA) principles to evaluatetissue characteristics based on the frequency-dependent response to electrical current.
@@ -1459,7 +1478,7 @@ class Dashboard:
 				return ''
 
 		# Apply styling
-		styled_df = change_df.style.applymap(color_cells).set_properties(**{
+		styled_df = change_df.style.map(color_cells).set_properties(**{
 			'text-align': 'center',
 			'font-size': '14px',
 			'border': '1px solid #EEEEEE'
@@ -2127,12 +2146,12 @@ class Dashboard:
 			selected_patient : str
 				The currently selected patient ID or "All Patients"
 
-			Returns
+			Returns:
 			-------
 			None
 				The method updates the Streamlit UI directly
 
-			Notes
+			Notes:
 			-----
 			For aggregate analysis, this method:
 			- Calculates correlations between exudate characteristics and healing rates
@@ -2695,7 +2714,7 @@ class Dashboard:
 		selected_patient : str
 			The currently selected patient identifier (e.g., "Patient 1") or "All Patients"
 
-		Returns
+		Returns:
 		-------
 		None
 			The method updates the Streamlit UI directly
@@ -2710,67 +2729,172 @@ class Dashboard:
 		- A download button is provided for exporting reports as Word documents
 		"""
 
+		def _display_llm_analysis(llm_reports: dict):
+			if 'thinking_process' in llm_reports and llm_reports['thinking_process'] is not None:
+				tab1, tab2, tab3 = st.tabs(["Analysis", "Prompt", "Thinking Process"])
+			else:
+				tab1, tab2 = st.tabs(["Analysis", "Prompt"])
+				tab3 = None
+
+			with tab1:
+				st.markdown(llm_reports['analysis_results'])
+			with tab2:
+				st.markdown(llm_reports['prompt'])
+
+			if tab3 is not None:
+				st.markdown("### Model's Thinking Process")
+				st.markdown(llm_reports['thinking_process'])
+
+			# Add download button for the report
+			DataManager.download_word_report(st=st, report_path=llm_reports['report_path'])
+
+
+		def _run_llm_analysis(patient_data, prompt):
+
+
+			if self.llm_model == "deepseek-r1":
+
+				# Create a container for the analysis
+				analysis_container = st.empty()
+				analysis_container.markdown("### Analysis\n\n*Generating analysis...*")
+
+				# Create a container for the thinking process
+				thinking_container = st.empty()
+				thinking_container.markdown("### Thinking Process\n\n*Thinking...*")
+
+				# Define callback for streaming updates
+				def stream_callback(data):
+					if data["type"] == "thinking":
+						thinking_container.markdown(f"### Thinking Process\n\n{data['content']}")
+
+				# Run analysis with streaming
+				analysis = llm.analyze_patient_data(patient_data, callback=stream_callback)
+
+				# Update the analysis container with final results
+				analysis_container.markdown(f"### Analysis\n\n{analysis}")
+
+				# Get thinking process
+				thinking_process = llm.get_thinking_process()
+
+				# Generate report
+				report_path = DataManager.create_and_save_report(patient_metadata=patient_data, analysis_results=analysis, report_path=None)
+
+				# Return data dictionary
+				return dict(
+					analysis_results=analysis,
+					patient_metadata=patient_data['patient_metadata'],
+					prompt=prompt,
+					report_path=report_path,
+					thinking_process=thinking_process
+				)
+			else:
+
+				analysis = llm.analyze_patient_data(patient_data)
+
+				# Get thinking process if available
+				thinking_process = llm.get_thinking_process()
+
+				# Store analysis in session state for this patient
+				report_path = DataManager.create_and_save_report(patient_metadata=patient_data, analysis_results=analysis, report_path=None)
+
+				# Return data dictionary
+				return dict(
+					analysis_results=analysis,
+					patient_metadata=patient_data['patient_metadata'],
+					prompt=prompt,
+					report_path=report_path,
+					thinking_process=thinking_process
+				)
+
 		st.header("LLM-Powered Wound Analysis")
 
 		# Initialize reports dictionary in session state if it doesn't exist
 		if 'llm_reports' not in st.session_state:
 			st.session_state.llm_reports = {}
 
-		if selected_patient == "All Patients":
-			if self.uploaded_file is not None:
+		if self.csv_dataset_path is not None:
+
+			llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
+
+
+			if selected_patient == "All Patients":
 				if st.button("Run Analysis", key="run_analysis"):
-					# Initialize LLM with platform and model
-					llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
 					patient_data = self.data_processor.get_population_statistics()
 					prompt = llm._format_population_prompt(patient_data)
-					analysis = llm.analyze_population_data(patient_data)
+					st.session_state.llm_reports['all_patients'] = _run_llm_analysis(patient_data=patient_data, prompt=prompt)
 
-					# Store analysis in session state for "All Patients"
-					st.session_state.llm_reports['all_patients'] = dict(analysis_results=analysis, patient_metadata=None, prompt=prompt)
-
-				# Display analysis if it exists
+				# Display analysis if it exists for this patient
 				if 'all_patients' in st.session_state.llm_reports:
-					tab1, tab2 = st.tabs(["Analysis", "Prompt"])
-					with tab1:
-						st.markdown(st.session_state.llm_reports['all_patients']['analysis_results'])
-					with tab2:
-						st.markdown(st.session_state.llm_reports['all_patients']['prompt'])
+					_display_llm_analysis(st.session_state.llm_reports['all_patients'])
 
+			else:
+				patient_id = selected_patient.split(' ')[1]
+				st.subheader(f"Patient {patient_id}")
 
-					# Add download button for the report
-					report_doc = DataManager.create_and_save_report(**st.session_state.llm_reports['all_patients'])
-
-					DataManager.download_word_report(st=st, report_path=report_doc)
-
-		else:
-			patient_id = selected_patient.split(' ')[1]
-			st.subheader(f"Patient {patient_id}")
-
-			if self.uploaded_file is not None:
 				if st.button("Run Analysis", key="run_analysis"):
-					# Initialize LLM with platform and model
-					llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
 					patient_data = self.data_processor.get_patient_visits(int(patient_id))
 					prompt = llm._format_per_patient_prompt(patient_data)
-					analysis = llm.analyze_patient_data(patient_data)
-
-					# Store analysis in session state for this patient
-					st.session_state.llm_reports[patient_id] = dict(analysis_results=analysis, patient_metadata=patient_data['patient_metadata'], prompt=prompt)
+					st.session_state.llm_reports[patient_id] = _run_llm_analysis(patient_data=patient_data, prompt=prompt)
 
 				# Display analysis if it exists for this patient
 				if patient_id in st.session_state.llm_reports:
-					tab1, tab2 = st.tabs(["Analysis", "Prompt"])
-					with tab1:
-						st.markdown(st.session_state.llm_reports[patient_id]['analysis_results'])
-					with tab2:
-						st.markdown(st.session_state.llm_reports[patient_id]['prompt'])
+					_display_llm_analysis(st.session_state.llm_reports[patient_id])
+		else:
+			st.warning("Please upload a patient data file from the sidebar to enable LLM analysis.")
 
-					# Add download button for the report
-					report_doc = DataManager.create_and_save_report(**st.session_state.llm_reports[patient_id])
+	def _get_input_user_data(self) -> None:
+		"""
+		Get user inputs from Streamlit interface for data paths and validate them.
 
-					DataManager.download_word_report(st=st, report_path=report_doc)
-			else:
-				st.warning("Please upload a patient data file from the sidebar to enable LLM analysis.")
+		This method provides UI components for users to:
+		1. Upload a CSV file containing patient data
+		2. Specify a path to the folder containing impedance frequency sweep XLSX files
+		3. Validate the path and check for the existence of XLSX files
+
+		The method populates:
+		- self.csv_dataset_path: The uploaded CSV file
+		- self.impedance_freq_sweep_path: Path to the folder containing impedance XLSX files
+
+		Returns:
+			None
+		"""
+
+		self.csv_dataset_path = st.file_uploader("Upload Patient Data (CSV)", type=['csv'])
+
+		default_path = str(pathlib.Path(__file__).parent.parent / "dataset/impedance_frequency_sweep")
+
+		if self.csv_dataset_path is not None:
+			# Text input for dataset path
+			dataset_path_input = st.text_input(
+				"Path to impedance_frequency_sweep folder",
+				value=default_path,
+				help="Enter the absolute path to the folder containing impedance frequency sweep XLSX files",
+				key="dataset_path_input_1"
+			)
+
+			# Convert to Path object
+			self.impedance_freq_sweep_path = pathlib.Path(dataset_path_input)
+
+			# Button to check if files exist
+			# if st.button("Check XLSX Files"):
+			try:
+				# Check if path exists
+				if not self.impedance_freq_sweep_path.exists():
+					st.error(f"Path does not exist: {self.impedance_freq_sweep_path}")
+				else:
+					# Count xlsx files
+					xlsx_files = list(self.impedance_freq_sweep_path.glob("**/*.xlsx"))
+
+					if xlsx_files:
+						st.success(f"Found {len(xlsx_files)} XLSX files in the directory")
+						# Show files in an expander
+						with st.expander("View Found Files"):
+							for file in xlsx_files:
+								st.text(f"- {file.name}")
+					else:
+						st.warning(f"No XLSX files found in {self.dataset_path}")
+			except Exception as e:
+				st.error(f"Error checking path: {e}")
 
 	def _create_left_sidebar(self) -> None:
 		"""
@@ -2794,10 +2918,12 @@ class Dashboard:
 		"""
 
 		with st.sidebar:
+			st.markdown("### Dataset Configuration")
+			self._get_input_user_data()
+
+			st.markdown("---")
 			st.subheader("Model Configuration")
 
-			self.uploaded_file = st.file_uploader("Upload Patient Data (CSV)", type=['csv'])
-			# print('uploaded file type', type(self.uploaded_file))
 			platform_options = WoundAnalysisLLM.get_available_platforms()
 
 			self.llm_platform = st.selectbox( "Select Platform", platform_options,
@@ -2817,32 +2943,34 @@ class Dashboard:
 
 			with st.expander("Advanced Model Settings"):
 
-				api_key = st.text_input("API Key", type="password")
+				api_key = st.text_input("API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
 				if api_key:
 					os.environ["OPENAI_API_KEY"] = api_key
 
 				if self.llm_platform == "ai-verde":
 					base_url = st.text_input("Base URL", value=os.getenv("OPENAI_BASE_URL", ""))
+					if base_url:
+						os.environ["OPENAI_BASE_URL"] = base_url
 
 
-			st.header("About This Dashboard")
-			st.write("""
-			This Streamlit dashboard visualizes wound healing data collected with smart bandage technology.
+			# st.header("About This Dashboard")
+			# st.write("""
+			# This Streamlit dashboard visualizes wound healing data collected with smart bandage technology.
 
-			The analysis focuses on key metrics:
-			- Impedance measurements (Z, Z', Z'')
-			- Temperature gradients
-			- Oxygenation levels
-			- Patient risk factors
-			""")
+			# The analysis focuses on key metrics:
+			# - Impedance measurements (Z, Z', Z'')
+			# - Temperature gradients
+			# - Oxygenation levels
+			# - Patient risk factors
+			# """)
 
-			st.header("Statistical Methods")
-			st.write("""
-			The visualization is supported by these statistical approaches:
-			- Longitudinal analysis of healing trajectories
-			- Risk factor significance assessment
-			- Comparative analysis across wound types
-			""")
+			# st.header("Statistical Methods")
+			# st.write("""
+			# The visualization is supported by these statistical approaches:
+			# - Longitudinal analysis of healing trajectories
+			# - Risk factor significance assessment
+			# - Comparative analysis across wound types
+			# """)
 
 	def _render_all_patients_overview(self, df: pd.DataFrame) -> None:
 		"""

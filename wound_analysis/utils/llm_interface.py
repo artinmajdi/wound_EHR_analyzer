@@ -50,6 +50,7 @@ class WoundAnalysisLLM:
         self.model_name = model_name
         self.model_path = self.MODEL_CATEGORIES[platform][model_name]
         self.model = None  # Initialize as None, will be loaded on first use
+        self.thinking_process = None  # Store thinking process for models that support it
 
     def _load_model(self):
         """Lazy loading of the model to avoid Streamlit file watcher issues"""
@@ -57,17 +58,31 @@ class WoundAnalysisLLM:
             return
 
         try:
+
             if self.platform == "ai-verde":
                 if not os.getenv("OPENAI_API_KEY"):
                     raise ValueError("OPENAI_API_KEY environment variable must be set for AI Verde")
 
-                self.model = ChatOpenAI(
-                    model=self.model_path,
-                    base_url=os.getenv("OPENAI_BASE_URL")
-                )
+                model_settings = {
+                    'model': self.model_path,
+                    'base_url': os.getenv("OPENAI_BASE_URL"),
+                }
+
+                if self.model_name == "deepseek-r1":
+                    model_settings['model_kwargs'] = {
+                        'response_format': {
+                            'type': 'json_object'
+                        }}
+                    model_settings['request_timeout'] = 180.0  # Increase timeout to 3 minutes
+                    model_settings['streaming'] = True  # Enable streaming for DeepSeek R1
+
+
+                self.model = ChatOpenAI(**model_settings)
                 logger.info(f"Successfully loaded AI Verde model {self.model_name}")
-            else:
-                device = "cuda" if torch.cuda.is_available() else "cpu"
+
+            elif self.platform == "huggingface":
+
+                device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
                 if self.model_name == "clinical-bert":
                     self.model = pipeline(
@@ -83,6 +98,8 @@ class WoundAnalysisLLM:
                         max_new_tokens=512
                     )
                 logger.info(f"Successfully loaded model {self.model_name} on {device}")
+            else:
+                raise ValueError(f"Platform {self.platform} not supported. Choose from: {list(self.MODEL_CATEGORIES.keys())}")
 
         except Exception as e:
             logger.error(f"Error loading model {self.model_name}: {str(e)}")
@@ -414,110 +431,164 @@ class WoundAnalysisLLM:
 
         return prompt
 
-    def analyze_patient_data(self, patient_data: Dict) -> str:
+    def _stream_analysis(self, messages, callback):
+        """
+        Stream analysis results from the model.
+
+        Args:
+            messages: List of messages to send to the model
+            callback: Function to call with each chunk of streamed content
+
+        Returns:
+            Final analysis results as string
+        """
+        import json
+        import re
+        import httpx
+        import time
+
+        # Initialize buffers for streaming content
+        stream_buffer = ""
+        thinking_buffer = ""
+        conclusion = ""
+        
+        try:
+            # Process the streaming response
+            for chunk in self.model.stream(messages):
+                if hasattr(chunk, 'content') and chunk.content:
+                    # Add the new content to the buffer
+                    stream_buffer += chunk.content
+
+                    # Try to parse JSON as it comes in
+                    try:
+                        # Try to find complete JSON objects in the stream
+                        # Look for matching braces to identify potential JSON objects
+                        json_pattern = r'\{.*\}'
+                        match = re.search(json_pattern, stream_buffer)
+
+                        if match:
+                            potential_json = match.group(0)
+                            try:
+                                partial_data = json.loads(potential_json)
+
+                                # Extract thinking and conclusion if available
+                                if "thinking" in partial_data:
+                                    new_thinking = partial_data["thinking"]
+                                    if new_thinking != thinking_buffer:
+                                        thinking_buffer = new_thinking
+                                        # Call the callback with updated thinking
+                                        if callback:
+                                            callback({"type": "thinking", "content": thinking_buffer})
+
+                                if "conclusion" in partial_data:
+                                    conclusion = partial_data["conclusion"]
+                            except json.JSONDecodeError:
+                                # Not a valid JSON object yet
+                                pass
+                    except Exception as e:
+                        # Handle any errors in regex or parsing
+                        logger.debug(f"Error parsing streaming JSON: {str(e)}")
+                        pass
+
+                    # Call the callback with the raw chunk for any custom handling
+                    if callback:
+                        callback({"type": "raw", "content": chunk.content})
+        except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectTimeout, 
+                httpx.ReadError, ConnectionError, httpx.HTTPError) as e:
+            # Handle connection-related errors
+            logger.warning(f"Streaming connection error: {str(e)}. Continuing with partial results.")
+            if callback:
+                callback({"type": "error", "content": f"Connection interrupted: {str(e)}. Using partial results."})
+        except Exception as e:
+            # Handle any other unexpected errors
+            logger.error(f"Unexpected error during streaming: {str(e)}")
+            if callback:
+                callback({"type": "error", "content": f"Error: {str(e)}. Using partial results."})
+
+        # Final processing of the response (complete or partial)
+        try:
+            # Try to find a complete JSON object in the final buffer
+            json_pattern = r'\{.*\}'
+            match = re.search(json_pattern, stream_buffer, re.DOTALL)
+
+            if match:
+                potential_json = match.group(0)
+                final_data = json.loads(potential_json)
+                self.thinking_process = final_data.get("thinking", "No thinking process provided")
+                conclusion = final_data.get("conclusion", stream_buffer)
+            else:
+                # If no JSON found, use the raw buffer
+                self.thinking_process = thinking_buffer or "No structured thinking process available"
+                conclusion = conclusion or stream_buffer
+        except Exception as e:
+            logger.warning(f"Failed to parse JSON from streamed response: {str(e)}")
+            self.thinking_process = thinking_buffer or "Error parsing thinking process"
+            conclusion = conclusion or stream_buffer
+
+        # If we didn't get any conclusion but have thinking, create a simple conclusion
+        if not conclusion and thinking_buffer:
+            conclusion = "Analysis was interrupted. Please see the thinking process for partial analysis."
+            
+        return conclusion
+
+    def analyze_patient_data(self, patient_data: Dict, callback=None) -> str:
         """
         Analyze patient data using the configured model.
         Args:
             patient_data: Processed patient data dictionary
+            callback: Optional callback function to receive streaming updates
         Returns:
             Analysis results as string
         """
         # Load model if not already loaded
         self._load_model()
         prompt = self._format_per_patient_prompt(patient_data)
+        self.thinking_process = None  # Reset thinking process
 
         try:
             if self.platform == "ai-verde":
                 # Use AI Verde with system and human messages
-                messages = [
-                    SystemMessage(content="You are a medical expert specializing in wound care analysis. Analyze the provided wound data and provide clinical recommendations."),
-                    HumanMessage(content=prompt)
-                ]
-                response = self.model.invoke(messages)
-                return response.content
+                if self.model_name == "deepseek-r1":
+                    # For DeepSeek R1, request structured output with thinking
+                    system_message = (
+                        "You are a medical expert specializing in wound care analysis. "
+                        "Analyze the provided wound data and provide clinical recommendations. "
+                        "Structure your response as a JSON object with two keys: "
+                        "'thinking' (your step-by-step analysis process) and "
+                        "'conclusion' (your final analysis and recommendations)."
+                    )
+                    messages = [
+                        SystemMessage(content=system_message),
+                        HumanMessage(content=prompt)
+                    ]
 
-            elif self.model_name == "clinical-bert":
-                # For BERT, we'll use a simpler approach focused on key aspects
-                latest_visit = patient_data['visits'][-1]
-                measurements = latest_visit.get('wound_measurements', {})
-                wound_info = latest_visit.get('wound_info', {})
+                    # Check if streaming is enabled and callback is provided
+                    if getattr(self.model, 'streaming', False) and callback:
+                        return self._stream_analysis(messages, callback)
+                    else:
+                        response = self.model.invoke(messages)
 
-                # Create shorter, focused prompts
-                healing_prompt = f"The wound healing progress is [MASK]. Size is {measurements.get('length')}x{measurements.get('width')}cm."
-                risk_prompt = f"The wound infection risk is [MASK]. Exudate is {wound_info.get('exudate', {}).get('volume', 'Unknown')}."
-
-                # Get predictions for each aspect
-                healing_result = self.model(healing_prompt)[0]['token_str']
-                risk_result = self.model(risk_prompt)[0]['token_str']
-
-                # Combine results
-                analysis = f"""
-                Wound Analysis Summary:
-                - Healing Progress: {healing_result}
-                - Risk Assessment: {risk_result}
-                - Latest Measurements: {measurements.get('length')}cm x {measurements.get('width')}cm
-                - Area: {measurements.get('area')}cm²
-                """
-                return analysis
-            else:
-                # Standard text generation for other models
-                response = self.model(
-                    prompt,
-                    do_sample=True,
-                    temperature=0.3,
-                    max_new_tokens=512,
-                    num_return_sequences=1
-                )
-
-                # Extract and clean the generated text
-                generated_text = response[0]['generated_text']
-                # Remove the prompt from the response if it's included
-                if generated_text.startswith(prompt):
-                    generated_text = generated_text[len(prompt):].strip()
-
-                return generated_text
-
-        except Exception as e:
-            logger.error(f"Error during analysis: {str(e)}")
-            raise
-
-    def analyze_population_data(self, population_data: Dict) -> str:
-        """
-        Analyze population-level data using the configured model.
-        Args:
-            population_data: Dictionary containing aggregated population statistics and analysis
-        Returns:
-            Analysis results as string
-        """
-        self._load_model()
-
-        try:
-            prompt = self._format_population_prompt(population_data)
-
-            if self.platform == "ai-verde":
-                system_prompt = (
-                    "You are a senior wound care specialist and data scientist analyzing population-level wound healing data. "
-                    "Your expertise spans clinical wound care, biostatistics, and medical data analysis. Your task is to:\n\n"
-                    "1. Analyze complex wound healing patterns across diverse patient populations\n"
-                    "2. Identify clinically significant trends and correlations\n"
-                    "3. Evaluate the effectiveness of different treatment approaches\n"
-                    "4. Provide evidence-based recommendations for improving wound care outcomes\n\n"
-                    "Focus on actionable insights that have practical clinical applications. Support your analysis with "
-                    "specific data points and statistics when available. Consider both statistical significance and "
-                    "clinical relevance in your interpretations. When making recommendations, consider implementation "
-                    "feasibility and potential resource constraints."
-                )
-
-                messages = [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=prompt)
-                ]
-                response = self.model.invoke(messages)
-                return response.content
+                        # Parse the JSON response
+                        try:
+                            import json
+                            response_data = json.loads(response.content)
+                            self.thinking_process = response_data.get("thinking", "No thinking process provided")
+                            return response_data.get("conclusion", response.content)
+                        except json.JSONDecodeError:
+                            logger.warning("Failed to parse JSON response from DeepSeek R1")
+                            return response.content
+                else:
+                    # Standard approach for other models
+                    messages = [
+                        SystemMessage(content="You are a medical expert specializing in wound care analysis. Analyze the provided wound data and provide clinical recommendations."),
+                        HumanMessage(content=prompt)
+                    ]
+                    response = self.model.invoke(messages)
+                    return response.content
             else:
                 # For HuggingFace models, we'll use a simplified version of the prompt
                 combined_prompt = (
-                    "You are a wound care expert analyzing population-level data. "
+                    "You are a wound care expert analyzing patient data. "
                     "Provide a detailed analysis focusing on patterns, risk factors, "
                     "and evidence-based recommendations.\n\n" + prompt
                 )
@@ -526,7 +597,7 @@ class WoundAnalysisLLM:
                     combined_prompt,
                     do_sample=True,
                     temperature=0.3,
-                    max_new_tokens=1024,  # Increased for more detailed analysis
+                    max_new_tokens=512,
                     num_return_sequences=1
                 )
 
@@ -535,40 +606,142 @@ class WoundAnalysisLLM:
                 else:
                     generated_text = response['generated_text']
 
-                # Clean up the response
-                analysis = generated_text.replace(combined_prompt, '').strip()
+                return generated_text
+                # # Clean up the response
+                # analysis = generated_text.replace(combined_prompt, '').strip()
 
-                # Format the analysis with clear sections
-                sections = [
-                    "Key Patterns and Trends",
-                    "Risk Factor Analysis",
-                    "Treatment Effectiveness",
-                    "Sensor Data Insights",
-                    "Clinical Recommendations",
-                    "Future Directions"
-                ]
+                # # Format the analysis with clear sections
+                # sections = [
+                #     "Key Patterns and Trends",
+                #     "Risk Factor Analysis",
+                #     "Treatment Effectiveness",
+                #     "Sensor Data Insights",
+                #     "Clinical Recommendations",
+                #     "Future Directions"
+                # ]
 
-                formatted_analysis = ""
-                current_section = ""
-                for line in analysis.split('\n'):
-                    # Check if line starts a new section
-                    is_section = False
-                    for section in sections:
-                        if section.lower() in line.lower():
-                            current_section = section
-                            formatted_analysis += f"\n## {section}\n"
-                            is_section = True
-                            break
+                # formatted_analysis = ""
+                # current_section = ""
+                # for line in analysis.split('\n'):
+                #     # Check if line starts a new section
+                #     is_section = False
+                #     for section in sections:
+                #         if section.lower() in line.lower():
+                #             current_section = section
+                #             formatted_analysis += f"\n## {section}\n"
+                #             is_section = True
+                #             break
 
-                    if not is_section and line.strip():
-                        if not current_section:
-                            current_section = "Analysis"
-                            formatted_analysis += "\n## General Analysis\n"
-                        formatted_analysis += line + "\n"
+                #     if not is_section and line.strip():
+                #         if not current_section:
+                #             current_section = "Analysis"
+                #             formatted_analysis += "\n## General Analysis\n"
+                #         formatted_analysis += line + "\n"
 
-                return formatted_analysis.strip()
+                # return formatted_analysis.strip()
+
+        except Exception as e:
+            logger.error(f"Error during analysis: {str(e)}")
+            raise
+
+    def analyze_population_data(self, population_data: Dict, callback=None) -> str:
+        """
+        Analyze population-level data using the configured model.
+        Args:
+            population_data: Processed population data dictionary
+            callback: Optional callback function to receive streaming updates
+        Returns:
+            Analysis results as string
+        """
+        # Load model if not already loaded
+        self._load_model()
+        prompt = self._format_population_prompt(population_data)
+        self.thinking_process = None  # Reset thinking process
+
+        try:
+            if self.platform == "ai-verde":
+                if self.model_name == "deepseek-r1":
+                    # For DeepSeek R1, request structured output with thinking
+                    system_message = (
+                        "You are a medical expert specializing in wound care analysis. "
+                        "Analyze the provided population-level wound data and provide clinical insights. "
+                        "Structure your response as a JSON object with two keys: "
+                        "'thinking' (your step-by-step analysis process) and "
+                        "'conclusion' (your final analysis and recommendations)."
+                    )
+                    messages = [
+                        SystemMessage(content=system_message),
+                        HumanMessage(content=prompt)
+                    ]
+
+                    # Check if streaming is enabled and callback is provided
+                    if getattr(self.model, 'streaming', False) and callback:
+                        return self._stream_analysis(messages, callback)
+                    else:
+                        response = self.model.invoke(messages)
+
+                        # Parse the JSON response
+                        try:
+                            import json
+                            response_data = json.loads(response.content)
+                            self.thinking_process = response_data.get("thinking", "No thinking process provided")
+                            return response_data.get("conclusion", response.content)
+                        except json.JSONDecodeError:
+                            logger.warning("Failed to parse JSON response from DeepSeek R1")
+                            return response.content
+                else:
+                    # Standard approach for other models
+                    system_prompt = (
+                        "You are a senior wound care specialist and data scientist analyzing population-level wound healing data. "
+                        "Your expertise spans clinical wound care, biostatistics, and medical data analysis. Your task is to:\n\n"
+                        "1. Analyze complex wound healing patterns across diverse patient populations\n"
+                        "2. Identify clinically significant trends and correlations\n"
+                        "3. Evaluate the effectiveness of different treatment approaches\n"
+                        "4. Provide evidence-based recommendations for improving wound care outcomes\n\n"
+                        "Focus on actionable insights that have practical clinical applications. Support your analysis with "
+                        "specific data points and statistics when available. Consider both statistical significance and "
+                        "clinical relevance in your interpretations. When making recommendations, consider implementation "
+                        "feasibility and potential resource constraints."
+                    )
+
+                    messages = [
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=prompt)
+                    ]
+                    response = self.model.invoke(messages)
+                    return response.content
+            else:
+                # For HuggingFace models, use a simplified approach
+                combined_prompt = (
+                    "You are a wound care expert analyzing population data. "
+                    "Provide a detailed analysis focusing on patterns, risk factors, "
+                    "and evidence-based recommendations.\n\n" + prompt
+                )
+
+                response = self.model(
+                    combined_prompt,
+                    do_sample=True,
+                    temperature=0.3,
+                    max_new_tokens=512,
+                    top_p=0.95
+                )
+
+                if isinstance(response, list):
+                    generated_text = response[0]['generated_text']
+                else:
+                    generated_text = response['generated_text']
+
+                return generated_text
 
         except Exception as e:
             logger.error(f"Error analyzing population data: {str(e)}")
             raise
 
+    def get_thinking_process(self) -> str:
+        """
+        Get the thinking process from the last analysis (if available).
+
+        Returns:
+            The thinking process as a string, or None if not available
+        """
+        return self.thinking_process

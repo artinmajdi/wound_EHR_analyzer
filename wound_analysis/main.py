@@ -5,7 +5,7 @@ import pathlib
 from datetime import datetime
 from typing import Tuple
 
-from utils.data_processor import WoundDataProcessor
+from utils.data_processor import WoundDataProcessor, DataManager
 from utils.llm_interface import WoundAnalysisLLM
 
 def setup_logging(log_dir: pathlib.Path) -> Tuple[pathlib.Path, pathlib.Path]:
@@ -31,7 +31,8 @@ def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Analyze wound care data using LLMs')
     parser.add_argument('--record-id', type=int, default=41, help='Patient record ID to analyze')
-    parser.add_argument('--dataset-path', type=pathlib.Path, default=pathlib.Path(__file__).parent.parent / 'dataset', help='Path to the dataset directory containing SmartBandage-Data_for_llm.csv')
+    parser.add_argument('--csv-dataset-path', type=pathlib.Path, default=pathlib.Path(__file__).parent.parent / 'dataset' / 'SmartBandage-Data_for_llm.csv', help='Path to the CSV dataset file')
+    parser.add_argument('--impedance-freq-sweep-path', type=pathlib.Path, default=pathlib.Path(__file__).parent.parent / 'dataset' / 'impedance_frequency_sweep', help='Path to the impedance frequency sweep directory')
     parser.add_argument('--output-dir', type=pathlib.Path, default=pathlib.Path(__file__).parent.parent / 'wound_analysis/utils/logs', help='Directory to save output files')
     parser.add_argument('--platform', type=str, default='ai-verde', choices=WoundAnalysisLLM.get_available_platforms(), help='LLM platform to use')
     parser.add_argument('--api-key', type=str, help='API key for the LLM platform')
@@ -54,15 +55,15 @@ def main():
             os.environ["OPENAI_API_KEY"] = args.api_key
 
         # Process patient data
-        processor = WoundDataProcessor(args.dataset_path)
-        patient_data = processor.get_patient_visits(args.record_id)
+        processor = WoundDataProcessor(csv_dataset_path=args.csv_dataset_path, impedance_freq_sweep_path=args.impedance_freq_sweep_path)
+        patient_data = processor.get_patient_visits(record_id=args.record_id)
 
         # Analyze data using LLM
         llm = WoundAnalysisLLM(platform=args.platform, model_name=args.model_name)
-        analysis_results = llm.analyze_patient_data(patient_data)
+        analysis_results = llm.analyze_patient_data(patient_data=patient_data)
 
         # Save report
-        processor.save_report(word_filename, analysis_results, patient_data)
+        DataManager.create_and_save_report(patient_metadata=patient_data, analysis_results=analysis_results, report_path=word_filename)
 
         # Output results
         logger.info(f"Report saved: {word_filename}")
