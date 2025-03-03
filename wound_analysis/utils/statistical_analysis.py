@@ -69,50 +69,50 @@ class StatisticalAnalysis:
             Dict containing overall statistics
         """
         try:
-            stats = {}
+            stats_data = {}
 
             # Count statistics
             unique_patients = self.df['Record ID'].dropna().unique()
-            stats["Total Patients"] = len(unique_patients)
+            stats_data["Total Patients"] = len(unique_patients)
 
             # Calculate means safely
             if 'Calculated Wound Area' in self.df.columns:
                 valid_areas = self.df['Calculated Wound Area'].dropna()
-                stats["Average Wound Area (cm²)"] = self._safe_mean(valid_areas)
+                stats_data["Average Wound Area (cm²)"] = self._safe_mean(valid_areas)
 
             if 'Healing Rate (%)' in self.df.columns:
                 valid_rates = self.df[
                     (self.df['Healing Rate (%)'].notna()) &
                     (self.df['Healing Rate (%)'] > 0)
                 ]['Healing Rate (%)']
-                stats["Average Healing Rate (%)"] = self._safe_mean(valid_rates)
+                stats_data["Average Healing Rate (%)"] = self._safe_mean(valid_rates)
 
             if 'Total Temp Gradient' in self.df.columns:
                 valid_temps = self.df['Total Temp Gradient'].dropna()
-                stats["Average Temperature Gradient (°F)"] = self._safe_mean(valid_temps)
+                stats_data["Average Temperature Gradient (°F)"] = self._safe_mean(valid_temps)
 
             if 'Skin Impedance (kOhms) - Z' in self.df.columns:
                 valid_impedance = self.df['Skin Impedance (kOhms) - Z'].dropna()
-                stats["Average Impedance (kOhms)"] = self._safe_mean(valid_impedance)
+                stats_data["Average Impedance (kOhms)"] = self._safe_mean(valid_impedance)
 
             # Add diabetes breakdown if available
             if 'Diabetes?' in self.df.columns:
                 valid_diabetes = self.df.dropna(subset=['Diabetes?', 'Record ID'])
                 diabetic_count = len(valid_diabetes[valid_diabetes['Diabetes?'] == 'Yes']['Record ID'].unique())
                 non_diabetic_count = len(valid_diabetes[valid_diabetes['Diabetes?'] == 'No']['Record ID'].unique())
-                stats["Diabetic Patients"] = diabetic_count
-                stats["Non-diabetic Patients"] = non_diabetic_count
+                stats_data["Diabetic Patients"] = diabetic_count
+                stats_data["Non-diabetic Patients"] = non_diabetic_count
 
             # Format numeric values
-            stats = {
+            stats_data = {
                 k: f"{v:.2f}" if isinstance(v, float) else v
-                for k, v in stats.items()
+                for k, v in stats_data.items()
             }
 
             # Remove any remaining nan values
-            stats = {k: v for k, v in stats.items() if str(v).lower() != "nan"}
+            stats_data = {k: v for k, v in stats_data.items() if str(v).lower() != "nan"}
 
-            return stats
+            return stats_data
 
         except Exception as e:
             logger.error(f"Error calculating overall statistics: {str(e)}")
@@ -133,15 +133,15 @@ class StatisticalAnalysis:
                 logger.warning(f"No data found for patient {patient_id}")
                 return {}
 
-            stats = {}
+            stats_data = {}
 
             # Basic counts
-            stats["Total Visits"] = len(patient_data)
+            stats_data["Total Visits"] = len(patient_data)
 
             # Area measurements
             if 'Calculated Wound Area' in patient_data.columns and len(patient_data) > 0:
-                stats["Initial Wound Area (cm²)"] = self._safe_float(patient_data.iloc[0]['Calculated Wound Area'])
-                stats["Latest Wound Area (cm²)"] = self._safe_float(patient_data.iloc[-1]['Calculated Wound Area'])
+                stats_data["Initial Wound Area (cm²)"] = self._safe_float(patient_data.iloc[0]['Calculated Wound Area'])
+                stats_data["Latest Wound Area (cm²)"] = self._safe_float(patient_data.iloc[-1]['Calculated Wound Area'])
 
             # Calculate means safely
             if 'Healing Rate (%)' in patient_data.columns:
@@ -149,15 +149,15 @@ class StatisticalAnalysis:
                     (patient_data['Healing Rate (%)'].notna()) &
                     (patient_data['Healing Rate (%)'] > 0)
                 ]['Healing Rate (%)']
-                stats["Average Healing Rate (%)"] = self._safe_mean(valid_rates)
+                stats_data["Average Healing Rate (%)"] = self._safe_mean(valid_rates)
 
             if 'Total Temp Gradient' in patient_data.columns:
                 valid_temps = patient_data['Total Temp Gradient'].dropna()
-                stats["Average Temperature Gradient (°F)"] = self._safe_mean(valid_temps)
+                stats_data["Average Temperature Gradient (°F)"] = self._safe_mean(valid_temps)
 
             if 'Skin Impedance (kOhms) - Z' in patient_data.columns:
                 valid_impedance = patient_data['Skin Impedance (kOhms) - Z'].dropna()
-                stats["Average Impedance (kOhms)"] = self._safe_mean(valid_impedance)
+                stats_data["Average Impedance (kOhms)"] = self._safe_mean(valid_impedance)
 
             # Calculate total healing progress
             if len(patient_data) >= 2 and 'Calculated Wound Area' in patient_data.columns:
@@ -165,18 +165,18 @@ class StatisticalAnalysis:
                 final_area = self._safe_float(patient_data.iloc[-1]['Calculated Wound Area'])
                 if initial_area > 0:
                     total_healing = ((initial_area - final_area) / initial_area) * 100
-                    stats["Total Healing Progress (%)"] = total_healing
+                    stats_data["Total Healing Progress (%)"] = total_healing
 
             # Format numeric values
-            stats = {
+            stats_data = {
                 k: f"{v:.2f}" if isinstance(v, float) else v
-                for k, v in stats.items()
+                for k, v in stats_data.items()
             }
 
             # Remove any remaining nan values
-            stats = {k: v for k, v in stats.items() if str(v).lower() != "nan"}
+            stats_data = {k: v for k, v in stats_data.items() if str(v).lower() != "nan"}
 
-            return stats
+            return stats_data
 
         except Exception as e:
             logger.error(f"Error calculating patient statistics: {str(e)}")

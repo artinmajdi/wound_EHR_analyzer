@@ -6,9 +6,6 @@ import torch
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from transformers import pipeline
-
-
-
 from dotenv import load_dotenv
 
 # Load environment variables from .env file

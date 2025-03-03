@@ -2448,11 +2448,11 @@ class Dashboard:
 				# Display statistics
 				st.write("**Statistical Summary:**")
 				for status in diab_stats.index:
-					stats = diab_stats.loc[status]
+					stats_data = diab_stats.loc[status]
 					improvement_rate = (valid_df[valid_df['Diabetes?'] == status]['Healing Rate (%)'] < 0).mean() * 100
-					st.write(f"- {status}: Average Healing Rate = {stats[('Healing Rate (%)', 'mean')]}% "
-							f"(n={int(stats[('Healing Rate (%)', 'count')])}, "
-							f"SD={stats[('Healing Rate (%)', 'std')]}, "
+					st.write(f"- {status}: Average Healing Rate = {stats_data[('Healing Rate (%)', 'mean')]}% "
+							f"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
+							f"SD={stats_data[('Healing Rate (%)', 'std')]}, "
 							f"Improvement Rate={improvement_rate:.1f}%)")
 
 				# Compare wound types distribution
@@ -2505,11 +2505,11 @@ class Dashboard:
 
 				st.write("**Statistical Summary:**")
 				for status in smoke_stats.index:
-					stats = smoke_stats.loc[status]
+					stats_data = smoke_stats.loc[status]
 					improvement_rate = (valid_df[valid_df['Smoking status'] == status]['Healing Rate (%)'] < 0).mean() * 100
-					st.write(f"- {status}: Average Healing Rate = {stats[('Healing Rate (%)', 'mean')]}% "
-							f"(n={int(stats[('Healing Rate (%)', 'count')])}, "
-							f"SD={stats[('Healing Rate (%)', 'std')]}, "
+					st.write(f"- {status}: Average Healing Rate = {stats_data[('Healing Rate (%)', 'mean')]}% "
+							f"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
+							f"SD={stats_data[('Healing Rate (%)', 'std')]}, "
 							f"Improvement Rate={improvement_rate:.1f}%)")
 
 				# Wound type distribution by smoking status
@@ -2564,11 +2564,11 @@ class Dashboard:
 
 				st.write("**Statistical Summary:**")
 				for category in bmi_stats.index:
-					stats = bmi_stats.loc[category]
+					stats_data = bmi_stats.loc[category]
 					improvement_rate = (valid_df[valid_df['BMI Category'] == category]['Healing Rate (%)'] < 0).mean() * 100
-					st.write(f"- {category}: Average Healing Rate = {stats[('Healing Rate (%)', 'mean')]}% "
-							f"(n={int(stats[('Healing Rate (%)', 'count')])}, "
-							f"SD={stats[('Healing Rate (%)', 'std')]}, "
+					st.write(f"- {category}: Average Healing Rate = {stats_data[('Healing Rate (%)', 'mean')]}% "
+							f"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
+							f"SD={stats_data[('Healing Rate (%)', 'std')]}, "
 							f"Improvement Rate={improvement_rate:.1f}%)")
 
 				# Wound type distribution by BMI category

@@ -2,11 +2,14 @@ import logging
 import os
 import pathlib
 import re
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Optional
 
 import numpy as np
+import math
+from scipy import stats
 import pandas as pd
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -135,14 +138,14 @@ class WoundDataProcessor:
 			lambda x: 'Improving' if x < 0 else ('Stable' if -5 <= x <= 5 else 'Worsening')
 		)
 
-		stats = {
+		stats_data = {
 			'summary': {
-				'total_patients': len(df[pi.record_id].unique()),
-				'total_visits': len(df),
-				'avg_visits_per_patient': len(df) / len(df[pi.record_id].unique()),
-				'overall_improvement_rate': (df[hm.healing_rate] < 0).mean() * 100,
+				'total_patients'             : len(df[pi.record_id].unique()),
+				'total_visits'               : len(df),
+				'avg_visits_per_patient'     : len(df) / len(df[pi.record_id].unique()),
+				'overall_improvement_rate'   : (df[hm.healing_rate] < 0).mean() * 100,
 				'avg_treatment_duration_days': (df.groupby(pi.record_id)[vis.days_since_first_visit].max().mean()),
-				'completion_rate': (df['Visit Status'] == 'Completed').mean() * 100 if 'Visit Status' in df.columns else None
+				'completion_rate'            : (df['Visit Status'] == 'Completed').mean() * 100 if 'Visit Status' in df.columns else None
 			},
 			'demographics': {
 				'age_stats': {
@@ -192,14 +195,14 @@ class WoundDataProcessor:
 							'initial': df.groupby(pi.record_id)[wc.wound_area].first().agg(['mean', 'median', 'std']).to_dict(),
 							'final'  : df.groupby(pi.record_id)[wc.wound_area].last().agg(['mean', 'median', 'std']).to_dict(),
 							'percent_change': ((df.groupby(pi.record_id)[wc.wound_area].last() -
-								df.groupby(pi.record_id)[wc.wound_area].first()) /
-								df.groupby(pi.record_id)[wc.wound_area].first() * 100).mean()
+												df.groupby(pi.record_id)[wc.wound_area].first()) /
+												df.groupby(pi.record_id)[wc.wound_area].first() * 100).mean()
 						}
 					},
 					'healing_by_initial_size': {
-						'small': df[df[wc.wound_area] < df[wc.wound_area].quantile(0.33)][hm.healing_rate].mean(),
+						'small' : df[df[wc.wound_area] < df[wc.wound_area].quantile(0.33)][hm.healing_rate].mean(),
 						'medium': df[(df[wc.wound_area] >= df[wc.wound_area].quantile(0.33)) &
-							(df[wc.wound_area] < df[wc.wound_area].quantile(0.67))][hm.healing_rate].mean(),
+									(df[wc.wound_area] < df[wc.wound_area].quantile(0.67))][hm.healing_rate].mean(),
 						'large': df[df[wc.wound_area] >= df[wc.wound_area].quantile(0.67)][hm.healing_rate].mean()
 					}
 				}
@@ -208,7 +211,7 @@ class WoundDataProcessor:
 				'overall_stats': {
 					'summary': f"Mean: {df[hm.healing_rate].mean():.1f}%, Median: {df[hm.healing_rate].median():.1f}%",
 					'distribution': df['Healing_Status'].value_counts().to_dict(),
-					'percentiles': df[hm.healing_rate].quantile([0.25, 0.5, 0.75]).to_dict()
+					'percentiles' : df[hm.healing_rate].quantile([0.25, 0.5, 0.75]).to_dict()
 				},
 				'temporal_analysis': {
 					'by_visit_number': df.groupby('Visit Number')[hm.healing_rate].agg(['mean', 'std', 'count']).to_dict(),
@@ -221,31 +224,31 @@ class WoundDataProcessor:
 			'exudate_analysis': {
 				'characteristics': {
 					'volume': {
-						'distribution': df[ca.exudate_volume].value_counts().to_dict(),
+						'distribution'       : df[ca.exudate_volume].value_counts().to_dict(),
 						'healing_correlation': df.groupby(ca.exudate_volume)[hm.healing_rate].mean().to_dict()
 					},
 					'type': {
-						'distribution': df[ca.exudate_type].value_counts().to_dict(),
+						'distribution'       : df[ca.exudate_type].value_counts().to_dict(),
 						'healing_correlation': df.groupby(ca.exudate_type)[hm.healing_rate].mean().to_dict()
 					},
 					'viscosity': {
-						'distribution': df[ca.exudate_viscosity].value_counts().to_dict(),
+						'distribution'       : df[ca.exudate_viscosity].value_counts().to_dict(),
 						'healing_correlation': df.groupby(ca.exudate_viscosity)[hm.healing_rate].mean().to_dict()
 					}
 				},
 				'temporal_patterns': {
 					'volume_progression': df.groupby('Visit Number')[ca.exudate_volume].value_counts().to_dict(),
-					'type_progression': df.groupby('Visit Number')[ca.exudate_type].value_counts().to_dict()
+					'type_progression'  : df.groupby('Visit Number')[ca.exudate_type].value_counts().to_dict()
 				}
 			}
 		}
 
 		# Add sensor data analysis if available
-		stats['sensor_data'] = {}
+		stats_data['sensor_data'] = {}
 
 		# Temperature Analysis
 		if temp.center_temp in df.columns:
-			stats['sensor_data']['temperature'] = {
+			stats_data['sensor_data']['temperature'] = {
 				'center_temp': {
 					'overall': df[temp.center_temp].agg(['mean', 'std', 'min', 'max']).to_dict(),
 					'by_healing_status': df.groupby('Healing_Status')[temp.center_temp].mean().to_dict(),
@@ -255,7 +258,7 @@ class WoundDataProcessor:
 
 			# Add edge and peri-wound temperatures if available
 			if all(col in df.columns for col in [temp.edge_temp, temp.peri_temp]):
-				stats['sensor_data']['temperature'].update({
+				stats_data['sensor_data']['temperature'].update({
 					'edge_temp': {
 						'overall': df[temp.edge_temp].agg(['mean', 'std', 'min', 'max']).to_dict(),
 						'by_healing_status': df.groupby('Healing_Status')[temp.edge_temp].mean().to_dict()
@@ -278,7 +281,7 @@ class WoundDataProcessor:
 
 		# Impedance Analysis
 		if imp.highest_freq_z in df.columns:
-			stats['sensor_data']['impedance'] = {
+			stats_data['sensor_data']['impedance'] = {
 				'magnitude': {
 					'overall': df[imp.highest_freq_z].agg(['mean', 'std', 'min', 'max']).to_dict(),
 					'by_healing_status': df.groupby('Healing_Status')[imp.highest_freq_z].mean().to_dict(),
@@ -288,7 +291,7 @@ class WoundDataProcessor:
 
 			# Add complex impedance components if available
 			if all(col in df.columns for col in [imp.highest_freq_z_prime, imp.highest_freq_z_double_prime]):
-				stats['sensor_data']['impedance'].update({
+				stats_data['sensor_data']['impedance'].update({
 					'complex_components': {
 						'real': {
 							'overall': df[imp.highest_freq_z_prime].agg(['mean', 'std', 'min', 'max']).to_dict(),
@@ -303,7 +306,7 @@ class WoundDataProcessor:
 
 		# Oxygenation Analysis
 		if oxy.oxygenation in df.columns:
-			stats['sensor_data']['oxygenation'] = {
+			stats_data['sensor_data']['oxygenation'] = {
 				'oxygenation': {
 					'overall'                 : df[oxy.oxygenation].agg(['mean', 'std', 'min', 'max']).to_dict(),
 					'by_healing_status'       : df.groupby('Healing_Status')[oxy.oxygenation].mean().to_dict(),
@@ -318,14 +321,14 @@ class WoundDataProcessor:
 								'oxyhemoglobin': oxy.oxyhemoglobin,
 								'deoxyhemoglobin': oxy.deoxyhemoglobin}.items():
 				if col in df.columns:
-					stats['sensor_data']['oxygenation'][hb_type] = {
+					stats_data['sensor_data']['oxygenation'][hb_type] = {
 						'overall'                 : df[col].agg(['mean', 'std', 'min', 'max']).to_dict(),
 						'by_healing_status'       : df.groupby('Healing_Status')[col].mean().to_dict(),
 						'temporal_trend'          : df.groupby('Visit Number')[col].mean().to_dict(),
 						'correlation_with_healing': df[col].corr(df[hm.healing_rate])
 					}
 
-		return stats
+		return stats_data
 
 	def get_processed_data(self) -> pd.DataFrame:
 		"""
@@ -947,8 +950,6 @@ class DataManager:
 
 	@staticmethod
 	def _create_derived_features(df: pd.DataFrame) -> pd.DataFrame:
-		"""Create additional derived features from the data."""
-		import numpy as np
 
 		# Get column names from schema
 		schema = DataColumns()
@@ -1389,7 +1390,6 @@ class ImpedanceAnalyzer:
 				c = float(high_freq.get('capacitance', 0))
 				if r > 0 and c > 0:
 					# Approximate phase angle calculation
-					import math
 					# Using arctan(1/(2πfRC))
 					f = float(high_freq.get('frequency', 80000))
 					phase_angle = math.atan(1/(2 * math.pi * f * r * c)) * (180/math.pi)
@@ -1437,47 +1437,44 @@ class ImpedanceAnalyzer:
 	@staticmethod
 	def analyze_healing_trajectory(visits):
 		"""
-		Analyzes the wound healing trajectory based on impedance data from multiple visits.
+			Analyzes the wound healing trajectory based on impedance data from multiple visits.
 
-		This function performs a linear regression analysis on the high-frequency impedance values
-		over time to determine if there's a significant trend indicating wound healing or deterioration.
+			This function performs a linear regression analysis on the high-frequency impedance values
+			over time to determine if there's a significant trend indicating wound healing or deterioration.
 
-		Parameters:
-		-----------
-		visits : list
-			List of visit dictionaries, each containing visit data including sensor readings.
-			Each visit dictionary should have:
-			- 'visit_date': date of the visit
-			- 'sensor_data': dict containing 'impedance' data with 'high_frequency' values including a 'Z' value representing impedance measurement
+			Parameters:
+			-----------
+			visits : list
+				List of visit dictionaries, each containing visit data including sensor readings.
+				Each visit dictionary should have:
+				- 'visit_date': date of the visit
+				- 'sensor_data': dict containing 'impedance' data with 'high_frequency' values including a 'Z' value representing impedance measurement
 
-		Returns:
-		--------
-		dict
-			A dictionary containing:
-			- 'status': 'insufficient_data' if fewer than 3 valid measurements, 'analyzed' otherwise
-			- 'slope': slope of the linear regression (trend direction)
-			- 'r_squared': coefficient of determination (strength of linear relationship)
-			- 'p_value': statistical significance of the slope
-			- 'dates': list of dates with valid measurements
-			- 'values': list of impedance values used in analysis
-			- 'interpretation': Clinical interpretation of results as one of:
-				- "Strong evidence of healing progression"
-				- "Moderate evidence of healing progression"
-				- "Potential deterioration detected"
-				- "No significant trend detected"
+			Returns:
+			--------
+			dict
+				A dictionary containing:
+				- 'status': 'insufficient_data' if fewer than 3 valid measurements, 'analyzed' otherwise
+				- 'slope': slope of the linear regression (trend direction)
+				- 'r_squared': coefficient of determination (strength of linear relationship)
+				- 'p_value': statistical significance of the slope
+				- 'dates': list of dates with valid measurements
+				- 'values': list of impedance values used in analysis
+				- 'interpretation': Clinical interpretation of results as one of:
+					- "Strong evidence of healing progression"
+					- "Moderate evidence of healing progression"
+					- "Potential deterioration detected"
+					- "No significant trend detected"
 
-		Notes:
-		------
-		Negative slopes indicate healing (decreasing impedance), while positive slopes
-		may indicate deterioration. The function requires at least 3 valid impedance
-		readings to perform analysis.
+			Notes:
+			------
+			Negative slopes indicate healing (decreasing impedance), while positive slopes
+			may indicate deterioration. The function requires at least 3 valid impedance
+			readings to perform analysis.
 		"""
 
 		if len(visits) < 3:
 			return {"status": "insufficient_data"}
-
-		import numpy as np
-		from scipy import stats
 
 		dates, z_values = [], []
 		for visit in visits:
@@ -1614,7 +1611,6 @@ class ImpedanceAnalyzer:
 		except (ValueError, TypeError, ZeroDivisionError) as e:
 			error_message = f"Error processing frequency response data: {type(e).__name__}: {str(e)}"
 			print(error_message)  # For console debugging
-			import traceback
 			traceback.print_exc()  # Print the full traceback
 			results['interpretation'] = error_message  # Or keep the generic message if preferred
 
@@ -1666,8 +1662,6 @@ class ImpedanceAnalyzer:
 
 		if len(previous_visits) < 3:
 			return {}
-
-		import numpy as np
 
 		alerts = {}
 
@@ -1826,7 +1820,6 @@ class ImpedanceAnalyzer:
 			f = float(high_freq.get('frequency', 80000))
 
 			if r > 0 and c > 0:
-				import math
 				# Phase angle calculation based on the complex impedance model
 				# It represents the phase difference between voltage and current in AC circuits
 				# Lower phase angles indicate less healthy or more damaged tissue
@@ -1894,8 +1887,6 @@ class ImpedanceAnalyzer:
 		division by zero, returning whatever parameters were successfully calculated before
 		the exception occurred.
 		"""
-
-		import math
 
 		results = {}
 		impedance_data = visit.get('sensor_data', {}).get('impedance', {})
