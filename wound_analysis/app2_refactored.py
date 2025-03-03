@@ -1,22 +1,23 @@
-import streamlit as st
-import pandas as pd
+# Standard library imports
+import os
+import pathlib
+from dataclasses import dataclass, field
+from typing import Optional
+
+# Third-party imports
 import numpy as np
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit as st
 from plotly.subplots import make_subplots
-from scipy import stats
-from sklearn.linear_model import LinearRegression
-import pathlib
-import os
-from dataclasses import dataclass, field
-from typing import Optional, Dict, List, Tuple, Any
-from data_processor import WoundDataProcessor
-from llm_interface import WoundAnalysisLLM, create_and_save_report, download_word_report
-from column_schema import DataColumns
-import pdb  # Debug mode disabled
-import pandas as pd
-import plotly.graph_objects as go
-import numpy as np
+
+# Local application imports
+from utils.column_schema import DataColumns
+from utils.data_processor import DataManager, ImpedanceAnalyzer, WoundDataProcessor
+from utils.llm_interface import WoundAnalysisLLM
+from utils.statistical_analysis import CorrelationAnalysis
+
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
 
@@ -24,316 +25,165 @@ st.set_option('client.showErrorDetails', True)
 class Config:
 	"""Application configuration settings."""
 	PAGE_TITLE: str = "Wound Care Management & Interpreter Dashboard"
-	PAGE_ICON: str = "🩹"
-	LAYOUT: str = "wide"
-	DATA_PATH: Optional[pathlib.Path] = pathlib.Path('/Users/artinmajdi/Documents/GitHubs/postdoc/Wound_management_interpreter_LLM/dataset')
-	COLUMN_SCHEMA: DataColumns = field(default_factory=DataColumns)
+	PAGE_ICON : str = "🩹"
+	LAYOUT    : str = "wide"
+	DATA_PATH    : Optional[pathlib.Path] = pathlib.Path('/Users/artinmajdi/Documents/GitHubs/postdoc/Wound_management_interpreter_LLM/dataset')
+	COLUMN_SCHEMA: DataColumns            = field(default_factory=DataColumns)
 
 	# Constants for bioimpedance analysis
-	ANOMALY_THRESHOLD: float = 2.5  # Z-score threshold for anomaly detection
-	MIN_VISITS_FOR_ANALYSIS: int = 3  # Minimum visits needed for trend analysis
-	SIGNIFICANT_CHANGE_THRESHOLD: float = 15.0  # Percentage change threshold
-	INFECTION_RISK_RATIO_THRESHOLD: float = 15.0  # Low/high frequency ratio threshold
-	SIGNIFICANT_CHANGE_THRESHOLD_IMPEDANCE: float = 15.0  # Percentage change threshold for resistance/absolute impedance
-	SIGNIFICANT_CHANGE_THRESHOLD_CAPACITANCE: float = 20.0  # Percentage change threshold for capacitance
-	INFLAMMATORY_INCREASE_THRESHOLD: float = 30.0  # Percentage increase threshold for low-frequency resistance
+	# ANOMALY_THRESHOLD                       : float = 2.5  # Z-score threshold for anomaly detection
+	# MIN_VISITS_FOR_ANALYSIS                 : int   = 3  # Minimum visits needed for trend analysis
+	# SIGNIFICANT_CHANGE_THRESHOLD            : float = 15.0  # Percentage change threshold
+	# INFECTION_RISK_RATIO_THRESHOLD          : float = 15.0  # Low/high frequency ratio threshold
+	# SIGNIFICANT_CHANGE_THRESHOLD_IMPEDANCE  : float = 15.0  # Percentage change threshold for resistance/absolute impedance
+	# SIGNIFICANT_CHANGE_THRESHOLD_CAPACITANCE: float = 20.0  # Percentage change threshold for capacitance
+	# INFLAMMATORY_INCREASE_THRESHOLD         : float = 30.0  # Percentage increase threshold for low-frequency resistance
 
-@dataclass
-class DataManager:
-	"""Handles data loading, processing and manipulation."""
-	data_processor: WoundDataProcessor = field(default_factory=lambda: None)
-	df: pd.DataFrame = field(default_factory=lambda: None)
-	schema: DataColumns = field(default_factory=DataColumns)
-
-	@staticmethod
-	@st.cache_data
-	def load_data(uploaded_file):
-		"""Load and preprocess the wound healing data from an uploaded CSV file. Returns None if no file is provided."""
-
-		if uploaded_file is None:
-			return None
-
-		df = pd.read_csv(uploaded_file)
-		df = DataManager._preprocess_data(df)
-		return df
-
-	@staticmethod
-	def _preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
-		"""Clean and preprocess the loaded data."""
-
-		# Get column names from schema
-		schema = DataColumns()
-		pi = schema.patient_identifiers
-		vis = schema.visit_info
-		wc = schema.wound_characteristics
-
-		df.columns = df.columns.str.strip()
-
-		# Filter out skipped visits
-		df = df[df[vis.skipped_visit] != 'Yes']
-
-		# Fill missing Visit Number with 1 before converting to int
-		df['Visit Number'] = df[pi.event_name].str.extract(r'Visit (\d+)').fillna(1).astype(int)
-
-		df[vis.visit_date] = pd.to_datetime(df[vis.visit_date]).dt.strftime('%m-%d-%Y')
-
-		# Convert Wound Type to categorical with specified categories
-		df[wc.wound_type] = pd.Categorical(df[wc.wound_type].fillna('Unknown'), categories=df[wc.wound_type].dropna().unique())
-
-		# 2. Calculate wound area if not present but dimensions are available
-		if wc.wound_area not in df.columns and all(col in df.columns for col in [wc.length, wc.width]):
-			df[wc.wound_area] = df[wc.length] * df[wc.width]
-
-		df = DataManager._create_derived_features(df)
-		df = DataManager._calculate_healing_rates(df)
-		return df
+	# Exudate analysis information
+	EXUDATE_TYPE_INFO = {
+		'Serous': {
+			'description': 'Straw-colored, clear, thin',
+			'indication': 'Normal healing process',
+			'severity': 'info'
+		},
+		'Serosanguineous': {
+			'description': 'Pink or light red, thin',
+			'indication': 'Presence of blood cells in early healing',
+			'severity': 'info'
+		},
+		'Sanguineous': {
+			'description': 'Red, thin',
+			'indication': 'Active bleeding or trauma',
+			'severity': 'warning'
+		},
+		'Seropurulent': {
+			'description': 'Cloudy, milky, or creamy',
+			'indication': 'Possible early infection or inflammation',
+			'severity': 'warning'
+		},
+		'Purulent': {
+			'description': 'Yellow, tan, or green, thick',
+			'indication': 'Active infection present',
+			'severity': 'error'
+		}
+	}
 
 	@staticmethod
-	def _calculate_healing_rates(df: pd.DataFrame) -> pd.DataFrame:
-		"""Calculate healing rates for each patient visit."""
-		# Get column names from schema
-		schema = DataColumns()
-		pi = schema.patient_identifiers
-		vis = schema.visit_info
-		wc = schema.wound_characteristics
-		hm = schema.healing_metrics
+	def get_exudate_analysis(volume: str, viscosity: str, exudate_types: str = None) -> dict:
+		"""
+			Provides clinical interpretation and treatment implications for exudate characteristics.
 
-		# Constants
-		MAX_TREATMENT_DAYS = 730  # 2 years in days
-		MIN_WOUND_AREA = 0
-
-		def calculate_patient_healing_metrics(patient_data: pd.DataFrame) -> tuple[list, bool, float]:
-			"""Calculate healing rate and estimated days for a patient.
+			Args:
+				volume: The exudate volume level ('High', 'Medium', or 'Low')
+				viscosity: The exudate viscosity level ('High', 'Medium', or 'Low')
+				exudate_type: The type of exudate (e.g., 'Serous', 'Purulent')
 
 			Returns:
-				tuple: (healing_rates, is_improving, estimated_days_to_heal)
+				A dictionary containing:
+				- volume_analysis: Interpretation of volume level
+				- viscosity_analysis: Interpretation of viscosity level
+				- type_info: Information about the exudate type
+				- treatment_implications: List of treatment recommendations
+		"""
+		result = {
+			"volume_analysis": "",
+			"viscosity_analysis": "",
+			"type_info": {},
+			"treatment_implications": []
+		}
+
+		# Volume interpretation
+		if volume == 'High':
+			result["volume_analysis"] = """
+			**High volume exudate** is common in:
+			- Chronic venous leg ulcers
+			- Dehisced surgical wounds
+			- Inflammatory ulcers
+			- Burns
+
+			This may indicate active inflammation or healing processes.
 			"""
-			if len(patient_data) < 2:
-				return [0.0], False, np.nan
+		elif volume == 'Low':
+			result["volume_analysis"] = """
+			**Low volume exudate** is typical in:
+			- Necrotic wounds
+			- Ischaemic/arterial wounds
+			- Neuropathic diabetic foot ulcers
 
-			# 3. Calculate healing rate (% change in wound area per visit)
-			healing_rates = []
-			for i, row in patient_data.iterrows():
-				if row['Visit Number'] == 1 or len(patient_data[patient_data['Visit Number'] < row['Visit Number']]) == 0:
-					healing_rates.append(0)  # No healing rate for first visit
-				else:
-					# Find the most recent previous visit
-					prev_visits = patient_data[patient_data['Visit Number'] < row['Visit Number']]
-					prev_visit  = prev_visits[prev_visits['Visit Number'] == prev_visits['Visit Number'].max()]
+			Monitor for signs of insufficient moisture.
+			"""
 
-					if len(prev_visit) > 0 and wc.wound_area in patient_data.columns:
-						prev_area = prev_visit[wc.wound_area].values[0]
-						curr_area = row[wc.wound_area]
+		# Viscosity interpretation
+		if viscosity == 'High':
+			result["viscosity_analysis"] = """
+			**High viscosity** (thick) exudate may indicate:
+			- High protein content
+			- Possible infection
+			- Inflammatory processes
+			- Presence of necrotic material
 
-						# Check for valid values to avoid division by zero
-						if prev_area > 0 and not pd.isna(prev_area) and not pd.isna(curr_area):
-							healing_rate = (prev_area - curr_area) / prev_area * 100  # Percentage decrease
-							healing_rates.append(healing_rate)
-						else:
-							healing_rates.append(0)
-					else:
-						healing_rates.append(0)
+			Consider reassessing treatment approach.
+			"""
+		elif viscosity == 'Low':
+			result["viscosity_analysis"] = """
+			**Low viscosity** (thin) exudate may suggest:
+			- Low protein content
+			- Possible venous condition
+			- Potential malnutrition
+			- Presence of fistulas
 
-			# Calculate average healing rate and determine if improving
-			valid_rates = [rate for rate in healing_rates if rate > 0]
-			avg_healing_rate = np.mean(valid_rates) if valid_rates else 0
-			is_improving = avg_healing_rate > 0
+			Monitor fluid balance and nutrition.
+			"""
+		for exudate_type in [t.strip() for t in exudate_types.split(',')]:
+			if exudate_type and exudate_type in Config.EXUDATE_TYPE_INFO:
+				result["type_info"][exudate_type] = Config.EXUDATE_TYPE_INFO[exudate_type]
 
-			# Calculate estimated days to heal based on the latest wound area and average healing rate
-			estimated_days = np.nan
-			if is_improving and len(patient_data) > 0:
-				last_visit = patient_data.iloc[-1]
-				current_area = last_visit[wc.wound_area]
+		# Treatment implications based on volume and viscosity
+		if volume == 'High' and viscosity == 'High':
+			result["treatment_implications"] = [
+				"- Consider highly absorbent dressings",
+				"- More frequent dressing changes may be needed",
+				"- Monitor for maceration of surrounding tissue"
+			]
+		elif volume == 'Low' and viscosity == 'Low':
+			result["treatment_implications"] = [
+				"- Use moisture-retentive dressings",
+				"- Protect wound bed from desiccation",
+				"- Consider hydrating dressings"
+			]
 
-				if current_area > MIN_WOUND_AREA and avg_healing_rate > 0:
-					# Convert percentage rate to area change per day
-					daily_healing_rate = (avg_healing_rate / 100) * current_area
-					if daily_healing_rate > 0:
-						days_to_heal = current_area / daily_healing_rate
-						total_days = last_visit[vis.days_since_first_visit] + days_to_heal
-						if 0 < total_days < MAX_TREATMENT_DAYS:
-							estimated_days = float(total_days)
+		return result
 
-			return healing_rates, is_improving, estimated_days
-
-		# Process each patient's data
-		for patient_id in df[pi.record_id].unique():
-			patient_data = df[df[pi.record_id] == patient_id].sort_values(vis.days_since_first_visit)
-
-			healing_rates, is_improving, estimated_days = calculate_patient_healing_metrics(patient_data)
-
-			# Update patient records with healing rates
-			for i, (idx, row) in enumerate(patient_data.iterrows()):
-				if i < len(healing_rates):
-					df.loc[idx, hm.healing_rate] = healing_rates[i]
-
-			# Update the last visit with overall improvement status
-			df.loc[patient_data.iloc[-1].name, hm.overall_improvement] = 'Yes' if is_improving else 'No'
-
-			if not np.isnan(estimated_days):
-				df.loc[patient_data.index, hm.estimated_days_to_heal] = estimated_days
-
-		# Calculate and store average healing rates
-		df[hm.average_healing_rate] = df.groupby(pi.record_id)[hm.healing_rate].transform('mean')
-
-		# Ensure estimated days column exists
-		if hm.estimated_days_to_heal not in df.columns:
-			df[hm.estimated_days_to_heal] = pd.Series(np.nan, index=df.index, dtype=float)
-
-		return df
-
-	@staticmethod
-	def _create_derived_features(df: pd.DataFrame) -> pd.DataFrame:
-		"""Create additional derived features from the data."""
-		import numpy as np
-
-		# Get column names from schema
-		schema = DataColumns()
-		pi = schema.patient_identifiers
-		vis = schema.visit_info
-		temp = schema.temperature
-		dem = schema.demographics
-		hm = schema.healing_metrics
-
-		# Temperature gradients
-		if all(col in df.columns for col in [temp.center_temp, temp.edge_temp, temp.peri_temp]):
-			df[temp.center_edge_gradient] = df[temp.center_temp] - df[temp.edge_temp]
-			df[temp.edge_peri_gradient] = df[temp.edge_temp] - df[temp.peri_temp]
-			df[temp.total_temp_gradient] = df[temp.center_temp] - df[temp.peri_temp]
-
-		# BMI categories
-		if dem.bmi in df.columns:
-			df['BMI Category'] = pd.cut(
-				df[dem.bmi],
-				bins=[0, 18.5, 25, 30, 35, 100],
-				labels=['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II-III']
-			)
-
-		if df is not None and not df.empty:
-			# Convert Visit date to datetime if not already
-			df[vis.visit_date] = pd.to_datetime(df[vis.visit_date])
-
-			# Calculate days since first visit for each patient
-			df[vis.days_since_first_visit] = df.groupby(pi.record_id)[vis.visit_date].transform(
-				lambda x: (x - x.min()).dt.days
-			)
-
-			# Initialize columns with explicit dtypes
-			df[hm.healing_rate] = pd.Series(0.0, index=df.index, dtype=float)
-			df[hm.estimated_days_to_heal] = pd.Series(np.nan, index=df.index, dtype=float)
-			df[hm.overall_improvement] = pd.Series(np.nan, index=df.index, dtype=str)
-
-		return df
-
-	@staticmethod
-	def get_patient_data(df: pd.DataFrame, patient_id: int) -> pd.DataFrame:
-		"""Get data for a specific patient."""
-		# Get column names from schema
-		schema = DataColumns()
-		pi = schema.patient_identifiers
-
-		return df[df[pi.record_id] == patient_id].sort_values('Visit Number')
-
-	@staticmethod
-	def _extract_patient_metadata(patient_data) -> Dict:
-		"""Extract relevant patient metadata from a single row."""
-
-		# Get column names from schema
-		schema = DataColumns()
-		dem = schema.demographics
-		ls = schema.lifestyle
-		mh = schema.medical_history
-
-		metadata = {
-			'age': patient_data[dem.age_at_enrollment] if not pd.isna(patient_data.get(dem.age_at_enrollment)) else None,
-			'sex': patient_data[dem.sex] if not pd.isna(patient_data.get(dem.sex)) else None,
-			'race': patient_data[dem.race] if not pd.isna(patient_data.get(dem.race)) else None,
-			'ethnicity': patient_data[dem.ethnicity] if not pd.isna(patient_data.get(dem.ethnicity)) else None,
-			'weight': patient_data[dem.weight] if not pd.isna(patient_data.get(dem.weight)) else None,
-			'height': patient_data[dem.height] if not pd.isna(patient_data.get(dem.height)) else None,
-			'bmi': patient_data[dem.bmi] if not pd.isna(patient_data.get(dem.bmi)) else None,
-			'study_cohort': patient_data[dem.study_cohort] if not pd.isna(patient_data.get(dem.study_cohort)) else None,
-			'smoking_status': patient_data[ls.smoking_status] if not pd.isna(patient_data.get(ls.smoking_status)) else None,
-			'packs_per_day': patient_data[ls.packs_per_day] if not pd.isna(patient_data.get(ls.packs_per_day)) else None,
-			'years_smoking': patient_data[ls.years_smoked] if not pd.isna(patient_data.get(ls.years_smoked)) else None,
-			'alcohol_use': patient_data[ls.alcohol_status] if not pd.isna(patient_data.get(ls.alcohol_status)) else None,
-			'alcohol_frequency': patient_data[ls.alcohol_drinks] if not pd.isna(patient_data.get(ls.alcohol_drinks)) else None
-		}
-
-		# Medical history from individual columns
-		medical_conditions = [
-			mh.respiratory, mh.cardiovascular, mh.gastrointestinal, mh.musculoskeletal,
-			mh.endocrine_metabolic, mh.hematopoietic, mh.hepatic_renal, mh.neurologic, mh.immune
-		]
-
-		# Get medical history from standard columns
-		metadata['medical_history'] = {
-			condition: patient_data[condition]
-			for condition in medical_conditions if not pd.isna(patient_data.get(condition))
-		}
-
-		# Check additional medical history from free text field
-		other_history = patient_data.get(mh.medical_history)
-		if not pd.isna(other_history):
-			existing_conditions = set(medical_conditions)
-			other_conditions = [cond.strip() for cond in str(other_history).split(',')]
-			other_conditions = [cond for cond in other_conditions if cond and cond not in existing_conditions]
-			if other_conditions:
-				metadata['medical_history']['other'] = ', '.join(other_conditions)
-
-		# Diabetes information
-		metadata['diabetes'] = {
-			'status': patient_data.get(mh.diabetes),
-			'hemoglobin_a1c': patient_data.get(mh.a1c),
-			'a1c_available': patient_data.get(mh.a1c_available)
-		}
-
-		return metadata
-
-
-	# Add a new static method _generate_mock_data to handle fallback data generation
-	@staticmethod
-	def _generate_mock_data() -> pd.DataFrame:
-		"""Generate mock data in case the CSV file cannot be loaded."""
-		np.random.seed(42)
-		n_patients = 10
-		n_visits = 3
-		rows = []
-		for p in range(1, n_patients + 1):
-			initial_area = np.random.uniform(10, 20)
-			for v in range(1, n_visits + 1):
-				area = initial_area * (0.9 ** (v - 1))
-				rows.append({
-					'Record ID': p,
-					'Event Name': f'Visit {v}',
-					'Calculated Wound Area': area,
-					'Center of Wound Temperature (Fahrenheit)': np.random.uniform(97, 102),
-					'Edge of Wound Temperature (Fahrenheit)': np.random.uniform(96, 101),
-					'Peri-wound Temperature (Fahrenheit)': np.random.uniform(95, 100),
-					'BMI': np.random.uniform(18, 35),
-					'Diabetes?': np.random.choice(['Yes', 'No']),
-					'Smoking status': np.random.choice(['Never', 'Current', 'Former'])
-				})
-		df = pd.DataFrame(rows)
-		df['Visit Number'] = df['Event Name'].str.extract(r'Visit (\d+)').fillna(1).astype(int)
-		df = DataManager._create_derived_features(df)
-		df = DataManager._calculate_healing_rates(df)
-		return df
-
-class SessionStateManager:
-	"""Manages Streamlit session state."""
 
 	@staticmethod
 	def initialize() -> None:
-		"""Initialize session state variables."""
+		"""
+		Initializes the Streamlit session state with necessary variables.
+
+		This function sets up the following session state variables if they don't exist:
+		- processor: Stores the wound image processor instance
+		- analysis_complete: Boolean flag indicating if analysis has been completed
+		- analysis_results: Stores the results of wound analysis
+		- report_path: Stores the file path to the generated report
+
+		Returns:
+			None
+		"""
+
 		if 'processor' not in st.session_state:
 			st.session_state.processor = None
+
 		if 'analysis_complete' not in st.session_state:
 			st.session_state.analysis_complete = False
+
 		if 'analysis_results' not in st.session_state:
 			st.session_state.analysis_results = None
+
 		if 'report_path' not in st.session_state:
 			st.session_state.report_path = None
+
+class SessionStateManager:
+	pass
 
 class Visualizer:
 	"""Handles data visualization."""
@@ -941,1074 +791,6 @@ class Visualizer:
 		)
 		return fig
 
-class RiskAnalyzer:
-	"""Handles risk analysis and assessment."""
-
-	@staticmethod
-	def calculate_risk_score(patient_data: pd.Series) -> Tuple[int, List[str], str]:
-		"""Calculate risk score and identify risk factors."""
-		risk_score = 0
-		risk_factors = []
-
-		# Check diabetes
-		if patient_data['Diabetes?'] == 'Yes':
-			risk_factors.append("Diabetes")
-			risk_score += 3
-
-		# Check smoking status
-		if patient_data['Smoking status'] == 'Current':
-			risk_factors.append("Current smoker")
-			risk_score += 2
-		elif patient_data['Smoking status'] == 'Former':
-			risk_factors.append("Former smoker")
-			risk_score += 1
-
-		# Check BMI
-		if patient_data['BMI'] >= 30:
-			risk_factors.append("Obesity")
-			risk_score += 2
-		elif patient_data['BMI'] >= 25:
-			risk_factors.append("Overweight")
-			risk_score += 1
-
-		# Determine risk category
-		if risk_score >= 6:
-			risk_category = "High"
-		elif risk_score >= 3:
-			risk_category = "Moderate"
-		else:
-			risk_category = "Low"
-
-		return risk_score, risk_factors, risk_category
-
-class ImpedanceAnalyzer:
-	"""Handles advanced bioimpedance analysis and clinical interpretation."""
-
-	@staticmethod
-	def calculate_visit_changes(current_visit, previous_visit):
-		"""
-			Calculate the percentage changes in impedance parameters between two visits and determine clinical significance.
-
-			This function compares impedance data (Z, resistance, capacitance) at different frequencies
-			between the current visit and a previous visit. It calculates percentage changes and determines
-			if these changes are clinically significant based on predefined thresholds.
-
-			Parameters
-			----------
-			current_visit : dict
-				Dictionary containing the current visit data with sensor_data.impedance measurements
-				at low, center, and high frequencies.
-			previous_visit : dict
-				Dictionary containing the previous visit data with sensor_data.impedance measurements
-				at low, center, and high frequencies.
-
-			Returns
-			-------
-			tuple
-				A tuple containing two dictionaries:
-				- changes: Dictionary mapping parameter names (e.g., 'resistance_low_frequency') to their percentage changes between visits.
-				- clinically_significant: Dictionary mapping parameter names to boolean values indicating whether the change is clinically significant.
-
-			Notes
-			-----
-			The function uses the following clinical significance thresholds:
-			- Resistance: 15% change
-			- Capacitance: 20% change
-			- Absolute impedance (Z): 15% change
-
-			If either value is zero or invalid, the comparison for that parameter is skipped.
-		"""
-
-		changes = {}
-		clinically_significant = {}
-
-		# Define significance thresholds based on clinical literature
-		significance_thresholds = {
-			'resistance': 0.15,  # 15% change is clinically significant
-			'capacitance': 0.20, # 20% change is clinically significant
-			'Z': 0.15  # 15% change is clinically significant for absolute impedance
-		}
-
-		freq_types = ['low_frequency', 'center_frequency', 'high_frequency']
-		params = ['Z', 'resistance', 'capacitance']
-
-		for freq_type in freq_types:
-			current_freq_data = current_visit.get('sensor_data', {}).get('impedance', {}).get(freq_type, {})
-			previous_freq_data = previous_visit.get('sensor_data', {}).get('impedance', {}).get(freq_type, {})
-
-			for param in params:
-				try:
-					current_val = float(current_freq_data.get(param, 0))
-					previous_val = float(previous_freq_data.get(param, 0))
-
-					if previous_val != 0 and current_val != 0:
-						percent_change = (current_val - previous_val) / previous_val
-						key = f"{param}_{freq_type}"
-						changes[key] = percent_change
-
-						# Determine clinical significance
-						is_significant = abs(percent_change) > significance_thresholds.get(param, 0.15)
-						clinically_significant[key] = is_significant
-				except (ValueError, TypeError, ZeroDivisionError):
-					continue
-
-		return changes, clinically_significant
-
-	@staticmethod
-	def calculate_tissue_health_index(visit):
-		"""
-		Calculate a tissue health index based on bioimpedance measurements from a patient visit.
-
-		This function analyzes impedance data at different frequencies to determine tissue health.
-		It calculates a health score using the ratio of low frequency to high frequency impedance,
-		and optionally incorporates phase angle data when available.
-
-		Parameters:
-		-----------
-		visit : dict
-			A dictionary containing visit data, with the following structure:
-			{
-				'sensor_data': {
-					'impedance': {
-						'low_frequency': {
-							'Z': float,  # Impedance magnitude at low frequency
-							'frequency': float  # Actual frequency value
-						},
-						'high_frequency': {
-							'Z': float,  # Impedance magnitude at high frequency
-							'resistance': float,  # Optional
-							'capacitance': float,  # Optional
-							'frequency': float  # Optional, defaults to 80000 Hz if not provided
-						}
-					}
-				}
-			}
-
-		Returns:
-		--------
-		tuple(float or None, str)
-			A tuple containing:
-			- health_score: A normalized score from 0-100 representing tissue health, or None if calculation fails
-			- interpretation: A string describing the tissue health status or an error message
-
-		Notes:
-		------
-		The health score is calculated based on:
-		1. Low/high frequency impedance ratio (LF/HF ratio):
-			- Optimal range is 5-12, with 8.5 being ideal
-			- Scores decrease as the ratio deviates from this range
-
-		2. Phase angle (when resistance and capacitance are available):
-			- Calculated as arctan(1/(2πfRC))
-			- Optimal range is 5-7 degrees
-			- Higher values (up to 7 degrees) indicate better tissue health
-
-		The final score is a weighted average: 60% from the ratio score and 40% from phase angle score.
-		If phase angle cannot be calculated, only the ratio score is used.
-		"""
-
-		sensor_data    = visit.get('sensor_data', {})
-		impedance_data = sensor_data.get('impedance', {})
-
-		# Extract absolute impedance at different frequencies
-		low_freq  = impedance_data.get('low_frequency', {})
-		high_freq = impedance_data.get('high_frequency', {})
-
-		low_z  = low_freq.get('Z', 0)
-		high_z = high_freq.get('Z', 0)
-
-		if low_z is None or high_z is None:
-			return None, "Insufficient data for tissue health calculation"
-
-		low_z  = float(low_z)
-		high_z = float(high_z)
-
-		if low_z > 0 and high_z > 0:
-			# Calculate low/high frequency ratio
-			lf_hf_ratio = low_z / high_z
-
-			# Calculate phase angle if resistance and reactance available
-			phase_angle = None
-			if 'resistance' in high_freq and 'capacitance' in high_freq:
-				r = float(high_freq.get('resistance', 0))
-				c = float(high_freq.get('capacitance', 0))
-				if r > 0 and c > 0:
-					# Approximate phase angle calculation
-					import math
-					# Using arctan(1/(2πfRC))
-					f = float(high_freq.get('frequency', 80000))
-					phase_angle = math.atan(1/(2 * math.pi * f * r * c)) * (180/math.pi)
-
-			# Normalize scores to 0-100 scale
-			# Typical healthy ratio range: 5-12
-			# This formula is based on bioimpedance analysis principles in wound healing:
-			# - LF/HF ratio typically ranges from 5-12 in healthy tissue
-			# - Optimal ratio is around 8.5 (midpoint of healthy range)
-			# - Scores decrease as ratio deviates from this range
-			# Within 5-12 range: Linear scaling from 100 (at 5) to 0 (at 12)
-			# Outside range: Penalty increases with distance from optimal ratio
-			ratio_score = max(0, min(100, (1 - (lf_hf_ratio - 5) / 7) * 100)) if 5 <= lf_hf_ratio <= 12 else max(0, 50 - abs(lf_hf_ratio - 8.5) * 5)
-
-			if phase_angle:
-				# Typical healthy phase angle range: 5-7 degrees
-				# Phase angle calculation logic:
-				# - Typical healthy phase angle range: 5-7 degrees
-				# - Linear scaling from 0 to 100 as phase angle increases from 0 to 7 degrees
-				# - Values above 7 degrees are capped at 100
-				# - This approach assumes that higher phase angles (up to 7 degrees) indicate better tissue health
-				phase_score = max(0, min(100, (phase_angle / 7) * 100))
-				health_score = (ratio_score * 0.6) + (phase_score * 0.4)  # Weighted average
-			else:
-				health_score = ratio_score
-
-			# Interpretation
-			if health_score >= 80:
-				interpretation = "Excellent tissue health"
-			elif health_score >= 60:
-				interpretation = "Good tissue health"
-			elif health_score >= 40:
-				interpretation = "Moderate tissue health"
-			elif health_score >= 20:
-				interpretation = "Poor tissue health"
-			else:
-				interpretation = "Very poor tissue health"
-
-			return health_score, interpretation
-
-		# except (ValueError, TypeError, ZeroDivisionError):
-		# 	pass
-		return None, "Insufficient data for tissue health calculation"
-
-	@staticmethod
-	def analyze_healing_trajectory(visits):
-		"""
-		Analyzes the wound healing trajectory based on impedance data from multiple visits.
-
-		This function performs a linear regression analysis on the high-frequency impedance values
-		over time to determine if there's a significant trend indicating wound healing or deterioration.
-
-		Parameters:
-		-----------
-		visits : list
-			List of visit dictionaries, each containing visit data including sensor readings.
-			Each visit dictionary should have:
-			- 'visit_date': date of the visit
-			- 'sensor_data': dict containing 'impedance' data with 'high_frequency' values including a 'Z' value representing impedance measurement
-
-		Returns:
-		--------
-		dict
-			A dictionary containing:
-			- 'status': 'insufficient_data' if fewer than 3 valid measurements, 'analyzed' otherwise
-			- 'slope': slope of the linear regression (trend direction)
-			- 'r_squared': coefficient of determination (strength of linear relationship)
-			- 'p_value': statistical significance of the slope
-			- 'dates': list of dates with valid measurements
-			- 'values': list of impedance values used in analysis
-			- 'interpretation': Clinical interpretation of results as one of:
-				- "Strong evidence of healing progression"
-				- "Moderate evidence of healing progression"
-				- "Potential deterioration detected"
-				- "No significant trend detected"
-
-		Notes:
-		------
-		Negative slopes indicate healing (decreasing impedance), while positive slopes
-		may indicate deterioration. The function requires at least 3 valid impedance
-		readings to perform analysis.
-		"""
-
-		if len(visits) < 3:
-			return {"status": "insufficient_data"}
-
-		import numpy as np
-		from scipy import stats
-
-		dates, z_values = [], []
-		for visit in visits:
-			try:
-				high_freq = visit.get('sensor_data', {}).get('impedance', {}).get('high_frequency', {})
-				z_val = float(high_freq.get('Z', 0))
-				if z_val > 0:
-					z_values.append(z_val)
-					dates.append(visit.get('visit_date'))
-			except (ValueError, TypeError):
-				continue
-
-		if len(z_values) < 3:
-			return {"status": "insufficient_data"}
-
-		# Convert dates to numerical values for regression
-		x = np.arange(len(z_values))
-		y = np.array(z_values)
-
-		# Perform linear regression
-		slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-		r_squared = r_value ** 2
-
-		# Determine clinical significance of slope
-		result = {
-			"slope": slope,
-			"r_squared": r_squared,
-			"p_value": p_value,
-			"dates": dates,
-			"values": z_values,
-			"status": "analyzed"
-		}
-
-		# Interpret the slope
-		if slope < -0.5 and p_value < 0.05:
-			result["interpretation"] = "Strong evidence of healing progression"
-		elif slope < -0.2 and p_value < 0.10:
-			result["interpretation"] = "Moderate evidence of healing progression"
-		elif slope > 0.5 and p_value < 0.05:
-			result["interpretation"] = "Potential deterioration detected"
-		else:
-			result["interpretation"] = "No significant trend detected"
-
-		return result
-
-	@staticmethod
-	def analyze_frequency_response(visit):
-		"""
-		Analyze the pattern of impedance across different frequencies to assess tissue composition.
-
-		This function utilizes bioelectrical impedance analysis (BIA) principles to evaluate
-		tissue characteristics based on the frequency-dependent response to electrical current.
-		It focuses on two key dispersion regions:
-
-		1. Alpha Dispersion (low to center frequency):
-			- Occurs in the kHz range
-			- Reflects extracellular fluid content and cell membrane permeability
-			- Large alpha dispersion may indicate edema or inflammation
-			- Formula: alpha_dispersion = (Z_low - Z_center) / Z_low
-
-		2. Beta Dispersion (center to high frequency):
-			- Occurs in the MHz range
-			- Reflects cellular density and intracellular properties
-			- Large beta dispersion may indicate increased cellular content or structural changes
-			- Formula: beta_dispersion = (Z_center - Z_high) / Z_center
-
-		The function calculates these dispersion ratios and interprets them to assess tissue
-		composition, providing insights into potential edema, cellular density, or active
-		tissue remodeling.
-
-		Interpretation logic:
-		- If alpha_dispersion > 0.4 and beta_dispersion < 0.2:
-			"High extracellular fluid content, possible edema"
-		- If alpha_dispersion < 0.2 and beta_dispersion > 0.3:
-			"High cellular density, possible granulation"
-		- If alpha_dispersion > 0.3 and beta_dispersion > 0.3:
-			"Mixed tissue composition, active remodeling"
-		- Otherwise:
-			"Normal tissue composition pattern"
-
-		Args:
-			visit (dict): A dictionary containing visit data, including sensor readings.
-
-		Returns:
-			dict: Dispersion characteristics and interpretation of tissue composition.
-		"""
-		results = {}
-		sensor_data    = visit.get('sensor_data', {})
-		impedance_data = sensor_data.get('impedance', {})
-
-		# Extract absolute impedance at different frequencies
-		low_freq    = impedance_data.get('low_frequency', {})
-		center_freq = impedance_data.get('center_frequency', {})
-		high_freq   = impedance_data.get('high_frequency', {})
-
-		try:
-			z_low    = low_freq.get('Z')
-			z_center = center_freq.get('Z')
-			z_high   = high_freq.get('Z')
-
-			# First check if all values are not None
-			if z_low is not None and z_center is not None and z_high is not None:
-				# Then convert to float
-				z_low    = float(z_low)
-				z_center = float(z_center)
-				z_high   = float(z_high)
-
-				if z_low > 0 and z_center > 0 and z_high > 0:
-					# Calculate alpha dispersion (low-to-center frequency drop)
-					alpha_dispersion = (z_low - z_center) / z_low
-
-					# Calculate beta dispersion (center-to-high frequency drop)
-					beta_dispersion = (z_center - z_high) / z_center
-
-					results['alpha_dispersion'] = alpha_dispersion
-					results['beta_dispersion']  = beta_dispersion
-
-					# Interpret dispersion patterns
-					if alpha_dispersion > 0.4 and beta_dispersion < 0.2:
-						results['interpretation'] = "High extracellular fluid content, possible edema"
-					elif alpha_dispersion < 0.2 and beta_dispersion > 0.3:
-						results['interpretation'] = "High cellular density, possible granulation"
-					elif alpha_dispersion > 0.3 and beta_dispersion > 0.3:
-						results['interpretation'] = "Mixed tissue composition, active remodeling"
-					else:
-						results['interpretation'] = "Normal tissue composition pattern"
-				else:
-					results['interpretation'] = "Insufficient frequency data for analysis (zero values)"
-			else:
-				results['interpretation'] = "Insufficient frequency data for analysis (missing values)"
-		except (ValueError, TypeError, ZeroDivisionError) as e:
-			error_message = f"Error processing frequency response data: {type(e).__name__}: {str(e)}"
-			print(error_message)  # For console debugging
-			import traceback
-			traceback.print_exc()  # Print the full traceback
-			results['interpretation'] = error_message  # Or keep the generic message if preferred
-
-		return results
-
-	@staticmethod
-	def detect_impedance_anomalies(previous_visits, current_visit, z_score_threshold=2.5):
-		"""
-		Detects anomalies in impedance measurements by comparing the current visit's
-		values with historical data from previous visits.
-
-		This function analyzes three key impedance parameters:
-		1. High-frequency impedance (Z)
-		2. Low-frequency resistance
-		3. High-frequency capacitance
-
-		It calculates z-scores for each parameter based on historical means and standard
-		deviations. Values exceeding the specified z-score threshold trigger alerts
-		with clinical interpretations of the observed changes.
-
-		Parameters:
-		-----------
-		previous_visits : list
-			List of dictionaries containing data from previous visits, each with a
-			'sensor_data' field containing impedance measurements.
-		current_visit : dict
-			Dictionary containing the current visit data with a 'sensor_data' field
-			containing impedance measurements.
-		z_score_threshold : float, optional (default=2.5)
-			Threshold for flagging anomalies. Values with absolute z-scores exceeding
-			this threshold will be reported.
-
-		Returns:
-		--------
-		dict
-			A dictionary of alerts where keys are parameter identifiers and values are
-			dictionaries containing:
-			- 'parameter': Display name of the parameter
-			- 'z_score': Calculated z-score for the current value
-			- 'direction': Whether the anomaly is an 'increase' or 'decrease'
-			- 'interpretation': Clinical interpretation of the observed change
-
-		Notes:
-		------
-		- Requires at least 3 previous visits with valid measurements to establish baseline
-		- Ignores parameters with missing or non-positive values
-		- Provides different clinical interpretations based on parameter type and direction of change
-		"""
-
-		if len(previous_visits) < 3:
-			return {}
-
-		import numpy as np
-
-		alerts = {}
-
-		# Parameters to monitor
-		params = [
-			('high_frequency', 'Z', 'High-frequency impedance'),
-			('low_frequency', 'resistance', 'Low-frequency resistance'),
-			('high_frequency', 'capacitance', 'High-frequency capacitance')
-		]
-
-		current_impedance = current_visit.get('sensor_data', {}).get('impedance', {})
-
-		for freq_type, param_name, display_name in params:
-			# Collect historical values
-			historical_values = []
-
-			for visit in previous_visits:
-				visit_impedance = visit.get('sensor_data', {}).get('impedance', {})
-				freq_data = visit_impedance.get(freq_type, {})
-				try:
-					value = float(freq_data.get(param_name, 0))
-					if value > 0:
-						historical_values.append(value)
-				except (ValueError, TypeError):
-					continue
-
-			if len(historical_values) >= 3:
-				# Calculate historical statistics
-				mean = np.mean(historical_values)
-				std = np.std(historical_values)
-
-				# Get current value
-				current_freq_data = current_impedance.get(freq_type, {})
-				try:
-					current_value = float(current_freq_data.get(param_name, 0))
-					if current_value > 0 and std > 0:
-						z_score = (current_value - mean) / std
-
-						if abs(z_score) > z_score_threshold:
-							direction = "increase" if z_score > 0 else "decrease"
-
-							# Clinical interpretation
-							if freq_type == 'high_frequency' and param_name == 'Z':
-								if direction == 'increase':
-									clinical_meaning = "Possible deterioration in tissue quality or increased inflammation"
-								else:
-									clinical_meaning = "Possible improvement in cellular integrity or reduction in edema"
-							elif freq_type == 'low_frequency' and param_name == 'resistance':
-								if direction == 'increase':
-									clinical_meaning = "Possible decrease in extracellular fluid or improved barrier function"
-								else:
-									clinical_meaning = "Possible increase in extracellular fluid or breakdown of tissue barriers"
-							elif freq_type == 'high_frequency' and param_name == 'capacitance':
-								if direction == 'increase':
-									clinical_meaning = "Possible increase in cellular density or membrane integrity"
-								else:
-									clinical_meaning = "Possible decrease in viable cell count or membrane dysfunction"
-							else:
-								clinical_meaning = "Significant change detected, clinical correlation advised"
-
-							key = f"{freq_type}_{param_name}"
-							alerts[key] = {
-								"parameter": display_name,
-								"z_score": z_score,
-								"direction": direction,
-								"interpretation": clinical_meaning
-							}
-				except (ValueError, TypeError):
-					continue
-
-		return alerts
-
-	@staticmethod
-	def assess_infection_risk(current_visit, previous_visit=None):
-		"""
-			Evaluates the infection risk for a wound based on bioimpedance measurements.
-
-			This function analyzes bioelectrical impedance data from the current visit and optionally
-			compares it with a previous visit to determine infection risk. It considers multiple factors
-			including impedance ratios, changes in resistance, and phase angle calculations.
-
-			Parameters
-			----------
-			current_visit : dict
-				Dictionary containing current visit data with sensor_data.impedance measurements
-				(including low_frequency and high_frequency values with Z, resistance, capacitance)
-			previous_visit : dict, optional
-				Dictionary containing previous visit data in the same format as current_visit,
-				used for trend analysis
-
-			Returns
-			-------
-			dict
-				A dictionary containing:
-				- risk_score: numeric score from 0-100 indicating infection risk
-				- risk_level: string interpretation ("Low", "Moderate", or "High" infection risk)
-				- contributing_factors: list of specific factors that contributed to the risk assessment
-
-			Notes
-			-----
-			The function evaluates three primary factors:
-			1. Low/high frequency impedance ratio (values >15 indicate increased risk)
-			2. Changes in low-frequency resistance compared to previous readings
-			3. Phase angle calculation based on resistance and capacitance values
-
-			The final risk score is capped between 0 and 100.
-		"""
-
-
-		risk_score = 0
-		factors = []
-
-		current_impedance = current_visit.get('sensor_data', {}).get('impedance', {})
-
-		# Factor 1: Low/high frequency impedance ratio
-		low_freq = current_impedance.get('low_frequency', {})
-		high_freq = current_impedance.get('high_frequency', {})
-
-		try:
-			low_z = float(low_freq.get('Z', 0))
-			high_z = float(high_freq.get('Z', 0))
-
-			if low_z > 0 and high_z > 0:
-				ratio = low_z / high_z
-				# Ratios > 15 are associated with increased infection risk in literature
-				if ratio > 20:
-					risk_score += 40
-					factors.append("Very high low/high frequency impedance ratio")
-				elif ratio > 15:
-					risk_score += 25
-					factors.append("Elevated low/high frequency impedance ratio")
-		except (ValueError, TypeError, ZeroDivisionError):
-			pass
-
-		# Factor 2: Sudden increase in low-frequency resistance (inflammatory response)
-		if previous_visit:
-			prev_impedance = previous_visit.get('sensor_data', {}).get('impedance', {})
-			prev_low_freq = prev_impedance.get('low_frequency', {})
-
-			try:
-				current_r = float(low_freq.get('resistance', 0))
-				prev_r = float(prev_low_freq.get('resistance', 0))
-
-				if prev_r > 0 and current_r > 0:
-					pct_change = (current_r - prev_r) / prev_r
-					if pct_change > 0.30:  # >30% increase
-						risk_score += 30
-						factors.append("Significant increase in low-frequency resistance")
-			except (ValueError, TypeError, ZeroDivisionError):
-				pass
-
-		# Factor 3: Phase angle calculation (if resistance and capacitance available)
-		try:
-			r = float(high_freq.get('resistance', 0))
-			c = float(high_freq.get('capacitance', 0))
-			f = float(high_freq.get('frequency', 80000))
-
-			if r > 0 and c > 0:
-				import math
-				# Phase angle calculation based on the complex impedance model
-				# It represents the phase difference between voltage and current in AC circuits
-				# Lower phase angles indicate less healthy or more damaged tissue
-				phase_angle = math.atan(1/(2 * math.pi * f * r * c)) * (180/math.pi)
-
-				# Phase angle thresholds based on bioimpedance literature:
-				# <2°: Indicates severe tissue damage or very poor health
-				# 2-3°: Suggests compromised tissue health
-				# >3°: Generally associated with healthier tissue
-				if phase_angle < 2:
-					risk_score += 30
-					factors.append("Very low phase angle (<2°): Indicates severe tissue damage")
-				elif phase_angle < 3:
-					risk_score += 15
-					factors.append("Low phase angle (2-3°): Suggests compromised tissue health")
-		except (ValueError, TypeError, ZeroDivisionError):
-			pass
-
-		# Limit score to 0-100 range
-		risk_score = min(100, max(0, risk_score))
-
-		# Interpret risk level
-		if risk_score >= 60:
-			interpretation = "High infection risk"
-		elif risk_score >= 30:
-			interpretation = "Moderate infection risk"
-		else:
-			interpretation = "Low infection risk"
-
-		return {
-			"risk_score": risk_score,
-			"risk_level": interpretation,
-			"contributing_factors": factors
-		}
-
-	@staticmethod
-	def calculate_cole_parameters(visit):
-		"""
-		Calculate Cole-Cole parameters from impedance measurement data in a visit.
-
-		This function extracts impedance data at low, center, and high frequencies from a
-		visit dictionary and calculates key Cole-Cole model parameters including:
-		- R0 (low frequency resistance)
-		- Rinf (high frequency resistance)
-		- Cm (membrane capacitance)
-		- Tau (time constant)
-		- Alpha (tissue heterogeneity index)
-		- Tissue homogeneity interpretation
-
-		Parameters
-		----------
-		visit : dict
-			A dictionary containing visit data, with a nested 'sensor_data' dictionary
-			that includes impedance measurements at different frequencies
-
-		Returns
-		-------
-		dict
-			A dictionary containing calculated Cole-Cole parameters and tissue homogeneity assessment.
-			May be empty if required data is missing or calculations fail.
-
-		Notes
-		-----
-		The function handles exceptions for missing data, type errors, value errors, and
-		division by zero, returning whatever parameters were successfully calculated before
-		the exception occurred.
-		"""
-
-		import math
-
-		results = {}
-		impedance_data = visit.get('sensor_data', {}).get('impedance', {})
-
-		# Extract resistance at different frequencies
-		low_freq = impedance_data.get('low_frequency', {})
-		center_freq = impedance_data.get('center_frequency', {})
-		high_freq = impedance_data.get('high_frequency', {})
-
-		try:
-			# Get resistance values
-			r_low    = float(low_freq.get('resistance', 0))
-			r_center = float(center_freq.get('resistance', 0))
-			r_high   = float(high_freq.get('resistance', 0))
-
-			# Get capacitance values
-			c_low    = float(low_freq.get('capacitance', 0))
-			c_center = float(center_freq.get('capacitance', 0))
-			c_high   = float(high_freq.get('capacitance', 0))
-
-			# Get frequency values
-			f_low    = float(low_freq.get('frequency', 100))
-			f_center = float(center_freq.get('frequency', 7499))
-			f_high   = float(high_freq.get('frequency', 80000))
-
-			if r_low > 0 and r_high > 0:
-				# Approximate R0 and R∞
-				results['R0'] = r_low  # Low frequency resistance approximates R0
-				results['Rinf'] = r_high  # High frequency resistance approximates R∞
-
-				# Calculate membrane capacitance (Cm)
-				if r_center > 0 and c_center > 0:
-					results['Fc'] = f_center
-
-					# Calculate time constant
-					tau = 1 / (2 * math.pi * f_center)
-					results['Tau'] = tau
-
-					# Membrane capacitance estimation
-					if (r_low - r_high) > 0 and r_high > 0:
-						cm = tau / ((r_low - r_high) * r_high)
-						results['Cm'] = cm
-
-				# Calculate alpha (tissue heterogeneity)
-				# Using resistance values to estimate alpha
-				if r_low > 0 and r_center > 0 and r_high > 0:
-					# Simplified alpha estimation
-					alpha_est = 1 - (r_center / math.sqrt(r_low * r_high))
-					results['Alpha'] = max(0, min(1, abs(alpha_est)))
-
-					# Interpret alpha value
-					if results['Alpha'] < 0.6:
-						results['tissue_homogeneity'] = "High tissue homogeneity"
-					elif results['Alpha'] < 0.8:
-						results['tissue_homogeneity'] = "Moderate tissue homogeneity"
-					else:
-						results['tissue_homogeneity'] = "Low tissue homogeneity (heterogeneous tissue)"
-		except (ValueError, TypeError, ZeroDivisionError, KeyError):
-			pass
-
-		return results
-
-	@staticmethod
-	def generate_clinical_insights(analyses):
-		"""
-			Generates clinical insights based on various wound analysis results.
-
-			This function processes different aspects of wound analysis data and translates
-			them into actionable clinical insights with corresponding confidence levels
-			and recommendations.
-
-			Parameters
-			----------
-			analyses : dict
-				A dictionary containing analysis results with potential keys:
-				- 'healing_trajectory': Contains slope, p_value, and status of wound healing over time
-				- 'infection_risk': Contains risk_score and contributing_factors for infection
-				- 'frequency_response': Contains interpretation of impedance frequency response
-				- 'anomalies': Contains significant deviations in parameters with z-scores
-
-			Returns
-			-------
-			list
-				A list of dictionaries, each representing a clinical insight with keys:
-				- 'insight': The main clinical observation
-				- 'confidence': Level of certainty (High, Moderate, etc.)
-				- 'recommendation': Suggested clinical action (when applicable)
-				- 'supporting_factors' or 'clinical_meaning': Additional context (when available)
-
-			Notes
-			-----
-			The function generates insights based on the following criteria:
-			1. Healing trajectory based on impedance trends and statistical significance
-			2. Infection risk assessment based on risk score
-			3. Tissue composition analysis from frequency response data
-			4. Anomaly detection for significant deviations in measured parameters
-		"""
-
-		insights = []
-
-		# Healing trajectory insights
-		if 'healing_trajectory' in analyses:
-			trajectory = analyses['healing_trajectory']
-			if trajectory.get('status') == 'analyzed':
-				if trajectory.get('slope', 0) < -0.3 and trajectory.get('p_value', 1) < 0.05:
-					insights.append({
-						"insight": "Strong evidence of consistent wound healing progression based on impedance trends",
-						"confidence": "High",
-						"recommendation": "Continue current treatment protocol"
-					})
-				elif trajectory.get('slope', 0) > 0.3 and trajectory.get('p_value', 1) < 0.1:
-					insights.append({
-						"insight": "Potential stalling or deterioration in wound healing process",
-						"confidence": "Moderate",
-						"recommendation": "Consider reassessment of treatment approach"
-					})
-
-		# Infection risk insights
-		if 'infection_risk' in analyses:
-			risk = analyses['infection_risk']
-			if risk.get('risk_score', 0) > 50:
-				insights.append({
-					"insight": f"Elevated infection risk detected ({risk.get('risk_score')}%)",
-					"confidence": "Moderate to High",
-					"recommendation": "Consider microbiological assessment and prophylactic measures",
-					"supporting_factors": risk.get('contributing_factors', [])
-				})
-
-		# Tissue composition insights
-		if 'frequency_response' in analyses:
-			freq_response = analyses['frequency_response']
-			if 'interpretation' in freq_response:
-				insights.append({
-					"insight": freq_response['interpretation'],
-					"confidence": "Moderate",
-					"recommendation": "Correlate with clinical assessment of wound bed"
-				})
-
-		# Anomaly detection insights
-		if 'anomalies' in analyses and analyses['anomalies']:
-			for param, anomaly in analyses['anomalies'].items():
-				insights.append({
-					"insight": f"Significant {anomaly.get('direction')} in {anomaly.get('parameter')} detected (z-score: {anomaly.get('z_score', 0):.2f})",
-					"confidence": "High" if abs(anomaly.get('z_score', 0)) > 3 else "Moderate",
-					"clinical_meaning": anomaly.get('interpretation', '')
-				})
-
-		return insights
-
-	@staticmethod
-	def classify_wound_healing_stage(analyses):
-		"""
-		Classifies the wound healing stage based on bioimpedance and tissue health analyses.
-
-		The function determines whether the wound is in the Inflammatory, Proliferative,
-		or Remodeling phase by analyzing tissue health scores, frequency response characteristics,
-		and Cole parameters from bioimpedance measurements.
-
-		Parameters:
-		----------
-		analyses : dict
-			A dictionary containing various wound analysis results with the following keys:
-			- 'tissue_health': tuple (score, description) where score is a numerical value
-			- 'frequency_response': dict with keys 'alpha_dispersion' and 'beta_dispersion'
-			- 'cole_parameters': dict containing Cole-Cole model parameters
-
-		Returns:
-		-------
-		dict
-			A dictionary with the following keys:
-			- 'stage': str, the determined healing stage ('Inflammatory', 'Proliferative', or 'Remodeling')
-			- 'characteristics': list, notable characteristics of the identified stage
-			- 'confidence': str, confidence level of the classification ('Low', 'Moderate', or 'High')
-
-		Notes:
-		-----
-		The classification uses the following general criteria:
-		- Inflammatory: High alpha dispersion, low tissue health score
-		- Proliferative: High beta dispersion, moderate tissue health, moderate alpha dispersion
-		- Remodeling: Low alpha dispersion, high tissue health score
-
-		If insufficient data is available, the function defaults to the Inflammatory stage with Low confidence.
-		"""
-
-		# Default to inflammatory if we don't have enough data
-		stage = "Inflammatory"
-		characteristics = []
-		confidence = "Low"
-
-		# Get tissue health index
-		tissue_health = analyses.get('tissue_health', (None, ""))
-		health_score = tissue_health[0] if tissue_health else None
-
-		# Get frequency response
-		freq_response = analyses.get('frequency_response', {})
-		alpha = freq_response.get('alpha_dispersion', 0)
-		beta = freq_response.get('beta_dispersion', 0)
-
-		# Get Cole parameters
-		cole_params = analyses.get('cole_parameters', {})
-
-		# Stage classification logic
-		if health_score is not None and freq_response and cole_params:
-			confidence = "Moderate"
-
-			# Inflammatory phase characteristics:
-			# - High alpha dispersion (high extracellular fluid)
-			# - Low tissue health score
-			# - High low/high frequency ratio
-			if alpha > 0.4 and health_score < 40:
-				stage = "Inflammatory"
-				characteristics = [
-					"High extracellular fluid content",
-					"Low tissue health score",
-					"Elevated cellular permeability"
-				]
-				confidence = "High" if alpha > 0.5 and health_score < 30 else "Moderate"
-
-			# Proliferative phase characteristics:
-			# - High beta dispersion (cellular proliferation)
-			# - Moderate tissue health score
-			# - Moderate alpha dispersion
-			elif beta > 0.3 and 40 <= health_score <= 70 and 0.2 <= alpha <= 0.4:
-				stage = "Proliferative"
-				characteristics = [
-					"Active cellular proliferation",
-					"Increasing tissue organization",
-					"Moderate extracellular fluid"
-				]
-				confidence = "High" if beta > 0.4 and health_score > 50 else "Moderate"
-
-			# Remodeling phase characteristics:
-			# - Low alpha dispersion (reduced extracellular fluid)
-			# - High tissue health score
-			# - Low variability in impedance
-			elif alpha < 0.2 and health_score > 70:
-				stage = "Remodeling"
-				characteristics = [
-					"Reduced extracellular fluid",
-					"Improved tissue organization",
-					"Enhanced barrier function"
-				]
-				confidence = "High" if alpha < 0.15 and health_score > 80 else "Moderate"
-
-		return {
-			"stage": stage,
-			"characteristics": characteristics,
-			"confidence": confidence
-		}
-
-	def calculate_impedance_correlation(self, df: pd.DataFrame, outlier_threshold: float = 0.2) -> tuple:
-		"""
-		Calculate correlation between impedance and healing rate, with outlier handling.
-
-		Args:
-			df: DataFrame containing impedance and healing rate data
-			outlier_threshold: Threshold for outlier removal (0 = none, 0.1 = 10th/90th percentile)
-
-		Returns:
-			Tuple of (filtered_df, correlation_coefficient, p_value)
-		"""
-		# Create a copy of the dataframe
-		valid_df = df.copy()
-
-		# Apply outlier removal if threshold > 0
-		if outlier_threshold > 0:
-			valid_df = Visualizer._remove_outliers(valid_df, 'Skin Impedance (kOhms) - Z', outlier_threshold)
-
-		# Calculate correlation if enough data points
-		r, p = None, None
-		if not valid_df.empty and len(valid_df) > 1:
-			r, p = stats.pearsonr(valid_df['Skin Impedance (kOhms) - Z'], valid_df['Healing Rate (%)'])
-
-		return valid_df, r, p
-
-	def prepare_population_stats(self, df: pd.DataFrame) -> tuple:
-		"""
-		Prepare aggregated statistics for population-level impedance analysis.
-
-		Args:
-			df: DataFrame containing impedance data
-
-		Returns:
-			Tuple of DataFrames with impedance components and wound type statistics
-		"""
-		# Impedance components by visit
-		avg_impedance = df.groupby('Visit Number')[
-			["Skin Impedance (kOhms) - Z",
-			"Skin Impedance (kOhms) - Z'",
-			"Skin Impedance (kOhms) - Z''"]
-		].mean().reset_index()
-
-		# Impedance by wound type
-		avg_by_type = df.groupby('Wound Type')["Skin Impedance (kOhms) - Z"].mean().reset_index()
-
-		return avg_impedance, avg_by_type
-
-	def generate_clinical_analysis(self, current_visit, previous_visit=None) -> dict:
-		"""
-		Generate comprehensive clinical analysis for a patient visit.
-
-		Args:
-			current_visit: Dictionary with current visit data
-			previous_visit: Dictionary with previous visit data, if available
-
-		Returns:
-			Dictionary with analysis results
-		"""
-		analysis = {}
-
-		# Calculate tissue health index
-		analysis['tissue_health'] = self.calculate_tissue_health_index(visit=current_visit)
-
-		# Assess infection risk
-		analysis['infection_risk'] = self.assess_infection_risk(current_visit=current_visit, previous_visit=previous_visit)
-
-		# Analyze tissue composition (frequency response)
-		analysis['frequency_response'] = self.analyze_frequency_response(visit=current_visit)
-
-		# Calculate changes since previous visit
-		if previous_visit:
-			analysis['changes'], analysis['significant_changes'] = self.calculate_visit_changes( current_visit=current_visit, previous_visit=previous_visit )
-
-		return analysis
-
-	def generate_advanced_analysis(self, visits) -> dict:
-		"""
-		Generate advanced bioelectrical analysis for a series of patient visits.
-
-		Args:
-			visits: List of visit dictionaries
-
-		Returns:
-			Dictionary with advanced analysis results
-		"""
-		if len(visits) < 3:
-			return {'status': 'insufficient_data'}
-
-		analysis = {}
-
-		# Analyze healing trajectory
-		analysis['healing_trajectory'] = self.analyze_healing_trajectory(visits)
-
-		# Detect anomalies
-		analysis['anomalies'] = self.detect_impedance_anomalies(
-			visits[:-1], visits[-1]
-		)
-
-		# Calculate Cole parameters
-		analysis['cole_parameters'] = self.calculate_cole_parameters(visits[-1])
-
-		# Get tissue health from most recent visit
-		analysis['tissue_health'] = self.calculate_tissue_health_index(visits[-1])
-
-		# Get infection risk assessment
-		analysis['infection_risk'] = self.assess_infection_risk(
-			visits[-1], visits[-2] if len(visits) > 1 else None
-		)
-
-		# Get frequency response analysis
-		analysis['frequency_response'] = self.analyze_frequency_response(visits[-1])
-
-		# Generate clinical insights
-		analysis['insights'] = self.generate_clinical_insights(analysis)
-
-		# Classify wound healing stage
-		analysis['healing_stage'] = self.classify_wound_healing_stage(analysis)
-
-		return analysis
-
-
 class Dashboard:
 	"""Main dashboard application."""
 
@@ -2017,7 +799,6 @@ class Dashboard:
 		self.config             = Config()
 		self.data_manager       = DataManager()
 		self.visualizer         = Visualizer()
-		self.risk_analyzer      = RiskAnalyzer()
 		self.impedance_analyzer = ImpedanceAnalyzer()
 
 		# LLM configuration placeholders
@@ -2029,17 +810,17 @@ class Dashboard:
 	def setup(self) -> None:
 		"""Set up the dashboard configuration."""
 		st.set_page_config(
-			page_title=self.config.PAGE_TITLE,
-			page_icon=self.config.PAGE_ICON,
-			layout=self.config.LAYOUT
+			page_title = self.config.PAGE_TITLE,
+			page_icon  = self.config.PAGE_ICON,
+			layout     = self.config.LAYOUT
 		)
-		SessionStateManager.initialize()
+		Config.initialize()
 		self._create_left_sidebar()
 
-	def load_data(self, uploaded_file) -> Optional[pd.DataFrame]:
-		"""Load and prepare data for the dashboard."""
-		df = self.data_manager.load_data(uploaded_file)
-		self.data_processor = WoundDataProcessor(df=df, dataset_path=Config.DATA_PATH)
+	@staticmethod
+	@st.cache_data
+	def load_data(uploaded_file) -> Optional[pd.DataFrame]:
+		df = DataManager.load_data(uploaded_file)
 		return df
 
 	def run(self) -> None:
@@ -2050,6 +831,8 @@ class Dashboard:
 			return
 
 		df = self.load_data(self.uploaded_file)
+		self.data_processor = WoundDataProcessor(df=df, dataset_path=Config.DATA_PATH)
+
 		if df is None:
 			st.error("Failed to load data. Please check the CSV file.")
 			return
@@ -2211,16 +994,15 @@ class Dashboard:
 			)
 
 		# Calculate correlation with outlier handling
-		valid_df, r, p = self.impedance_analyzer.calculate_impedance_correlation(df, outlier_threshold)
+		stats_analyzer = CorrelationAnalysis(data=df, x_col='Skin Impedance (kOhms) - Z', y_col='Healing Rate (%)', outlier_threshold=outlier_threshold)
+		valid_df, r, p = stats_analyzer.calculate_correlation()
 
 		# Display correlation statistics
 		with col3:
-			if r is not None and p is not None:
-				p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
-				st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
+			st.info(stats_analyzer.get_correlation_text())
 
 		# Prepare data for visualization
-		valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 1000)
+		valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
 
 		# Add consistent diabetes status for each patient
 		first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
@@ -2323,7 +1105,7 @@ class Dashboard:
 			visits (list): A list of patient visit data containing impedance measurements
 
 		Returns:
-			None: This method renders UI components directly to the Streamlit app
+			None: This method renders UI elements directly to the Streamlit app
 
 		Note:
 			The visualization includes a selector for different measurement modes and
@@ -2357,25 +1139,26 @@ class Dashboard:
 		</div>
 		""", unsafe_allow_html=True)
 
+
 	def _render_patient_clinical_analysis(self, visits) -> None:
 		"""
-		Renders the bioimpedance clinical analysis section for a patient's wound data.
+			Renders the bioimpedance clinical analysis section for a patient's wound data.
 
-		This method creates a tabbed interface showing clinical analysis for each visit.
-		For each visit (except the first one), it performs a comparative analysis with
-		the previous visit to track changes in wound healing metrics.
+			This method creates a tabbed interface showing clinical analysis for each visit.
+			For each visit (except the first one), it performs a comparative analysis with
+			the previous visit to track changes in wound healing metrics.
 
-		Args:
-			visits (list): A list of dictionaries containing visit data. Each dictionary
-						  should have at least a 'visit_date' key and other wound measurement data.
+			Args:
+				visits (list): A list of dictionaries containing visit data. Each dictionary
+						should have at least a 'visit_date' key and other wound measurement data.
 
-		Returns:
-			None
+			Returns:
+				None
 
-		Note:
-			- At least two visits are required for comprehensive analysis
-			- Creates a tab for each visit date
-			- Analysis is performed using the impedance_analyzer component
+			Note:
+				- At least two visits are required for comprehensive analysis
+				- Creates a tab for each visit date
+				- Analysis is performed using the impedance_analyzer component
 		"""
 
 		st.subheader("Bioimpedance Clinical Analysis")
@@ -2404,30 +1187,30 @@ class Dashboard:
 
 	def _display_clinical_analysis_results(self, analysis, has_previous_visit):
 		"""
-		Display the clinical analysis results in the Streamlit interface using a structured layout.
+			Display the clinical analysis results in the Streamlit UI using a structured layout.
 
-		This method organizes the display of analysis results into two sections, each with two columns:
-		1. Top section: Tissue health and infection risk assessments
-		2. Bottom section: Tissue composition analysis and comparison with previous visits (if available)
+			This method organizes the display of analysis results into two sections, each with two columns:
+			1. Top section: Tissue health and infection risk assessments
+			2. Bottom section: Tissue composition analysis and comparison with previous visits (if available)
 
-		The method also adds an explanatory note about the color coding and significance markers used in the display.
+			The method also adds an explanatory note about the color coding and significance markers used in the display.
 
-		Parameters
-		----------
-		analysis : dict
-			A dictionary containing the analysis results with the following keys:
-			- 'tissue_health': Data for tissue health assessment
-			- 'infection_risk': Data for infection risk assessment
-			- 'frequency_response': Data for tissue composition analysis
-			- 'changes': Observed changes since previous visit (if available)
-			- 'significant_changes': Boolean flags indicating clinically significant changes
+			Parameters
+			----------
+			analysis : dict
+				A dictionary containing the analysis results with the following keys:
+				- 'tissue_health': Data for tissue health assessment
+				- 'infection_risk': Data for infection risk assessment
+				- 'frequency_response': Data for tissue composition analysis
+				- 'changes': Observed changes since previous visit (if available)
+				- 'significant_changes': Boolean flags indicating clinically significant changes
 
-		has_previous_visit : bool
-			Flag indicating whether there is data from a previous visit available for comparison
+			has_previous_visit : bool
+				Flag indicating whether there is data from a previous visit available for comparison
 
-		Returns
-		-------
-		None
+			Returns:
+			-------
+			None
 		"""
 
 		# Display Tissue Health and Infection Risk in a two-column layout
@@ -2466,25 +1249,25 @@ class Dashboard:
 
 	def _display_tissue_health_assessment(self, tissue_health):
 		"""
-		Displays the tissue health assessment in the Streamlit UI.
+			Displays the tissue health assessment in the Streamlit UI.
 
-		This method renders the tissue health assessment section including:
-		- A header with tooltip explanation of how the tissue health index is calculated
-		- The numerical health score with color-coded display (red: <40, orange: 40-60, green: >60)
-		- A textual interpretation of the health score
-		- A warning message if health score data is insufficient
+			This method renders the tissue health assessment section including:
+			- A header with tooltip explanation of how the tissue health index is calculated
+			- The numerical health score with color-coded display (red: <40, orange: 40-60, green: >60)
+			- A textual interpretation of the health score
+			- A warning message if health score data is insufficient
 
-		Parameters
-		----------
-		tissue_health : tuple
-			A tuple containing (health_score, health_interpretation) where:
-			- health_score (float or None): A numerical score from 0-100 representing tissue health
-			- health_interp (str): A textual interpretation of the health score
+			Parameters
+			----------
+			tissue_health : tuple
+				A tuple containing (health_score, health_interpretation) where:
+				- health_score (float or None): A numerical score from 0-100 representing tissue health
+				- health_interp (str): A textual interpretation of the health score
 
-		Returns
-		-------
-		None
-			This method updates the Streamlit UI but does not return a value
+			Returns:
+			-------
+			None
+				This method updates the Streamlit UI but does not return a value
 		"""
 
 		st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios. The process involves: "
@@ -2508,41 +1291,41 @@ class Dashboard:
 
 	def _display_infection_risk_assessment(self, infection_risk):
 		"""
-		Displays the infection risk assessment information in the Streamlit app.
+			Displays the infection risk assessment information in the Streamlit app.
 
-		This method presents the infection risk score, risk level, and contributing factors
-		in a formatted way with color coding based on the risk severity.
+			This method presents the infection risk score, risk level, and contributing factors
+			in a formatted way with color coding based on the risk severity.
 
-		Parameters
-		----------
-		infection_risk : dict
-			Dictionary containing infection risk assessment results with the following keys:
-			- risk_score (float): A numerical score from 0-100 indicating infection risk
-			- risk_level (str): A categorical assessment of risk (e.g., "Low", "Moderate", "High")
-			- contributing_factors (list): List of factors that contribute to the infection risk
+			Parameters
+			----------
+			infection_risk : dict
+				Dictionary containing infection risk assessment results with the following keys:
+				- risk_score (float): A numerical score from 0-100 indicating infection risk
+				- risk_level (str): A categorical assessment of risk (e.g., "Low", "Moderate", "High")
+				- contributing_factors (list): List of factors that contribute to the infection risk
 
-		Notes
-		-----
-		Risk score is color-coded:
-		- Green: scores < 30 (low risk)
-		- Orange: scores between 30 and 60 (moderate risk)
-		- Red: scores ≥ 60 (high risk)
+			Notes
+			-----
+			Risk score is color-coded:
+			- Green: scores < 30 (low risk)
+			- Orange: scores between 30 and 60 (moderate risk)
+			- Red: scores ≥ 60 (high risk)
 
-		The method includes a help tooltip that explains the factors used in risk assessment:
-		1. Low/high frequency impedance ratio
-		2. Sudden increase in low-frequency resistance
-		3. Phase angle measurements
+			The method includes a help tooltip that explains the factors used in risk assessment:
+			1. Low/high frequency impedance ratio
+			2. Sudden increase in low-frequency resistance
+			3. Phase angle measurements
 		"""
 
 		st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on three key factors: "
-										"1. Low/high frequency impedance ratio: A ratio > 15 is associated with increased infection risk."
-										"2. Sudden increase in low-frequency resistance: A >30% increase may indicate an inflammatory response, "
-										"which could be a sign of infection. This is because inflammation causes changes in tissue"
-										"electrical properties, particularly at different frequencies."
-										"3. Phase angle: Lower phase angles (<3°) indicate less healthy or more damaged tissue,"
-										"which may be more susceptible to infection."
-										"The risk score is a weighted sum of these factors, providing a quantitative measure of infection risk."
-										"The final score ranges from 0-100, with higher scores indicating higher infection risk.")
+			"1. Low/high frequency impedance ratio: A ratio > 15 is associated with increased infection risk."
+			"2. Sudden increase in low-frequency resistance: A >30% increase may indicate an inflammatory response, "
+			"which could be a sign of infection. This is because inflammation causes changes in tissue"
+			"electrical properties, particularly at different frequencies."
+			"3. Phase angle: Lower phase angles (<3°) indicate less healthy or more damaged tissue,"
+			"which may be more susceptible to infection."
+			"The risk score is a weighted sum of these factors, providing a quantitative measure of infection risk."
+			"The final score ranges from 0-100, with higher scores indicating higher infection risk.")
 
 		risk_score = infection_risk["risk_score"]
 		risk_level = infection_risk["risk_level"]
@@ -2559,33 +1342,33 @@ class Dashboard:
 
 	def _display_tissue_composition_analysis(self, freq_response):
 		"""
-		Displays the tissue composition analysis results in the Streamlit app based on frequency response data.
+			Displays the tissue composition analysis results in the Streamlit app based on frequency response data.
 
-		This method presents the bioelectrical impedance analysis (BIA) results including alpha and beta
-		dispersion values with their interpretation. It creates a section with explanatory headers and
-		displays the calculated tissue composition metrics.
+			This method presents the bioelectrical impedance analysis (BIA) results including alpha and beta
+			dispersion values with their interpretation. It creates a section with explanatory headers and
+			displays the calculated tissue composition metrics.
 
-		Parameters:
-		-----------
-		freq_response : dict
-			Dictionary containing frequency response analysis results with the following keys:
-			- 'alpha_dispersion': float, measurement of low to center frequency response
-			- 'beta_dispersion': float, measurement of center to high frequency response
-			- 'interpretation': str, clinical interpretation of the frequency response data
+			Parameters
+			-----------
+			freq_response : dict
+				Dictionary containing frequency response analysis results with the following keys:
+				- 'alpha_dispersion': float, measurement of low to center frequency response
+				- 'beta_dispersion': float, measurement of center to high frequency response
+				- 'interpretation': str, clinical interpretation of the frequency response data
 
-		Returns:
-		--------
-		None
-			This method updates the Streamlit UI but does not return a value.
+			Returns:
+			--------
+			None
+				This method renders UI components directly to the Streamlit UI but does not return any value.
 		"""
 
-		st.markdown("### Tissue Composition Analysis", help="""This analysis utilizes bioelectrical impedance analysis (BIA) principles to evaluate
-										tissue characteristics based on the frequency-dependent response to electrical current.
-										It focuses on two key dispersion regions:
-										1. Alpha Dispersion (low to center frequency): Occurs in the kHz range, reflects extracellular fluid content and cell membrane permeability.
-										Large alpha dispersion may indicate edema or inflammation.
-										2. Beta Dispersion (center to high frequency): Occurs in the MHz range, reflects cell membrane properties and intracellular fluid content.
-										Changes in beta dispersion can indicate alterations in cell structure or function.""")
+		st.markdown("### Tissue Composition Analysis", help="""This analysis utilizes bioelectrical impedance analysis (BIA) principles to evaluatetissue characteristics based on the frequency-dependent response to electrical current.
+		It focuses on two key dispersion regions:
+		1. Alpha Dispersion (low to center frequency): Occurs in the kHz range, reflects extracellular fluid content and cell membrane permeability.
+		Large alpha dispersion may indicate edema or inflammation.
+		2. Beta Dispersion (center to high frequency): Beta dispersion is a critical phenomenon in bioimpedance analysis, occurring in the MHz frequency range (0.1–100 MHz) and providing insights into cellular structures. It reflects cell membrane properties (such as membrane capacitance and polarization, which govern how high-frequency currents traverse cells) and intracellular fluid content (including ionic conductivity and cytoplasmic resistance146. For example, changes in intracellular resistance (Ri) or membrane integrity directly alter the beta dispersion profile).
+		Changes in beta dispersion can indicate alterations in cell structure or function.""")
+
 		# Display tissue composition analysis from frequency response
 		st.markdown("#### Analysis Results:")
 		if 'alpha_dispersion' in freq_response and 'beta_dispersion' in freq_response:
@@ -2662,7 +1445,6 @@ class Dashboard:
 					return ''
 
 				# Check if there's an asterisk and remove it for color calculation
-				has_asterisk = '*' in val
 				num_str = val.replace('*', '').replace('%', '')
 
 				# Get numeric value by stripping % and sign
@@ -2688,6 +1470,8 @@ class Dashboard:
 		st.dataframe(styled_df)
 		st.write("   (*) indicates clinically significant change")
 
+
+
 	def _render_patient_advanced_analysis(self, visits) -> None:
 		"""
 			Renders the advanced bioelectrical analysis section for a patient's wound data.
@@ -2702,7 +1486,9 @@ class Dashboard:
 							other wound assessment information.
 
 			Returns:
-				None: This method renders UI components directly to the Streamlit interface.
+			-------
+			None
+				The method updates the Streamlit UI directly
 
 			Notes:
 				- Displays a warning if fewer than three visits are available
@@ -2724,7 +1510,7 @@ class Dashboard:
 
 		# Display healing trajectory analysis if available
 		if 'healing_trajectory' in analysis and analysis['healing_trajectory']['status'] == 'analyzed':
-			self._display_healing_trajectory_analysis(analysis['healing_trajectory'])
+			self._display_high_freq_impedance_healing_trajectory_analysis(analysis['healing_trajectory'])
 
 		# Display wound healing stage classification
 		self._display_wound_healing_stage(analysis['healing_stage'])
@@ -2765,7 +1551,7 @@ class Dashboard:
 		</div>
 		""", unsafe_allow_html=True)
 
-	def _display_healing_trajectory_analysis(self, trajectory):
+	def _display_high_freq_impedance_healing_trajectory_analysis(self, trajectory):
 		"""
 			Display the healing trajectory analysis with charts and statistics.
 
@@ -2792,7 +1578,7 @@ class Dashboard:
 				- interpretation : str
 					Text interpretation of the healing trajectory
 
-			Returns
+			Returns:
 			-------
 			None
 				This method displays its output directly in the Streamlit UI
@@ -2811,7 +1597,8 @@ class Dashboard:
 			y=values,
 			mode='lines+markers',
 			name='Impedance',
-			hovertext=dates
+			line=dict(color='blue'),
+			hovertemplate='%{y:.1f} kOhms'
 		))
 
 		# Add trend line
@@ -2828,7 +1615,7 @@ class Dashboard:
 		fig.update_layout(
 			title="Impedance Trend Over Time",
 			xaxis_title="Visit Number",
-			yaxis_title="High-Frequency Impedance (Z)",
+			yaxis_title="High-Frequency Impedance (kOhms)",
 			hovermode="x unified"
 		)
 
@@ -2845,6 +1632,8 @@ class Dashboard:
 			st.markdown(f"**R² Value:** {trajectory['r_squared']:.4f}")
 			st.info(trajectory['interpretation'])
 
+		st.markdown("----")
+
 	def _display_wound_healing_stage(self, healing_stage):
 		"""
 			Display wound healing stage classification in the Streamlit interface.
@@ -2859,7 +1648,9 @@ class Dashboard:
 					- 'characteristics': List of strings describing characteristics of the current healing stage
 
 			Returns:
-				None: This method renders content to the Streamlit UI but does not return any values
+			-------
+			None
+				This method renders content to the Streamlit UI but does not return any value.
 		"""
 		st.markdown("### Wound Healing Stage Classification")
 
@@ -2885,7 +1676,7 @@ class Dashboard:
 		including extracellular resistance (R₀), total resistance (R∞), membrane capacitance (Cm),
 		and tissue heterogeneity (α). Values are formatted with appropriate precision and units.
 
-		Parameters:
+		Parameters
 		----------
 		cole_params : dict
 			Dictionary containing the Cole-Cole parameters and related tissue properties.
@@ -2932,10 +1723,10 @@ class Dashboard:
 			- 'supporting_factors': list, optional, factors supporting the insight
 			- 'clinical_meaning': str, optional, clinical interpretation of the insight
 
-		Returns
+		Returns:
 		-------
 		None
-			This method only renders UI components and does not return any value.
+			This method renders UI components directly to the Streamlit UI but does not return any value.
 		"""
 
 		st.markdown("### Clinical Insights")
@@ -2960,39 +1751,38 @@ class Dashboard:
 				if 'clinical_meaning' in insight:
 					st.markdown(f"**Clinical Interpretation:** {insight['clinical_meaning']}")
 
-
 	def _temperature_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""
-		Temperature tab display component for wound analysis application.
+			Temperature tab display component for wound analysis application.
 
-		This method creates and displays the temperature tab content in a Streamlit app, showing
-		temperature gradient analysis and visualization based on user selection. It handles both
-		aggregate data for all patients and detailed analysis for individual patients.
+			This method creates and displays the temperature tab content in a Streamlit app, showing
+			temperature gradient analysis and visualization based on user selection. It handles both
+			aggregate data for all patients and detailed analysis for individual patients.
 
-		Parameters
-		----------
-		df : pandas.DataFrame
-			The dataframe containing wound data for all patients.
-		selected_patient : str
-			The patient identifier to filter data. "All Patients" for aggregate view.
+			Parameters
+			----------
+			df : pd.DataFrame
+				The dataframe containing wound data for all patients.
+			selected_patient : str
+				The patient identifier to filter data. "All Patients" for aggregate view.
 
-		Returns
-		-------
-		None
-			This method renders Streamlit UI components directly.
+			Returns:
+			-------
+			None
+				The method renders Streamlit UI components directly.
 
-		Notes
-		-----
-		For "All Patients" view, displays:
-		- Temperature gradient analysis across wound types
-		- Statistical correlation between temperature and healing rate
-		- Scatter plot of temperature gradient vs. healing rate
+			Notes:
+			-----
+			For "All Patients" view, displays:
+			- Temperature gradient analysis across wound types
+			- Statistical correlation between temperature and healing rate
+			- Scatter plot of temperature gradient vs healing rate
 
-		For individual patient view, provides:
-		- Temperature trends over time
-		- Visit-by-visit detailed temperature analysis
-		- Clinical guidelines for temperature assessment
-		- Statistical summary with visual indicators
+			For individual patient view, provides:
+			- Temperature trends over time
+			- Visit-by-visit detailed temperature analysis
+			- Clinical guidelines for temperature assessment
+			- Statistical summary with visual indicators
 		"""
 
 		if selected_patient == "All Patients":
@@ -3017,8 +1807,8 @@ class Dashboard:
 			# Calculate temperature gradients if all required columns exist
 			if all(col in temp_df.columns for col in temp_cols):
 				temp_df['Center-Edge Gradient'] = temp_df[temp_cols[0]] - temp_df[temp_cols[1]]
-				temp_df['Edge-Peri Gradient'] = temp_df[temp_cols[1]] - temp_df[temp_cols[2]]
-				temp_df['Total Gradient'] = temp_df[temp_cols[0]] - temp_df[temp_cols[2]]
+				temp_df['Edge-Peri Gradient']   = temp_df[temp_cols[1]] - temp_df[temp_cols[2]]
+				temp_df['Total Gradient']       = temp_df[temp_cols[0]] - temp_df[temp_cols[2]]
 
 
 			# Add outlier threshold control
@@ -3034,15 +1824,13 @@ class Dashboard:
 					help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
 				)
 
-			# Get the filtered data for y-axis limits
-			temp_df = Visualizer._remove_outliers(temp_df, 'Center of Wound Temperature (Fahrenheit)', outlier_threshold)
+			# Calculate correlation with outlier handling
+			stats_analyzer = CorrelationAnalysis(data=temp_df, x_col='Center of Wound Temperature (Fahrenheit)', y_col='Healing Rate (%)', outlier_threshold=outlier_threshold)
+			temp_df, r, p = stats_analyzer.calculate_correlation()
 
+			# Display correlation statistics
 			with col3:
-				if not temp_df.empty:
-					# Calculate correlation
-					r, p = stats.pearsonr(temp_df['Center of Wound Temperature (Fahrenheit)'], temp_df['Healing Rate (%)'])
-					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
-					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
+				st.info(stats_analyzer.get_correlation_text())
 
 			# Create boxplot of temperature gradients by wound type
 			gradient_cols = ['Center-Edge Gradient', 'Edge-Peri Gradient', 'Total Gradient']
@@ -3071,15 +1859,12 @@ class Dashboard:
 				x='Total Gradient',
 				y='Healing Rate (%)',
 				color='Wound Type',
-				size='Calculated Wound Area',
+				size='Calculated Wound Area',#'Hemoglobin Level', #
+				size_max=30,
 				hover_data=['Record ID', 'Event Name'],
 				title="Temperature Gradient vs. Healing Rate"
 			)
-
-			fig.update_layout(
-				xaxis_title="Temperature Gradient (Center to Peri-wound, °F)",
-				yaxis_title="Healing Rate (% reduction per visit)"
-			)
+			fig.update_layout(xaxis_title="Temperature Gradient (Center to Peri-wound, °F)", yaxis_title="Healing Rate (% reduction per visit)")
 			st.plotly_chart(fig, use_container_width=True)
 
 		else:
@@ -3214,47 +1999,46 @@ class Dashboard:
 
 	def _oxygenation_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""
-		Renders the oxygenation analysis tab in the dashboard.
+			Renders the oxygenation analysis tab in the dashboard.
 
-		This tab displays visualizations related to wound oxygenation data, showing either
-		aggregate statistics for all patients or detailed analysis for a single selected patient.
+			This tab displays visualizations related to wound oxygenation data, showing either
+			aggregate statistics for all patients or detailed analysis for a single selected patient.
 
-		For all patients:
-		- Scatter plot showing relationship between oxygenation and healing rate
-		- Box plot comparing oxygenation levels across different wound types
-		- Statistical correlation between oxygenation and healing rate
+			For all patients:
+			- Scatter plot showing relationship between oxygenation and healing rate
+			- Box plot comparing oxygenation levels across different wound types
+			- Statistical correlation between oxygenation and healing rate
 
-		For individual patients:
-		- Bar chart showing oxygenation levels across visits
-		- Line chart tracking oxygenation over time
+			For individual patients:
+			- Bar chart showing oxygenation levels across visits
+			- Line chart tracking oxygenation over time
 
-		Parameters:
-		-----------
-		df : pd.DataFrame
-			The dataframe containing all wound care data
-		selected_patient : str
-			The selected patient (either "All Patients" or a specific patient identifier)
+			Parameters
+			-----------
+			df : pd.DataFrame
+				The dataframe containing all wound care data
+			selected_patient : str
+				The selected patient (either "All Patients" or a specific patient identifier)
 
-		Returns:
-		--------
-		None
-			This method renders Streamlit components directly to the app
+			Returns:
+			--------
+			None
+				This method renders Streamlit components directly to the app
 		"""
 		st.header("Oxygenation Analysis")
 
 		if selected_patient == "All Patients":
-			# Prepare data for scatter plot
-			# valid_df = df[df['Healing Rate (%)'] < 0].copy()
+
 			valid_df = df.copy()
 			# valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
 
-			# Handle NaN values and convert columns to float
 			valid_df['Hemoglobin Level'] = pd.to_numeric(valid_df['Hemoglobin Level'], errors='coerce')#.fillna(valid_df['Hemoglobin Level'].astype(float).mean())
+
 			valid_df['Oxygenation (%)'] = pd.to_numeric(valid_df['Oxygenation (%)'], errors='coerce')
 			valid_df['Healing Rate (%)'] = pd.to_numeric(valid_df['Healing Rate (%)'], errors='coerce')
-			# valid_df['Calculated Wound Area'] = pd.to_numeric(valid_df['Calculated Wound Area'], errors='coerce')
 
 			valid_df = valid_df.dropna(subset=['Oxygenation (%)', 'Healing Rate (%)', 'Hemoglobin Level'])
+
 			# Add outlier threshold control
 			col1, _, col3 = st.columns([2, 3, 3])
 
@@ -3268,20 +2052,18 @@ class Dashboard:
 					help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
 				)
 
-			# Get the filtered data for y-axis limits
-			valid_df = Visualizer._remove_outliers(df=valid_df, column='Oxygenation (%)', quantile_threshold=outlier_threshold)
+			# Calculate correlation with outlier handling
+			stats_analyzer = CorrelationAnalysis(data=valid_df, x_col='Oxygenation (%)', y_col='Healing Rate (%)', outlier_threshold=outlier_threshold)
+			valid_df, r, p = stats_analyzer.calculate_correlation()
 
+			# Display correlation statistics
 			with col3:
-				if not valid_df.empty:
-					# Calculate correlation
-					r, p = stats.pearsonr(valid_df['Oxygenation (%)'], valid_df['Healing Rate (%)'])
-					p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
-					st.info(f"Statistical correlation: r = {r:.2f} (p {p_formatted})")
+				st.info(stats_analyzer.get_correlation_text())
 
-			# # Add consistent diabetes status for each patient
+			# Add consistent diabetes status for each patient
 			# first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
 			# valid_df['Diabetes?'] = valid_df['Record ID'].map(first_diabetes_status)
-			valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
+			valid_df['Healing Rate (%)']      = valid_df['Healing Rate (%)'].clip(-100, 100)
 			valid_df['Calculated Wound Area'] = valid_df['Calculated Wound Area'].fillna(valid_df['Calculated Wound Area'].mean())
 
 			if not valid_df.empty:
@@ -3329,38 +2111,39 @@ class Dashboard:
 			st.plotly_chart(fig_line, use_container_width=True)
 
 	def _exudate_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
-		"""Create and display the exudate analysis tab in the wound management dashboard.
+		"""
+			Create and display the exudate analysis tab in the wound management dashboard.
 
-		This tab provides detailed analysis of wound exudate characteristics including volume,
-		viscosity, and type. For aggregate patient data, it shows statistical correlations and
-		visualizations comparing exudate properties across different wound types. For individual
-		patients, it displays a timeline of exudate changes and provides clinical interpretations
-		for each visit.
+			This tab provides detailed analysis of wound exudate characteristics including volume,
+			viscosity, and type. For aggregate patient data, it shows statistical correlations and
+			visualizations comparing exudate properties across different wound types. For individual
+			patients, it displays a timeline of exudate changes and provides clinical interpretations
+			for each visit.
 
-		Parameters
-		----------
-		df : pd.DataFrame
-			The dataframe containing wound assessment data for all patients
-		selected_patient : str
-			The currently selected patient ID or "All Patients" for aggregate view
+			Parameters
+			----------
+			df : pd.DataFrame
+				The dataframe containing wound assessment data for all patients
+			selected_patient : str
+				The currently selected patient ID or "All Patients"
 
-		Returns
-		-------
-		None
-			This method updates the Streamlit UI directly
+			Returns
+			-------
+			None
+				The method updates the Streamlit UI directly
 
-		Notes
-		-----
-		For aggregate analysis, this method:
-		- Calculates correlations between exudate characteristics and healing rates
-		- Creates boxplots comparing exudate properties across wound types
-		- Generates scatter plots to visualize relationships between variables
-		- Shows distributions of exudate types by wound category
+			Notes
+			-----
+			For aggregate analysis, this method:
+			- Calculates correlations between exudate characteristics and healing rates
+			- Creates boxplots comparing exudate properties across wound types
+			- Generates scatter plots to visualize relationships between variables
+			- Shows distributions of exudate types by wound category
 
-		For individual patient analysis, this method:
-		- Displays a timeline chart of exudate changes
-		- Provides clinical interpretations for each visit
-		- Offers treatment recommendations based on exudate characteristics
+			For individual patient analysis, this method:
+			- Displays a timeline chart of exudate changes
+			- Provides clinical interpretations for each visit
+			- Offers treatment recommendations based on exudate characteristics
 		"""
 
 		st.header("Exudate Analysis")
@@ -3383,7 +2166,7 @@ class Dashboard:
 			}
 
 			# Convert volume and viscosity to numeric values
-			exudate_df['Volume_Numeric'] = exudate_df['Exudate Volume'].map(level_mapping)
+			exudate_df['Volume_Numeric']    = exudate_df['Exudate Volume'].map(level_mapping)
 			exudate_df['Viscosity_Numeric'] = exudate_df['Exudate Viscosity'].map(level_mapping)
 
 			if not exudate_df.empty:
@@ -3394,10 +2177,11 @@ class Dashboard:
 					st.subheader("Volume Analysis")
 					# Calculate correlation between volume and healing rate
 					valid_df = exudate_df.dropna(subset=['Volume_Numeric', 'Healing Rate (%)'])
+
 					if len(valid_df) > 1:
-						r, p = stats.pearsonr(valid_df['Volume_Numeric'], valid_df['Healing Rate (%)'])
-						p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
-						st.info(f"Volume correlation vs Healing Rate: r = {r:.2f} (p {p_formatted})")
+						stats_analyzer = CorrelationAnalysis(data=valid_df, x_col='Volume_Numeric', y_col='Healing Rate (%)', REMOVE_OUTLIERS=False)
+						_, _, _ = stats_analyzer.calculate_correlation()
+						st.info(stats_analyzer.get_correlation_text(text="Volume correlation vs Healing Rate"))
 
 					# Boxplot of exudate volume by wound type
 					fig_vol = px.box(
@@ -3407,10 +2191,11 @@ class Dashboard:
 						title="Exudate Volume by Wound Type",
 						points="all"
 					)
+
 					fig_vol.update_layout(
 						xaxis_title="Wound Type",
 						yaxis_title="Exudate Volume",
-						showlegend=True
+						boxmode='group'
 					)
 					st.plotly_chart(fig_vol, use_container_width=True)
 
@@ -3418,10 +2203,12 @@ class Dashboard:
 					st.subheader("Viscosity Analysis")
 					# Calculate correlation between viscosity and healing rate
 					valid_df = exudate_df.dropna(subset=['Viscosity_Numeric', 'Healing Rate (%)'])
+
 					if len(valid_df) > 1:
-						r, p = stats.pearsonr(valid_df['Viscosity_Numeric'], valid_df['Healing Rate (%)'])
-						p_formatted = "< 0.001" if p < 0.001 else f"= {p:.3f}"
-						st.info(f"Viscosity correlation vs Healing Rate: r = {r:.2f} (p {p_formatted})")
+						stats_analyzer = CorrelationAnalysis(data=valid_df, x_col='Viscosity_Numeric', y_col='Healing Rate (%)', REMOVE_OUTLIERS=False)
+						_, _, _ = stats_analyzer.calculate_correlation()
+						st.info(stats_analyzer.get_correlation_text(text="Viscosity correlation vs Healing Rate"))
+
 
 					# Boxplot of exudate viscosity by wound type
 					fig_visc = px.box(
@@ -3434,14 +2221,14 @@ class Dashboard:
 					fig_visc.update_layout(
 						xaxis_title="Wound Type",
 						yaxis_title="Exudate Viscosity",
-						showlegend=True
+						boxmode='group'
 					)
 					st.plotly_chart(fig_visc, use_container_width=True)
 
 				# Create scatter plot matrix for volume, viscosity, and healing rate
 				st.subheader("Relationship Analysis")
 
-				exudate_df['Healing Rate (%)'] = exudate_df['Healing Rate (%)'].clip(-100, 100)
+				exudate_df['Healing Rate (%)']      = exudate_df['Healing Rate (%)'].clip(-100, 100)
 				exudate_df['Calculated Wound Area'] = exudate_df['Calculated Wound Area'].fillna(exudate_df['Calculated Wound Area'].mean())
 
 				fig_scatter = px.scatter(
@@ -3467,10 +2254,12 @@ class Dashboard:
 					# Distribution by wound type
 					type_by_wound = pd.crosstab(exudate_df['Wound Type'], exudate_df['Exudate Type'])
 					fig_type = px.bar(
-						type_by_wound,
-						title="Exudate Types by Wound Category",
-						barmode='group'
+						type_by_wound.reset_index().melt(id_vars='Wound Type', var_name='Exudate Type', value_name='Percentage'),
+						x='Wound Type',
+						y='Percentage',
+						color='Exudate Type',
 					)
+
 					st.plotly_chart(fig_type, use_container_width=True)
 
 				with col2:
@@ -3492,8 +2281,6 @@ class Dashboard:
 			fig = Visualizer.create_exudate_chart(visits)
 			st.plotly_chart(fig, use_container_width=True)
 
-			# df_temp = df[df['Record ID'] == int(selected_patient.split(" ")[1])].copy()
-
 			# Clinical interpretation section
 			st.subheader("Clinical Interpretation of Exudate Characteristics")
 
@@ -3504,149 +2291,70 @@ class Dashboard:
 			for tab, visit in zip(visit_tabs, visits):
 				with tab:
 					col1, col2 = st.columns(2)
+					volume           = visit['wound_info']['exudate'].get('volume', 'N/A')
+					viscosity        = visit['wound_info']['exudate'].get('viscosity', 'N/A')
+					exudate_type_str = str(visit['wound_info']['exudate'].get('type', 'N/A'))
+					exudate_analysis = Config.get_exudate_analysis(volume=volume, viscosity=viscosity, exudate_types=exudate_type_str)
 
 					with col1:
 						st.markdown("### Volume Analysis")
-						volume = visit['wound_info']['exudate'].get('volume', 'N/A')
 						st.write(f"**Current Level:** {volume}")
-
-						# Volume interpretation
-						if volume == 'High':
-							st.info("""
-							**High volume exudate** is common in:
-							- Chronic venous leg ulcers
-							- Dehisced surgical wounds
-							- Inflammatory ulcers
-							- Burns
-
-							This may indicate active inflammation or healing processes.
-							""")
-						elif volume == 'Low':
-							st.info("""
-							**Low volume exudate** is typical in:
-							- Necrotic wounds
-							- Ischaemic/arterial wounds
-							- Neuropathic diabetic foot ulcers
-
-							Monitor for signs of insufficient moisture.
-							""")
+						st.info(exudate_analysis['volume_analysis'])
 
 					with col2:
 						st.markdown("### Viscosity Analysis")
-						viscosity = visit['wound_info']['exudate'].get('viscosity', 'N/A')
 						st.write(f"**Current Level:** {viscosity}")
-
-						# Viscosity interpretation
 						if viscosity == 'High':
-							st.warning("""
-							**High viscosity** (thick) exudate may indicate:
-							- High protein content
-							- Possible infection
-							- Inflammatory processes
-							- Presence of necrotic material
-
-							Consider reassessing treatment approach.
-							""")
+							st.warning(exudate_analysis['viscosity_analysis'])
 						elif viscosity == 'Low':
-							st.info("""
-							**Low viscosity** (thin) exudate may suggest:
-							- Low protein content
-							- Possible venous condition
-							- Potential malnutrition
-							- Presence of fistulas
-
-							Monitor fluid balance and nutrition.
-							""")
+							st.info(exudate_analysis['viscosity_analysis'])
 
 					# Exudate Type Analysis
-					st.markdown("### Type Analysis")
-					# st.markdown(visit['wound_info']['exudate'])
-					exudate_type_str = str(visit['wound_info']['exudate'].get('type', 'N/A'))
+					st.markdown('----')
+					col1, col2 = st.columns(2)
 
-					if exudate_type_str != 'N/A':
-						# Split types and strip whitespace
-						exudate_types = [t.strip() for t in exudate_type_str.split(',')]
-						st.write(f"**Current Types:** {exudate_type_str}")
-					else:
-						exudate_types = ['N/A']
-						st.write("**Current Type:** N/A")
-
-					# Type interpretation
-					type_info = {
-						'Serous': {
-							'description': 'Straw-colored, clear, thin',
-							'indication': 'Normal healing process',
-							'severity': 'info'
-						},
-						'Serosanguineous': {
-							'description': 'Pink or light red, thin',
-							'indication': 'Presence of blood cells in early healing',
-							'severity': 'info'
-						},
-						'Sanguineous': {
-							'description': 'Red, thin',
-							'indication': 'Active bleeding or trauma',
-							'severity': 'warning'
-						},
-						'Seropurulent': {
-							'description': 'Cloudy, milky, or creamy',
-							'indication': 'Possible early infection or inflammation',
-							'severity': 'warning'
-						},
-						'Purulent': {
-							'description': 'Yellow, tan, or green, thick',
-							'indication': 'Active infection present',
-							'severity': 'error'
-						}
-					}
-
-					# Process each exudate type
-					highest_severity = 'info'  # Track highest severity for overall implications
-					for exudate_type in exudate_types:
-						if exudate_type in type_info:
-							info = type_info[exudate_type]
-							message = f"""
-							**Type: {exudate_type}**
-							**Description:** {info['description']}
-							**Clinical Indication:** {info['indication']}
-							"""
-							if info['severity'] == 'error':
-								st.error(message)
-								highest_severity = 'error'
-							elif info['severity'] == 'warning' and highest_severity != 'error':
-								st.warning(message)
-								highest_severity = 'warning'
-							else:
-								st.info(message)
-
-					# Overall Clinical Assessment based on multiple types
-					if len(exudate_types) > 1 and 'N/A' not in exudate_types:
-						st.markdown("#### Overall Clinical Assessment")
-						if highest_severity == 'error':
-							st.error("⚠️ Multiple exudate types present with signs of infection. Immediate clinical attention recommended.")
-						elif highest_severity == 'warning':
-							st.warning("⚠️ Mixed exudate characteristics suggest active wound processes. Close monitoring required.")
+					with col1:
+						st.markdown("### Type Analysis")
+						if exudate_type_str != 'N/A':
+							exudate_types = [t.strip() for t in exudate_type_str.split(',')]
+							st.write(f"**Current Types:** {exudate_types}")
 						else:
-							st.info("Multiple exudate types present. Continue regular monitoring of wound progression.")
+							exudate_types = ['N/A']
+							st.write("**Current Type:** N/A")
 
-					# Treatment Implications
-					st.markdown("### Treatment Implications")
-					implications = []
+						# Process each exudate type
+						highest_severity = 'info'  # Track highest severity for overall implications
+						for exudate_type in exudate_types:
+							if exudate_type in Config.EXUDATE_TYPE_INFO:
+								info = Config.EXUDATE_TYPE_INFO[exudate_type]
+								message = f"""
+								**Description:** {info['description']} \n
+								**Clinical Indication:** {info['indication']}
+								"""
+								if info['severity'] == 'error':
+									st.error(message)
+									highest_severity = 'error'
+								elif info['severity'] == 'warning' and highest_severity != 'error':
+									st.warning(message)
+									highest_severity = 'warning'
+								else:
+									st.info(message)
 
-					# Combine volume and viscosity for treatment recommendations
-					if volume == 'High' and viscosity == 'High':
-						implications.append("- Consider highly absorbent dressings")
-						implications.append("- More frequent dressing changes may be needed")
-						implications.append("- Monitor for maceration of surrounding tissue")
-					elif volume == 'Low' and viscosity == 'Low':
-						implications.append("- Use moisture-retentive dressings")
-						implications.append("- Protect wound bed from desiccation")
-						implications.append("- Consider hydrating dressings")
+						# Overall Clinical Assessment based on multiple types
+						if len(exudate_types) > 1 and 'N/A' not in exudate_types:
+							st.markdown("#### Overall Clinical Assessment")
+							if highest_severity == 'error':
+								st.error("⚠️ Multiple exudate types present with signs of infection. Immediate clinical attention recommended.")
+							elif highest_severity == 'warning':
+								st.warning("⚠️ Mixed exudate characteristics suggest active wound processes. Close monitoring required.")
+							else:
+								st.info("Multiple exudate types present. Continue regular monitoring of wound progression.")
 
-					if implications:
-						st.write("**Recommended Actions:**")
-						for imp in implications:
-							st.write(imp)
+					with col2:
+						st.markdown("### Treatment Implications")
+						if exudate_analysis['treatment_implications']:
+							st.write("**Recommended Actions:**")
+							st.success("\n".join(exudate_analysis['treatment_implications']))
 
 	def _risk_factors_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""
@@ -3677,7 +2385,7 @@ class Dashboard:
 			# if not outliers.empty:
 			# 	st.warning(
 			# 		f"⚠️ Data Quality Alert:\n\n"
-			# 		f"Found {len(outliers)} measurements ({(len/outliers)/len(valid_df)*100):.1f}% of data) "
+			# 		f"Found {len(outliers)} measurements ({(len(outliers)/len(valid_df)*100):.1f}% of data) "
 			# 		f"with healing rates outside the expected range (-100% to 100%).\n\n"
 			# 		f"Statistics:\n"
 			# 		f"- Minimum value: {outliers['Healing Rate (%)'].min():.1f}%\n"
@@ -3850,7 +2558,7 @@ class Dashboard:
 				st.plotly_chart(fig1, use_container_width=True)
 
 				# Calculate and display statistics
-				bmi_stats = valid_df.groupby('BMI Category').agg({
+				bmi_stats = valid_df.groupby('BMI Category', observed=False).agg({
 					'Healing Rate (%)': ['mean', 'count', 'std']
 				}).round(2)
 
@@ -3992,7 +2700,7 @@ class Dashboard:
 		None
 			The method updates the Streamlit UI directly
 
-		Notes
+		Notes:
 		-----
 		- Analysis results are stored in session state to persist between reruns
 		- The method supports two analysis modes:
@@ -4030,8 +2738,9 @@ class Dashboard:
 
 
 					# Add download button for the report
-					report_doc = create_and_save_report(**st.session_state.llm_reports['all_patients'])
-					download_word_report(st=st, report_path=report_doc)
+					report_doc = DataManager.create_and_save_report(**st.session_state.llm_reports['all_patients'])
+
+					DataManager.download_word_report(st=st, report_path=report_doc)
 
 		else:
 			patient_id = selected_patient.split(' ')[1]
@@ -4057,8 +2766,9 @@ class Dashboard:
 						st.markdown(st.session_state.llm_reports[patient_id]['prompt'])
 
 					# Add download button for the report
-					report_doc = create_and_save_report(**st.session_state.llm_reports[patient_id])
-					download_word_report(st=st, report_path=report_doc)
+					report_doc = DataManager.create_and_save_report(**st.session_state.llm_reports[patient_id])
+
+					DataManager.download_word_report(st=st, report_path=report_doc)
 			else:
 				st.warning("Please upload a patient data file from the sidebar to enable LLM analysis.")
 
@@ -4130,7 +2840,7 @@ class Dashboard:
 			st.write("""
 			The visualization is supported by these statistical approaches:
 			- Longitudinal analysis of healing trajectories
-				- Risk factor significance assessment
+			- Risk factor significance assessment
 			- Comparative analysis across wound types
 			""")
 
@@ -4152,10 +2862,10 @@ class Dashboard:
 			- 'Healing Rate (%)': Rate of healing in cm²/day
 			- 'Overall_Improvement': 'Yes' or 'No' indicating if wound is improving
 
-		Returns
+		Returns:
 		-------
 		None
-			The method directly renders components to the Streamlit app interface
+			This method renders content to the Streamlit app interface
 		"""
 
 		st.subheader("Population Statistics")
@@ -4225,7 +2935,7 @@ class Dashboard:
 		medical history, diabetes status, and detailed wound information from their first visit.
 		The information is organized into multiple columns and sections for better readability.
 
-		Parameters:
+		Parameters
 		----------
 		df : pd.DataFrame
 			The DataFrame containing all patient data.

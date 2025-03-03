@@ -1,7 +1,6 @@
 import os
-from data_processor import WoundDataProcessor
-from llm_interface import WoundAnalysisLLM
-from column_schema import DataColumns
+from utils.data_processor import WoundDataProcessor
+from utils.llm_interface import WoundAnalysisLLM
 import logging
 import pathlib
 import argparse
@@ -13,7 +12,7 @@ def setup_logging(log_dir: pathlib.Path) -> Tuple[pathlib.Path, pathlib.Path]:
     log_dir.mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = log_dir / f'wound_analysis_{timestamp}.log'
+    log_filename  = log_dir / f'wound_analysis_{timestamp}.log'
     word_filename = log_dir / f'wound_analysis_{timestamp}.docx'
 
     logging.basicConfig(
@@ -73,13 +72,6 @@ def main():
     except Exception as e:
         logger.error(f"Analysis failed: {e}")
         raise
-
-# TODO: Analysis of impedance values in the chart.
-# TODO: Clustering of data and then showing results based on the clustering
-# TODO: Look at stanford dataset impedance values to get some insights from them and how noise work there.
-# TODO: Is there some mathemtical way to analyze the impedance
-# TODO: Add some information on resistance and capacitance at low and high frequency.
-
 
 
 if __name__ == "__main__":

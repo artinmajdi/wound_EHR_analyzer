@@ -1,67 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
 
-# # Group columns into logical categories
-# patient_info_columns = [
-#     'Record ID', 'MRN', 'Date of Birth', 'Sex', 'Race', 'Race: Other - Specify',
-#     'Ethnicity', 'Weight', 'Height', 'BMI', 'Calculated Age at Enrollment'
-# ]
-
-# visit_info_columns = [
-#     'Event Name', 'Visit date', 'Skipped Visit?', 'Study Cohort'
-# ]
-
-# medical_history_columns = [
-#     'Medical History (select all that apply)', 'Diabetes?', 'Respiratory', 'Cardiovascular',
-#     'Gastrointestinal', 'Musculoskeletal', 'Endocrine/ Metabolic', 'Hematopoietic',
-#     'Hepatic/Renal', 'Neurologic', 'Immune', 'Other Medical History',
-#     'A1c available within the last 3 months?', 'Hemoglobin A1c (%)'
-# ]
-
-# lifestyle_habits_columns = [
-#     'Smoking status', 'Number of Packs per Day(average number of cigarette packs smoked per day)1 Pack= 20 Cigarettes',
-#     'Number of Years smoked/has been smoking cigarettes', 'Alcohol Use Status',
-#     'Number of alcohol drinks consumed/has been consuming', 'Illicit drug use?',
-#     'Current type of drug use:', 'Former type of drug use:',
-#     'How often has the patient used these substances in the past 3 months?', 'IV drug use?'
-# ]
-
-# wound_characteristics_columns = [
-#     'Target wound onset date', 'Length (cm)', 'Width (cm)', 'Depth (cm)',
-#     'Calculated Wound Area', 'Describe the wound location', 'Is there undermining/ tunneling?',
-#     'Undermining Location Description', 'Tunneling Location Description', 'Wound Type'
-# ]
-
-# wound_assessment_columns = [
-#     'Granulation', 'Granulation Quality', 'Necrosis', 'Exudate Volume',
-#     'Exudate Viscosity', 'Exudate Type', 'Infection', 'Infection/ Biomarker Measurement',
-#     'Diabetic Foot Wound - WIfI Classification: foot Infection (fI)'
-# ]
-
-# treatment_columns = [
-#     'Current wound care', 'Clinical events'
-# ]
-
-# sensor_data_columns = [
-#     'Oxygenation (%)', 'Hemoglobin Level', 'Oxyhemoglobin Level', 'Deoxyhemoglobin Level',
-#     'Center of Wound Temperature (Fahrenheit)', 'Edge of Wound Temperature (Fahrenheit)',
-#     'Peri-wound Temperature (Fahrenheit)', 'Skin Impedance (kOhms) - Z',
-#     'Skin Impedance (kOhms) - Z\'', 'Skin Impedance (kOhms) - Z\'\''
-# ]
-
-# # Create a dictionary of column categories
-# column_categories = {
-#     "Patient Information": patient_info_columns,
-#     "Visit Information": visit_info_columns,
-#     "Medical History": medical_history_columns,
-#     "Lifestyle Habits": lifestyle_habits_columns,
-#     "Wound Characteristics": wound_characteristics_columns,
-#     "Wound Assessment": wound_assessment_columns,
-#     "Treatment": treatment_columns,
-#     "Sensor Data": sensor_data_columns
-# }
-
-
 
 class PatientIdentifiers(BaseModel):
     record_id : str = Field('Record ID', description="Patient's unique record identifier")

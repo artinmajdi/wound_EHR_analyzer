@@ -1,15 +1,14 @@
-from typing import Dict, List, Optional
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, AutoModelForMaskedLM
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
-from datetime import datetime
 import logging
-import torch
 import os
-import pathlib
-from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches, Pt, RGBColor
+from typing import Dict, List
+
+import torch
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from transformers import pipeline
+
+
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -576,81 +575,3 @@ class WoundAnalysisLLM:
             logger.error(f"Error analyzing population data: {str(e)}")
             raise
 
-
-def create_and_save_report(patient_metadata: dict, analysis_results: str, prompt: dict=None) -> str:
-    """Create and save the analysis report as a Word document."""
-    doc = Document()
-    report_path = format_word_document(doc=doc, analysis_results=analysis_results, patient_metadata=patient_metadata)
-    return report_path
-
-def download_word_report(st, report_path: str):
-    """Create a download link for the Word report."""
-    try:
-        with open(report_path, 'rb') as f:
-            bytes_data = f.read()
-            st.download_button(
-                label="Download Full Report (DOCX)",
-                data=bytes_data,
-                file_name=os.path.basename(report_path),
-                mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-            )
-    except Exception as e:
-        st.error(f"Error preparing report download: {str(e)}")
-
-def format_word_document(doc: Document, analysis_results: str, patient_metadata: dict=None, report_path: str = None) -> str:
-    """
-    Format the analysis results in a professional Word document layout.
-    Returns the path to the saved document.
-    """
-    # Add title
-    title = doc.add_heading('Wound Care Analysis Report', 0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    if patient_metadata is not None:
-        # Add patient information section
-        doc.add_heading('Patient Information', level=1)
-        patient_info = doc.add_paragraph()
-        patient_info.add_run('Patient Demographics:\n').bold = True
-        patient_info.add_run(f"Age: {patient_metadata.get('age', 'Unknown')} years\n")
-        patient_info.add_run(f"Sex: {patient_metadata.get('sex', 'Unknown')}\n")
-        patient_info.add_run(f"BMI: {patient_metadata.get('bmi', 'Unknown')}\n")
-
-        # Add diabetes information
-        diabetes_info = doc.add_paragraph()
-        diabetes_info.add_run('Diabetes Status:\n').bold = True
-        if 'diabetes' in patient_metadata:
-            diabetes_info.add_run(f"Type: {patient_metadata['diabetes'].get('status', 'Unknown')}\n")
-            diabetes_info.add_run(f"HbA1c: {patient_metadata['diabetes'].get('hemoglobin_a1c', 'Unknown')}%\n")
-
-    # Add analysis section
-    doc.add_heading('Analysis Results', level=1)
-
-    # Split analysis into sections and format them
-    sections = analysis_results.split('\n\n')
-    for section in sections:
-        if section.strip():
-            if '**' in section:  # Handle markdown-style headers
-                # Convert markdown headers to proper formatting
-                section = section.replace('**', '')
-                p = doc.add_paragraph()
-                p.add_run(section.strip()).bold = True
-            else:
-                # Handle bullet points
-                if section.strip().startswith('- ') or section.strip().startswith('* '):
-                    p = doc.add_paragraph(section.strip()[2:], style='List Bullet')
-                else:
-                    p = doc.add_paragraph(section.strip())
-
-    # Add footer with timestamp
-    doc.add_paragraph(f"\nReport generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-    # Save the document
-    if report_path is None:
-        # Create logs directory if it doesn't exist
-        log_dir = pathlib.Path(__file__).parent / 'logs'
-        log_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_path = log_dir / f'wound_analysis_{timestamp}.docx'
-
-    doc.save(report_path)
-    return str(report_path)
