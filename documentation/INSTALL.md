@@ -47,7 +47,7 @@ wound-dashboard
 
 ## Dependencies
 
-The package automatically installs all required dependencies listed in `requirements.txt`.
+The package automatically installs all required dependencies listed in `config/requirements.txt`.
 
 ## Configuration
 
@@ -77,4 +77,6 @@ python -m build
 twine upload dist/*
 ```
 
-Make sure to update the version number in `setup.py` before publishing a new release.
+## Build and Publish Process
+
+Make sure to update the version number in `config/setup.py` before publishing a new release.

@@ -11,4 +11,6 @@ dependencies:
   - scipy
   - plotly
   - pip:
-    - -r ../requirements.txt
+    - python-dotenv>=0.19.0
+    - watchdog>=2.3.0
+    - -r ../config/requirements.txt

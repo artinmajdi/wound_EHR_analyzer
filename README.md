@@ -48,7 +48,7 @@ wound-dashboard
 wound-analysis --record-id 41
 ```
 
-See [INSTALL.md](INSTALL.md) for detailed pip installation instructions.
+See [documentation/INSTALL.md](documentation/INSTALL.md) for detailed pip installation instructions.
 
 #### Option 1: Docker Deployment (Recommended for Production)
 
@@ -89,7 +89,7 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # 2. Install dependencies and set up environment
-pip install -r requirements.txt
+pip install -r config/requirements.txt
 pip install -e .
 ./scripts/setup_env.sh
 
@@ -127,11 +127,19 @@ wound_management_interpreter_LLM/
 ├── dataset/                  # Data directory (mounted at runtime)
 ├── requirements.txt          # Python dependencies
 └── setup.py                  # Package configuration
+├── documentation/           # Documentation files
+│   ├── INSTALL.md          # Installation instructions
+│   └── LICENSE             # License file
+└── config/                 # Configuration files
+    ├── .env.example        # Template for environment variables
+    ├── environment.yml     # Conda environment specification
+    ├── requirements.txt    # Python dependencies
+    └── setup.py            # Package configuration
 ```
 
 ## License
 
-This project is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/) (CC BY-NC 4.0), which permits non-commercial use with attribution. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/) (CC BY-NC 4.0), which permits non-commercial use with attribution. See the [documentation/LICENSE](documentation/LICENSE) file for details.
 
 ## Acknowledgments
 

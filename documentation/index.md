@@ -37,4 +37,4 @@ For issues, feature requests, or questions, please open an issue on the GitHub r
 
 ## License
 
-This project is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/) (CC BY-NC 4.0), which permits non-commercial use with attribution. See the [LICENSE](../LICENSE) file for details.
+This project is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/) (CC BY-NC 4.0), which permits non-commercial use with attribution. See the [LICENSE](LICENSE) file for details.

@@ -1,0 +1,11 @@
+include ../documentation/LICENSE
+include ../README.md
+include requirements.txt
+include ../wound_analysis/*.py
+include ../wound_analysis/utils/*.py
+graft .
+graft ../tests
+graft ../dataset
+global-exclude *.py[cod]
+global-exclude __pycache__
+global-exclude *.so
