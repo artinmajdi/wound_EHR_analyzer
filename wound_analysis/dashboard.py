@@ -482,7 +482,40 @@ class Visualizer:
 
 	@staticmethod
 	def _create_single_patient_plot(df: pd.DataFrame, patient_id: int) -> go.Figure:
-		"""Create wound area plot for a single patient."""
+		"""
+		Create a detailed plot showing wound healing progression for a single patient.
+
+		This function generates a Plotly figure with multiple traces showing the wound area,
+		dimensions (length, width, depth), and a trend line for the wound area. It also
+		calculates and displays the healing rate if sufficient data is available.
+
+		Parameters
+		----------
+		df : pd.DataFrame
+			DataFrame containing wound measurements data with columns:
+			'Record ID', 'Days_Since_First_Visit', 'Calculated Wound Area',
+			'Length (cm)', 'Width (cm)', 'Depth (cm)'
+
+		patient_id : int
+			The patient identifier to filter data for
+
+		Returns
+		-------
+		go.Figure
+			A Plotly figure object containing the wound progression plot with:
+			- Wound area measurements (blue line)
+			- Wound length measurements (green line)
+			- Wound width measurements (red line)
+			- Wound depth measurements (brown line)
+			- Trend line for wound area (dashed red line, if sufficient data points)
+			- Annotation showing healing rate and status (if sufficient time elapsed)
+
+		Notes
+		-----
+		- The trend line is calculated using linear regression (numpy.polyfit)
+		- Healing rate is calculated as (first_area - last_area) / total_days
+		- The plot includes hover information and unified hover mode
+		"""
 		patient_df = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
 
 		fig = go.Figure()
@@ -581,6 +614,35 @@ class Visualizer:
 
 	@staticmethod
 	def create_temperature_chart(df):
+		"""
+		Creates an interactive temperature chart for wound analysis using Plotly.
+
+		The function generates line charts for available temperature measurements (Center, Edge, Peri-wound)
+		and bar charts for temperature gradients when all three measurements are available.
+
+		Parameters:
+		-----------
+		df : pandas.DataFrame
+			DataFrame containing wound temperature data with columns:
+			- 'Visit date': Dates of wound assessment visits
+			- 'Center of Wound Temperature (Fahrenheit)': Temperature at wound center (optional)
+			- 'Edge of Wound Temperature (Fahrenheit)': Temperature at wound edge (optional)
+			- 'Peri-wound Temperature (Fahrenheit)': Temperature of surrounding tissue (optional)
+			- 'Skipped Visit?': Indicator for skipped visits
+
+		Returns:
+		--------
+		plotly.graph_objs._figure.Figure
+			A Plotly figure object with temperature measurements as line charts on the primary y-axis
+			and temperature gradients as bar charts on the secondary y-axis (if all temperature types available).
+
+		Notes:
+		------
+		- Skipped visits are excluded from visualization
+		- Derived temperature gradients are calculated when all three temperature measurements are available
+		- Color coding: Center (red), Edge (orange), Peri-wound (blue)
+		- Temperature gradients are displayed as semi-transparent bars
+		"""
 		# Check which temperature columns have data
 		temp_cols = {
 			'Center': 'Center of Wound Temperature (Fahrenheit)',
@@ -596,8 +658,8 @@ class Visualizer:
 		# Create derived variables for temperature if they exist
 		if all(col in df.columns for col in ['Center of Wound Temperature (Fahrenheit)', 'Edge of Wound Temperature (Fahrenheit)', 'Peri-wound Temperature (Fahrenheit)']):
 			df['Center-Edge Temp Gradient'] = df['Center of Wound Temperature (Fahrenheit)'] - df['Edge of Wound Temperature (Fahrenheit)']
-			df['Edge-Peri Temp Gradient'] = df['Edge of Wound Temperature (Fahrenheit)'] - df['Peri-wound Temperature (Fahrenheit)']
-			df['Total Temp Gradient'] = df['Center of Wound Temperature (Fahrenheit)'] - df['Peri-wound Temperature (Fahrenheit)']
+			df['Edge-Peri Temp Gradient']   = df['Edge of Wound Temperature (Fahrenheit)']   - df['Peri-wound Temperature (Fahrenheit)']
+			df['Total Temp Gradient']       = df['Center of Wound Temperature (Fahrenheit)'] - df['Peri-wound Temperature (Fahrenheit)']
 
 		available_temps = {k: v for k, v in temp_cols.items()
 							if v in df.columns and not df[v].isna().all()}
@@ -623,7 +685,7 @@ class Visualizer:
 		if len(available_temps) == 3:
 			# Calculate temperature gradients
 			df['Center-Edge'] = df[temp_cols['Center']] - df[temp_cols['Edge']]
-			df['Edge-Peri'] = df[temp_cols['Edge']] - df[temp_cols['Peri']]
+			df['Edge-Peri']   = df[temp_cols['Edge']] - df[temp_cols['Peri']]
 
 			# Add gradient bars on secondary y-axis
 			fig.add_trace(
@@ -654,7 +716,43 @@ class Visualizer:
 
 	@staticmethod
 	def create_impedance_chart(visits, measurement_mode: str = "Absolute Impedance (|Z|)"):
-		"""Create an interactive chart showing impedance measurements over time."""
+		"""
+		Create an interactive chart displaying impedance measurements over time for different frequencies.
+
+		This function processes visit data that contains sensor impedance measurements and generates
+		a plotly figure showing the selected impedance parameter (absolute impedance, resistance, or capacitance)
+		across visits on a logarithmic scale.
+
+		Parameters:
+		-----------
+		visits : list
+			List of visit dictionaries, each containing visit date and sensor data with impedance measurements.
+			Each visit should have the structure:
+			{
+				'visit_date': datetime,
+				'sensor_data': {
+					'impedance': {
+						'high_frequency'  : {'Z': float, 'resistance': float, 'capacitance': float, 'frequency': float},
+						'center_frequency': {'Z': float, 'resistance': float, 'capacitance': float, 'frequency': float},
+						'low_frequency'   : {'Z': float, 'resistance': float, 'capacitance': float, 'frequency': float}
+					}
+				}
+			}
+
+		measurement_mode : str, optional
+			Type of impedance measurement to display. Options are:
+			- "Absolute Impedance (|Z|)" (default)
+			- "Resistance"
+			- "Capacitance"
+
+		Returns:
+		--------
+		plotly.graph_objects.Figure
+			Interactive plotly figure showing the selected impedance parameter over time with
+			separate traces for each frequency (high, center, low).
+			The y-axis is displayed on a logarithmic scale for better visualization.
+		"""
+
 		dates = []
 		high_freq_z, high_freq_r, high_freq_c = [], [], []
 		center_freq_z, center_freq_r, center_freq_c = [], [], []
@@ -819,6 +917,30 @@ class Visualizer:
 
 	@staticmethod
 	def create_oxygenation_chart(patient_data, visits):
+		"""
+		Creates two charts for visualizing oxygenation and hemoglobin data.
+
+		Parameters:
+		-----------
+		patient_data : pandas.DataFrame
+			DataFrame containing patient visit data with columns 'Visit date',
+			'Oxyhemoglobin Level', and 'Deoxyhemoglobin Level'.
+		visits : list
+			List of dictionaries, each containing visit data with keys 'visit_date'
+			and 'sensor_data'. The 'sensor_data' dictionary should contain
+			'oxygenation' and 'hemoglobin' measurements.
+
+		Returns:
+		--------
+		tuple
+			A tuple containing two plotly figures:
+			- fig_bar: A stacked bar chart showing Oxyhemoglobin and Deoxyhemoglobin levels
+			- fig_line: A line chart showing Oxygenation percentage and Hemoglobin levels over time
+
+		Notes:
+		------
+		The hemoglobin values are multiplied by 100 for visualization purposes in the line chart.
+		"""
 		fig_bar = go.Figure()
 		fig_bar.add_trace(go.Bar(
 			x=patient_data['Visit date'],
@@ -869,16 +991,44 @@ class Visualizer:
 
 	@staticmethod
 	def create_exudate_chart(visits):
-		"""Create a chart showing exudate characteristics over time."""
+		"""
+		Create a chart showing exudate characteristics over time.
+
+		This function processes a series of visit data to visualize changes in wound exudate
+		characteristics across multiple visits. It displays exudate volume as a line graph,
+		and exudate type and viscosity as text markers on separate horizontal lines.
+
+		Parameters:
+		-----------
+		visits : list
+			A list of dictionaries, where each dictionary represents a visit and contains:
+			- 'visit_date': datetime or string, the date of the visit
+			- 'wound_info': dict, containing wound information including an 'exudate' key with:
+				- 'volume': numeric, the volume of exudate
+				- 'type': string, the type of exudate (e.g., serous, sanguineous)
+				- 'viscosity': string, the viscosity of exudate (e.g., thin, thick)
+
+		Returns:
+		--------
+		go.Figure
+			A plotly figure object containing the exudate characteristics chart with
+			three potential traces: volume as a line graph, and type and viscosity as
+			text markers on fixed y-positions.
+
+		Note:
+		-----
+		The function handles missing data gracefully, only plotting traces if data exists.
+		"""
+
 		dates = []
 		volumes = []
 		types = []
 		viscosities = []
 
 		for visit in visits:
-			date = visit['visit_date']
+			date       = visit['visit_date']
 			wound_info = visit['wound_info']
-			exudate = wound_info.get('exudate', {})
+			exudate    = wound_info.get('exudate', {})
 			dates.append(date)
 			volumes.append(exudate.get('volume', None))
 			types.append(exudate.get('type', None))
@@ -921,8 +1071,46 @@ class Visualizer:
 		return fig
 
 class Dashboard:
-	"""Main dashboard application."""
+	"""Main dashboard class for the Wound Analysis application.
 
+	This class serves as the core controller for the wound analysis dashboard, integrating
+	data processing, visualization, and analysis components. It handles the initialization,
+	setup, and rendering of the Streamlit application interface.
+
+	The dashboard provides comprehensive wound analysis features including:
+	- Overview of patient data and population statistics
+	- Impedance analysis with clinical interpretation
+	- Temperature gradient analysis
+	- Tissue oxygenation assessment
+	- Exudate characterization
+	- Risk factor evaluation
+	- LLM-powered wound analysis
+
+	Attributes:
+		config (Config): Configuration settings for the application
+		data_manager (DataManager): Handles data loading and processing operations
+		visualizer (Visualizer): Creates data visualizations for the dashboard
+		impedance_analyzer (ImpedanceAnalyzer): Processes and interprets impedance measurements
+		llm_platform (str): Selected platform for LLM analysis (e.g., "ai-verde")
+		llm_model (str): Selected LLM model for analysis
+		csv_dataset_path (str): Path to the uploaded CSV dataset
+		data_processor (WoundDataProcessor): Processes wound data for analysis
+		impedance_freq_sweep_path (pathlib.Path): Path to impedance frequency sweep data files
+
+	Methods:
+		setup(): Initializes the Streamlit page configuration and sidebar
+		load_data(uploaded_file): Loads data from the uploaded CSV file
+		run(): Main execution method that runs the dashboard application
+		_create_dashboard_tabs(): Creates and manages the main dashboard tabs
+		_overview_tab(): Renders the overview tab for patient data
+		_impedance_tab(): Renders impedance analysis visualization and interpretation
+		_temperature_tab(): Renders temperature analysis visualization
+		_oxygenation_tab(): Renders oxygenation analysis visualization
+		_exudate_tab(): Renders exudate analysis visualization
+		_risk_factors_tab(): Renders risk factors analysis visualization
+		_llm_analysis_tab(): Renders the LLM-powered analysis interface
+		_create_left_sidebar(): Creates the sidebar with configuration options
+		"""
 	def __init__(self):
 		"""Initialize the dashboard."""
 		self.config             = Config()
@@ -950,11 +1138,39 @@ class Dashboard:
 	@staticmethod
 	# @st.cache_data
 	def load_data(uploaded_file) -> Optional[pd.DataFrame]:
+		"""
+		Loads data from an uploaded file into a pandas DataFrame.
+
+		This function serves as a wrapper around the DataManager's load_data method,
+		providing consistent data loading functionality for the dashboard.
+
+		Args:
+			uploaded_file: The file uploaded by the user through the application interface (typically a csv, excel, or other supported format)
+
+		Returns:
+			Optional[pd.DataFrame]: A pandas DataFrame containing the loaded data, or None if the file couldn't be loaded
+
+		Note:
+			The actual loading logic is handled by the DataManager class.
+		"""
 		df = DataManager.load_data(uploaded_file)
 		return df
 
 	def run(self) -> None:
-		"""Run the main dashboard application."""
+		"""
+		Run the main dashboard application.
+
+		This method initializes the dashboard, loads the dataset, processes wound data,
+		sets up the page layout including title and patient selection dropdown,
+		and creates the dashboard tabs.
+
+		If no CSV file is uploaded, displays an information message.
+		If data loading fails, displays an error message.
+
+		Returns:
+			None
+		"""
+
 		self.setup()
 		if not self.csv_dataset_path:
 			st.info("Please upload a CSV file to proceed.")
@@ -980,7 +1196,37 @@ class Dashboard:
 		self._create_dashboard_tabs(df, selected_patient)
 
 	def _create_dashboard_tabs(self, df: pd.DataFrame, selected_patient: str) -> None:
-		"""Create and manage dashboard tabs."""
+		"""
+		Create and manage dashboard tabs for displaying patient wound data.
+
+		This method sets up the main dashboard interface with multiple tabs for different
+		wound analysis categories. Each tab is populated with specific visualizations and
+		data analyses related to the selected patient.
+
+		Parameters:
+		-----------
+		df : pd.DataFrame
+			The dataframe containing wound data for analysis
+		selected_patient : str
+			The identifier of the currently selected patient
+
+		Returns:
+		--------
+		None
+			This method updates the Streamlit UI directly without returning values
+
+		Notes:
+		------
+		The following tabs are created:
+		- Overview          : General patient information and wound summary
+		- Impedance Analysis: Electrical measurements of wound tissue
+		- Temperature       : Thermal measurements and analysis
+		- Oxygenation       : Oxygen saturation and related metrics
+		- Exudate           : Analysis of wound drainage
+		- Risk Factors      : Patient-specific risk factors for wound healing
+		- LLM Analysis      : Natural language processing analysis of wound data
+		"""
+
 		tabs = st.tabs([
 			"Overview",
 			"Impedance Analysis",
@@ -1082,11 +1328,31 @@ class Dashboard:
 
 	def _render_population_impedance_analysis(self, df: pd.DataFrame) -> None:
 		"""
-		Render impedance analysis for the entire patient population.
+		Renders the population-level impedance analysis section of the dashboard.
 
-		Args:
-			df: DataFrame containing all patient data
+		This method creates visualizations and controls for analyzing impedance data across the entire patient population. It includes
+		correlation analysis with filtering controls, a scatter plot of relationships between variables, and additional charts that provide
+		population-level insights about impedance measurements.
+
+		Parameters:
+		----------
+		df : pd.DataFrame
+			The input dataframe containing patient impedance data to be analyzed.
+			Expected to contain columns related to impedance measurements and patient information.
+
+		Returns:
+		-------
+		None
+			This method directly renders components to the Streamlit dashboard and doesn't return values.
+
+		Notes:
+		-----
+		The method performs the following operations:
+		1. Creates a filtered dataset based on user-controlled outlier thresholds
+		2. Renders a scatter plot showing relationships between impedance variables
+		3. Displays additional population-level charts for impedance analysis
 		"""
+
 		# Create a copy of the dataframe for analysis
 		analysis_df = df.copy()
 
@@ -1104,14 +1370,24 @@ class Dashboard:
 
 	def _display_impedance_correlation_controls(self, df: pd.DataFrame) -> pd.DataFrame:
 		"""
-		Display controls for impedance correlation analysis and perform correlation calculation.
+		Displays controls for analyzing the correlation between skin impedance and healing rate.
 
-		Args:
-			df: DataFrame containing impedance data
+		This method creates UI controls for configuring outlier thresholds, calculates the correlation
+		between skin impedance and healing rate, and displays the correlation statistics. It also
+		processes the dataframe by clipping extreme healing rate values and ensuring consistent
+		diabetes status for each patient.
 
-		Returns:
-			Filtered DataFrame with outlier treatment applied
+		Parameters
+		----------
+		df : pd.DataFrame
+			The input dataframe containing wound data with columns for skin impedance and healing rate
+
+		Returns
+		-------
+		pd.DataFrame
+			Processed dataframe with outliers removed and consistent diabetes status
 		"""
+
 		col1, _, col3 = st.columns([2, 3, 3])
 
 		with col1:
@@ -1168,11 +1444,25 @@ class Dashboard:
 
 	def _render_population_impedance_charts(self, df: pd.DataFrame) -> None:
 		"""
-		Render additional impedance charts for population analysis.
+		Renders two charts showing population-level impedance statistics:
+		1. A line chart showing average impedance components (Z, Z', Z'') over time by visit number
+		2. A bar chart showing average impedance values by wound type
 
-		Args:
-			df: DataFrame containing impedance data
+		This method uses the impedance_analyzer to calculate the relevant statistics
+		from the provided dataframe and then creates visualizations using Plotly Express.
+
+		Parameters
+		----------
+		df : pd.DataFrame
+			DataFrame containing impedance measurements and visit information
+			for multiple patients
+
+		Returns
+		-------
+		None
+			The method renders charts directly to the Streamlit UI
 		"""
+
 		# Get prepared statistics
 		avg_impedance, avg_by_type = self.impedance_analyzer.prepare_population_stats(df)
 
@@ -1203,6 +1493,24 @@ class Dashboard:
 			st.plotly_chart(fig2, use_container_width=True)
 
 	def _render_patient_impedance_analysis(self, df: pd.DataFrame, patient_id: int) -> None:
+		"""
+		Renders the impedance analysis section for a specific patient in the dashboard.
+
+		This method creates a tabbed interface to display different perspectives on a patient's
+		impedance data, organized into Overview, Clinical Analysis, and Advanced Interpretation tabs.
+
+		Parameters
+		----------
+		df : pd.DataFrame
+			The dataframe containing all patient data (may be filtered)
+		patient_id : int
+			The unique identifier for the patient to analyze
+
+		Returns
+		-------
+		None
+			This method renders UI elements directly to the Streamlit dashboard
+		"""
 
 		# Get patient visits
 		patient_data = self.data_processor.get_patient_visits(record_id=patient_id)
