@@ -736,6 +736,30 @@ class WoundDataProcessor:
 			return float(data[key]) if not pd.isna(data.get(key)) else None
 
 		def get_impedance_data():
+			"""
+			Extracts and processes impedance data for a wound assessment.
+
+			This function retrieves electrical impedance data either from a frequency sweep file
+			or from visit parameters. It processes data for three frequency points (high, center, and low)
+			and calculates impedance (Z), resistance, capacitance, and frequency values for each.
+
+			Returns:
+				dict: A nested dictionary containing processed impedance data structured as:
+					{
+						'high_frequency': {
+							'Z': float or None,             # Impedance magnitude
+							'resistance': float or None,    # Real part of impedance (Z')
+							'capacitance': float or None,   # Calculated from imaginary part (1/(2πf*Z''))
+							'frequency': float or None      # Frequency in Hz
+						},
+						'center_frequency': {...},          # Same structure as high_frequency
+						'low_frequency': {...}              # Same structure as high_frequency
+
+			Notes:
+				- If frequency sweep data is available, values are extracted for all three frequency points
+				- If sweep data is unavailable, only high frequency data is extracted from visit parameters
+				- Capacitance is calculated using the formula: C = 1/(2πf*Z'')
+			"""
 
 			impedance_data = {
 				'high_frequency'  : {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None},
@@ -826,14 +850,30 @@ class DataManager:
 		if csv_dataset_path is None:
 			return None
 
-		print("---#######-----DataManager.load_data: uploaded_file:", csv_dataset_path)
 		df = pd.read_csv(csv_dataset_path)
 		df = DataManager._preprocess_data(df)
 		return df
 
 	@staticmethod
 	def _preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
-		"""Clean and preprocess the loaded data."""
+		"""
+		Preprocesses the wound data DataFrame.
+
+		This function performs several preprocessing steps on the input DataFrame, including:
+		1. Normalizing column names
+		2. Filtering out skipped visits
+		3. Extracting and converting visit numbers
+		4. Formatting visit dates
+		5. Converting wound type to categorical data
+		6. Calculating wound area from dimensions if not present
+		7. Creating derived features and healing rates
+
+		Args:
+			df (pd.DataFrame): The raw wound data DataFrame to preprocess.
+
+		Returns:
+			pd.DataFrame: The preprocessed wound data.
+		"""
 
 		# Get column names from schema
 		schema = DataColumns()
@@ -864,7 +904,33 @@ class DataManager:
 
 	@staticmethod
 	def _calculate_healing_rates(df: pd.DataFrame) -> pd.DataFrame:
-		"""Calculate healing rates for each patient visit."""
+		"""Calculate healing rates and related metrics for each patient's wound data.
+
+		This function processes wound measurement data to calculate:
+		- Per-visit healing rates (percentage change in wound area)
+		- Overall improvement status (Yes/No)
+		- Average healing rate across all visits
+		- Estimated days to complete healing
+
+		The calculations are performed on a per-patient basis and consider the
+		sequential nature of wound healing across multiple visits.
+
+		Args:
+			df (pd.DataFrame): DataFrame containing wound measurement data with columns defined in the DataColumns schema.
+
+			pd.DataFrame: The input DataFrame with additional columns for healing metrics:
+							- healing_rate: Per-visit healing rate
+							- overall_improvement: Yes/No indicator of healing progress
+							- average_healing_rate: Mean healing rate across visits
+							- estimated_days_to_heal: Projected time to complete healing
+
+		Notes:
+			- Healing rate is calculated as percentage decrease in wound area between visits
+			- A positive healing rate indicates improvement (wound area reduction)
+			- Estimated healing time is based on the latest wound area and average healing rate
+			- Calculations handle edge cases like single visits and invalid measurements
+		"""
+
 		# Get column names from schema
 		schema = DataColumns()
 		pi = schema.patient_identifiers
@@ -999,7 +1065,23 @@ class DataManager:
 
 	@staticmethod
 	def get_patient_data(df: pd.DataFrame, patient_id: int) -> pd.DataFrame:
-		"""Get data for a specific patient."""
+		"""
+		Retrieves data for a specific patient from the dataframe.
+
+		This function filters a dataframe to return only records for a specific patient
+		identified by their patient_id, and sorts the results by 'Visit Number'.
+
+		Parameters:
+			df (pd.DataFrame): The source dataframe containing patient records.
+			patient_id (int): The unique identifier for the patient whose data is being retrieved.
+
+		Returns:
+			pd.DataFrame: A filtered and sorted dataframe containing only the specified patient's data.
+
+		Note:
+			This function relies on the DataColumns schema class to determine the column name for patient identifiers.
+		"""
+
 		# Get column names from schema
 		schema = DataColumns()
 		pi = schema.patient_identifiers
@@ -1008,7 +1090,33 @@ class DataManager:
 
 	@staticmethod
 	def _extract_patient_metadata(patient_data) -> Dict:
-		"""Extract relevant patient metadata from a single row."""
+		"""
+		Extract and structure patient metadata from the patient data record.
+
+		This function extracts demographics, lifestyle factors, and medical history
+		information from a patient record into a standardized dictionary format.
+		Missing values (NaN) are converted to None in the returned dictionary.
+
+		Parameters
+		----------
+		patient_data : pandas.Series or dict-like
+			A patient data record containing demographic, lifestyle, and medical history information.
+			Expected to have keys matching those defined in DataColumns schema.
+
+		Returns
+		-------
+		Dict
+			A structured dictionary containing:
+			- Basic demographics (age, sex, race, ethnicity, weight, height, bmi, study_cohort)
+			- Lifestyle factors (smoking_status, packs_per_day, years_smoking, alcohol_use, alcohol_frequency)
+			- Medical history organized by body systems
+			- Diabetes-specific information including status, hemoglobin A1C values, and availability
+
+		Notes
+		-----
+		The function handles both standard medical history fields and additional conditions
+		specified in free-text fields, combining them into a cohesive medical history record.
+		"""
 
 		# Get column names from schema
 		schema = DataColumns()
@@ -1064,7 +1172,28 @@ class DataManager:
 
 	@staticmethod
 	def _generate_mock_data() -> pd.DataFrame:
-		"""Generate mock data in case the CSV file cannot be loaded."""
+		"""
+		Generates mock wound data for testing and development purposes.
+
+		Creates a simulated dataset with 10 patients, each having 3 visits.
+		The dataset includes wound measurements, temperature readings,
+		patient characteristics, and derived healing metrics.
+
+		Each patient starts with a random initial wound area between 10-20 units,
+		which decreases by 10% with each subsequent visit.
+
+		Returns:
+			pd.DataFrame: A DataFrame containing mock patient wound data with the following columns:
+				- Record ID: Patient identifier
+				- Event Name: Visit description (e.g., "Visit 1")
+				- Calculated Wound Area: Wound area in square units
+				- Center/Edge/Peri-wound Temperature: Temperature readings in Fahrenheit
+				- BMI: Body mass index
+				- Diabetes?: Yes/No indicator
+				- Smoking status: Never/Current/Former
+				- Visit Number: Numeric visit identifier
+				- Plus derived features and healing rates added by DataManager methods
+		"""
 		np.random.seed(42)
 		n_patients = 10
 		n_visits = 3
@@ -2150,14 +2279,25 @@ class ImpedanceAnalyzer:
 
 	def prepare_population_stats(self, df: pd.DataFrame) -> tuple:
 		"""
-		Prepare aggregated statistics for population-level impedance analysis.
+		Calculate average impedance statistics across different groupings from the wound data.
 
-		Args:
-			df: DataFrame containing impedance data
+		This function groups wound data by visit number to calculate mean impedance values,
+		and also calculates the average impedance by wound type.
 
-		Returns:
-			Tuple of DataFrames with impedance components and wound type statistics
+		Parameters
+		----------
+		df : pd.DataFrame
+			DataFrame containing wound data with columns for 'Visit Number', 'Wound Type',
+			and various impedance measurements (Z, Z', Z'').
+
+		Returns
+		-------
+		tuple
+			A tuple containing two DataFrames:
+			- avg_impedance: DataFrame with average impedance components by visit number
+			- avg_by_type: DataFrame with average impedance by wound type
 		"""
+
 		# Impedance components by visit
 		avg_impedance = df.groupby('Visit Number', observed=False)[
 			["Skin Impedance (kOhms) - Z",
@@ -2172,15 +2312,30 @@ class ImpedanceAnalyzer:
 
 	def generate_clinical_analysis(self, current_visit, previous_visit=None) -> dict:
 		"""
-		Generate comprehensive clinical analysis for a patient visit.
+		Generate a comprehensive clinical analysis based on the current visit data and optionally compare with previous visit.
 
-		Args:
-			current_visit: Dictionary with current visit data
-			previous_visit: Dictionary with previous visit data, if available
+		This method analyzes wound data to produce metrics related to tissue health, infection risk,
+		and frequency response. When previous visit data is provided, it also calculates changes
+		between visits and identifies significant changes.
 
-		Returns:
-			Dictionary with analysis results
+		Parameters
+		----------
+		current_visit : dict
+			Data from the current wound assessment visit
+		previous_visit : dict, optional
+			Data from the previous wound assessment visit for comparison, default is None
+
+		Returns
+		-------
+		dict
+			A dictionary containing the following keys:
+			- 'tissue_health': Index quantifying overall tissue health
+			- 'infection_risk': Assessment of wound infection probability
+			- 'frequency_response': Analysis of tissue composition
+			- 'changes': Differences between current and previous visit (only if previous_visit provided)
+			- 'significant_changes': Notable changes requiring attention (only if previous_visit provided)
 		"""
+
 		analysis = {}
 
 		# Calculate tissue health index
@@ -2200,13 +2355,30 @@ class ImpedanceAnalyzer:
 
 	def generate_advanced_analysis(self, visits) -> dict:
 		"""
-		Generate advanced bioelectrical analysis for a series of patient visits.
+		This method performs comprehensive analysis of wound data across multiple patient visits,
+		including healing trajectory assessment, anomaly detection, Cole parameter calculations,
+		tissue health evaluation, infection risk assessment, frequency response analysis,
+		clinical insight generation, and wound healing stage classification.
 
-		Args:
-			visits: List of visit dictionaries
+			visits (list): List of visit dictionaries containing wound measurement data. At least 3 visits are required for full analysis.
 
-		Returns:
-			Dictionary with advanced analysis results
+			dict: Dictionary with advanced analysis results containing the following keys:
+				- 'status': 'insufficient_data' if fewer than 3 visits are provided
+				- 'healing_trajectory': Analysis of wound healing progression over time
+				- 'anomalies': Detected impedance anomalies compared to previous visits
+				- 'cole_parameters': Calculated Cole model parameters for the latest visit
+				- 'tissue_health': Tissue health index from the most recent visit
+				- 'infection_risk': Assessment of infection risk based on recent measurements
+				- 'frequency_response': Analysis of bioimpedance frequency response
+				- 'insights': Generated clinical insights based on all analyses
+				- 'healing_stage': Classification of current wound healing stage
+
+		Raises:
+			None explicitly, but may propagate exceptions from called methods
+
+		Note:
+			This method requires at least 3 visits to generate a complete analysis.
+			If fewer visits are provided, returns a dictionary with status 'insufficient_data'.
 		"""
 		if len(visits) < 3:
 			return {'status': 'insufficient_data'}

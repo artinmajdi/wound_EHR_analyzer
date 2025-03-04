@@ -1,12 +1,18 @@
+# Standard library imports
+import json
 import logging
 import os
+import re
+import time
 from typing import Dict, List
 
+# Third-party imports
+import httpx
 import torch
+from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from transformers import pipeline
-from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
@@ -53,7 +59,25 @@ class WoundAnalysisLLM:
         self.thinking_process = None  # Store thinking process for models that support it
 
     def _load_model(self):
-        """Lazy loading of the model to avoid Streamlit file watcher issues"""
+        """
+        Lazily loads the appropriate language model based on the platform configuration.
+
+        This method handles loading models from different platforms:
+        - For AI Verde platform: Configures and loads OpenAI compatible models with appropriate settings
+            including special configurations for models like DeepSeek R1 (JSON output, longer timeout, streaming)
+        - For HuggingFace platform: Loads models with appropriate pipeline configurations based on model type
+            (fill-mask for Clinical BERT, text-generation for others) and detects available hardware acceleration
+
+        The model is only loaded once and cached for subsequent calls.
+
+        Raises:
+            ValueError: If the platform is not supported or if required environment variables are missing
+            Exception: If any error occurs during model loading (with logging)
+
+        Returns:
+            None: The model is stored in the instance's 'model' attribute
+        """
+
         if self.model is not None:
             return
 
@@ -112,13 +136,57 @@ class WoundAnalysisLLM:
 
     @classmethod
     def get_available_models(cls, platform: str) -> List[str]:
-        """Get list of supported models for a specific platform."""
+        """
+        Get the list of available models for a given platform.
+
+        Parameters
+        ----------
+        platform : str
+            The platform to get available models for. Must be one of the supported platforms
+            in LLM.MODEL_CATEGORIES.
+
+        Returns
+        -------
+        List[str]
+            A list of model names available for the specified platform.
+
+        Raises
+        ------
+        ValueError
+            If the specified platform is not supported.
+
+        Examples
+        --------
+        >>> LLM.get_available_models("openai")
+        ['gpt-3.5-turbo', 'gpt-4', ...]
+        """
         if platform not in cls.MODEL_CATEGORIES:
             raise ValueError(f"Platform {platform} not supported")
         return list(cls.MODEL_CATEGORIES[platform].keys())
 
     def _format_per_patient_prompt(self, patient_data: Dict) -> str:
-        """Format patient data into a prompt for the LLM."""
+        """
+        Formats the input prompt for LLM analysis per patient.
+
+        This method constructs a detailed prompt for LLM analysis by incorporating patient metadata,
+        visit history, wound measurements, and sensor data. The generated prompt includes:
+        - Patient demographics and medical profile
+        - Diabetes status and relevant metrics
+        - Medical history details
+        - Chronological visit data with wound measurements
+        - Wound characteristics (location, type, granulation, exudate)
+        - Sensor data (temperature, oxygenation, impedance at multiple frequencies)
+        - Infection status and current care details
+        - Specific analysis requirements for the LLM to address
+
+        Args:
+            patient_data (Dict): A dictionary containing patient information with two main keys:
+                - 'patient_metadata': Demographics, medical history, diabetes info
+                - 'visits': List of visit records with wound measurements and sensor data
+
+        Returns:
+            str: Formatted prompt text ready for submission to an LLM for wound analysis
+        """
         metadata = patient_data['patient_metadata']
         visits = patient_data['visits']
 
@@ -224,7 +292,32 @@ class WoundAnalysisLLM:
         return prompt
 
     def _format_population_prompt(self, population_data: Dict) -> str:
-        """Format population-level data into a clinical analysis prompt for the LLM."""
+        """
+        Format clinical population data into a detailed prompt for LLM analysis.
+
+        This method structures the population data into a comprehensive prompt that guides the LLM
+        to perform a clinical analysis of wound care data. The prompt includes sections for dataset
+        overview, demographics profile, risk factor analysis, wound characteristics, healing progression,
+        exudate analysis, and sensor data (if available).
+
+        Args:
+            population_data (Dict): Dictionary containing structured clinical population data including:
+                - summary: Overall statistics about the dataset
+                - demographics: Patient demographic information
+                - risk_factors: Information about diabetes, smoking, and comorbidities
+                - wound_characteristics: Data about wound types, locations, and size progression
+                - healing_progression: Healing status and temporal analysis
+                - exudate_analysis: Exudate characteristics and their correlation with healing
+                - sensor_data: Optional sensor measurements including temperature, impedance, and oxygenation
+
+        Returns:
+            str: Formatted prompt string ready for submission to the LLM, containing all relevant
+                 clinical data organized into sections with analysis requirements
+
+        Note:
+            The method handles missing data gracefully by using a safe_float_format helper function
+            to format values as "N/A" when they are None.
+        """
 
         # Helper function to safely format float values
         def safe_float_format(value, format_spec='.1f'):
@@ -433,25 +526,34 @@ class WoundAnalysisLLM:
 
     def _stream_analysis(self, messages, callback):
         """
-        Stream analysis results from the model.
+        Process streamed responses from the LLM, attempting to extract structured JSON data.
+
+        This method handles streaming responses from the language model, parsing incoming
+        chunks for JSON-formatted content that contains 'thinking' and 'conclusion' fields.
+        It manages connection errors gracefully and provides partial results when possible.
 
         Args:
-            messages: List of messages to send to the model
-            callback: Function to call with each chunk of streamed content
+            messages (list): A list of message objects to send to the model.
+            callback (callable, optional): A function that will be called with updates during streaming.
+                                          The callback receives a dictionary with 'type' and 'content' keys.
+                                          Types include: 'thinking', 'raw', and 'error'.
 
         Returns:
-            Final analysis results as string
+            str: The conclusion extracted from the response, or the full response if no
+                 structured conclusion was found.
+
+        Raises:
+            Various exceptions may be caught internally, but the method aims to always return
+            some form of result, even in case of errors.
         """
-        import json
-        import re
-        import httpx
-        import time
+
+
 
         # Initialize buffers for streaming content
         stream_buffer = ""
         thinking_buffer = ""
         conclusion = ""
-        
+
         try:
             # Process the streaming response
             for chunk in self.model.stream(messages):
@@ -493,7 +595,7 @@ class WoundAnalysisLLM:
                     # Call the callback with the raw chunk for any custom handling
                     if callback:
                         callback({"type": "raw", "content": chunk.content})
-        except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectTimeout, 
+        except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectTimeout,
                 httpx.ReadError, ConnectionError, httpx.HTTPError) as e:
             # Handle connection-related errors
             logger.warning(f"Streaming connection error: {str(e)}. Continuing with partial results.")
@@ -528,18 +630,39 @@ class WoundAnalysisLLM:
         # If we didn't get any conclusion but have thinking, create a simple conclusion
         if not conclusion and thinking_buffer:
             conclusion = "Analysis was interrupted. Please see the thinking process for partial analysis."
-            
+
         return conclusion
 
     def analyze_patient_data(self, patient_data: Dict, callback=None) -> str:
         """
-        Analyze patient data using the configured model.
+        Analyze patient wound data and generate clinical recommendations.
+
+        This method processes the provided patient data using the configured LLM model,
+        generates an analysis of wound conditions, and provides clinical recommendations.
+        When using DeepSeek R1, it produces a structured response with both thinking process
+        and conclusions.
+
         Args:
-            patient_data: Processed patient data dictionary
-            callback: Optional callback function to receive streaming updates
+            patient_data (Dict): A dictionary containing patient and wound information to be analyzed.
+                               Should include wound measurements, descriptions, and relevant patient history.
+            callback (callable, optional): A function that will be called with streaming updates
+                                          during analysis when supported. The callback receives a dict
+                                          with 'type' and 'content' keys. Defaults to None.
+
         Returns:
-            Analysis results as string
+            str: The analysis results and wound care recommendations. For DeepSeek R1,
+                 this is the 'conclusion' portion of the structured output.
+
+        Raises:
+            Exception: Any errors during the LLM invocation or processing of results.
+
+        Notes:
+            - Automatically loads the model if not already loaded
+            - Handles connection retries for streaming responses when using AI Verde platform
+            - Sets self.thinking_process with the detailed reasoning when available
+            - Different prompt handling for different model platforms
         """
+
         # Load model if not already loaded
         self._load_model()
         prompt = self._format_per_patient_prompt(patient_data)
@@ -547,7 +670,6 @@ class WoundAnalysisLLM:
 
         try:
             if self.platform == "ai-verde":
-                # Use AI Verde with system and human messages
                 if self.model_name == "deepseek-r1":
                     # For DeepSeek R1, request structured output with thinking
                     system_message = (
@@ -564,13 +686,35 @@ class WoundAnalysisLLM:
 
                     # Check if streaming is enabled and callback is provided
                     if getattr(self.model, 'streaming', False) and callback:
-                        return self._stream_analysis(messages, callback)
+                        # Set a maximum retries for connection issues
+                        max_retries = 3
+                        retry_count = 0
+                        last_error = None
+
+                        while retry_count < max_retries:
+                            try:
+                                return self._stream_analysis(messages, callback)
+                            except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectTimeout,
+                                    httpx.ReadError, ConnectionError, httpx.HTTPError) as e:
+                                retry_count += 1
+                                last_error = e
+                                logger.warning(f"Connection error (attempt {retry_count}/{max_retries}): {str(e)}")
+                                if callback:
+                                    callback({"type": "error", "content": f"Connection issue, retrying ({retry_count}/{max_retries})..."})
+                                time.sleep(1)  # Wait before retrying
+
+                        # If we've exhausted retries, log and return what we have
+                        logger.error(f"Failed after {max_retries} attempts: {str(last_error)}")
+                        if callback:
+                            callback({"type": "error", "content": "Maximum retries reached. Some analysis may be incomplete."})
+
+                        # Return something meaningful with the partial data we have
+                        return "Analysis was interrupted due to connection issues. Please see the thinking process for partial results."
                     else:
                         response = self.model.invoke(messages)
 
                         # Parse the JSON response
                         try:
-                            import json
                             response_data = json.loads(response.content)
                             self.thinking_process = response_data.get("thinking", "No thinking process provided")
                             return response_data.get("conclusion", response.content)
@@ -607,38 +751,6 @@ class WoundAnalysisLLM:
                     generated_text = response['generated_text']
 
                 return generated_text
-                # # Clean up the response
-                # analysis = generated_text.replace(combined_prompt, '').strip()
-
-                # # Format the analysis with clear sections
-                # sections = [
-                #     "Key Patterns and Trends",
-                #     "Risk Factor Analysis",
-                #     "Treatment Effectiveness",
-                #     "Sensor Data Insights",
-                #     "Clinical Recommendations",
-                #     "Future Directions"
-                # ]
-
-                # formatted_analysis = ""
-                # current_section = ""
-                # for line in analysis.split('\n'):
-                #     # Check if line starts a new section
-                #     is_section = False
-                #     for section in sections:
-                #         if section.lower() in line.lower():
-                #             current_section = section
-                #             formatted_analysis += f"\n## {section}\n"
-                #             is_section = True
-                #             break
-
-                #     if not is_section and line.strip():
-                #         if not current_section:
-                #             current_section = "Analysis"
-                #             formatted_analysis += "\n## General Analysis\n"
-                #         formatted_analysis += line + "\n"
-
-                # return formatted_analysis.strip()
 
         except Exception as e:
             logger.error(f"Error during analysis: {str(e)}")
@@ -646,13 +758,40 @@ class WoundAnalysisLLM:
 
     def analyze_population_data(self, population_data: Dict, callback=None) -> str:
         """
-        Analyze population-level data using the configured model.
-        Args:
-            population_data: Processed population data dictionary
-            callback: Optional callback function to receive streaming updates
-        Returns:
-            Analysis results as string
+        Analyzes population-level wound data to provide clinical insights and recommendations.
+
+        This method processes population-level wound data through the configured LLM (Large Language Model)
+        to generate structured analysis with clinical insights. When using DeepSeek R1, the response
+        includes both thinking process and conclusions in structured format. The method supports streaming
+        responses with retry logic for handling connection issues.
+
+        Parameters
+        ----------
+        population_data : Dict
+            A dictionary containing population-level wound data to analyze. This should include
+            metrics, demographics, and other relevant wound care information across a patient population.
+        callback : Callable, optional
+            A function to handle streaming responses when available. The callback receives message chunks
+            during streaming for real-time display of the analysis progress.
+
+        Returns
+        -------
+        str
+            A string containing the analysis results, including clinical insights and recommendations
+            based on the provided population data.
+
+        Raises
+        ------
+        Exception
+            If an error occurs during the analysis process.
+
+        Notes
+        -----
+        - The method stores the model's thinking process in self.thinking_process when using DeepSeek R1.
+        - For AI-Verde platform, different prompt strategies are used depending on the model.
+        - Connection issues during streaming are handled with automatic retries.
         """
+
         # Load model if not already loaded
         self._load_model()
         prompt = self._format_population_prompt(population_data)
@@ -676,13 +815,35 @@ class WoundAnalysisLLM:
 
                     # Check if streaming is enabled and callback is provided
                     if getattr(self.model, 'streaming', False) and callback:
-                        return self._stream_analysis(messages, callback)
+                        # Set a maximum retries for connection issues
+                        max_retries = 3
+                        retry_count = 0
+                        last_error = None
+
+                        while retry_count < max_retries:
+                            try:
+                                return self._stream_analysis(messages, callback)
+                            except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectTimeout,
+                                    httpx.ReadError, ConnectionError, httpx.HTTPError) as e:
+                                retry_count += 1
+                                last_error = e
+                                logger.warning(f"Connection error (attempt {retry_count}/{max_retries}): {str(e)}")
+                                if callback:
+                                    callback({"type": "error", "content": f"Connection issue, retrying ({retry_count}/{max_retries})..."})
+                                time.sleep(1)  # Wait before retrying
+
+                        # If we've exhausted retries, log and return what we have
+                        logger.error(f"Failed after {max_retries} attempts: {str(last_error)}")
+                        if callback:
+                            callback({"type": "error", "content": "Maximum retries reached. Some analysis may be incomplete."})
+
+                        # Return something meaningful with the partial data we have
+                        return "Analysis was interrupted due to connection issues. Please see the thinking process for partial results."
                     else:
                         response = self.model.invoke(messages)
 
                         # Parse the JSON response
                         try:
-                            import json
                             response_data = json.loads(response.content)
                             self.thinking_process = response_data.get("thinking", "No thinking process provided")
                             return response_data.get("conclusion", response.content)

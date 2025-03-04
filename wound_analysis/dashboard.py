@@ -33,7 +33,25 @@ def debug_log(message):
 
 @dataclass
 class Config:
-	"""Application configuration settings."""
+	"""Configuration class for the Wound Care Management & Interpreter Dashboard.
+
+	This class defines constants, settings, and utility methods used throughout the
+	dashboard application, including page layout settings, data schema definitions,
+	and analysis parameters.
+
+	Attributes:
+		PAGE_TITLE (str): The title displayed on the dashboard.
+		PAGE_ICON (str): The emoji icon used for the page favicon.
+		LAYOUT (str): The Streamlit layout type, set to "wide".
+		COLUMN_SCHEMA (DataColumns): Schema definition for data columns.
+		EXUDATE_TYPE_INFO (dict): Dictionary containing clinical information about different
+			types of wound exudate, including descriptions, clinical indications, and severity levels.
+
+	Methods:
+		get_exudate_analysis: Analyzes exudate characteristics and provides clinical interpretation.
+		initialize: Sets up the Streamlit session state with necessary variables.
+	"""
+
 	PAGE_TITLE: str = "Wound Care Management & Interpreter Dashboard"
 	PAGE_ICON : str = "🩹"
 	LAYOUT    : str = "wide"
@@ -94,6 +112,7 @@ class Config:
 				- type_info: Information about the exudate type
 				- treatment_implications: List of treatment recommendations
 		"""
+
 		result = {
 			"volume_analysis": "",
 			"viscosity_analysis": "",
@@ -191,28 +210,101 @@ class Config:
 		if 'report_path' not in st.session_state:
 			st.session_state.report_path = None
 
-class SessionStateManager:
-	pass
 
 class Visualizer:
-	"""Handles data visualization."""
+	"""A class that provides visualization methods for wound analysis data.
+
+	The Visualizer class contains static methods for creating various plots and charts
+	to visualize wound healing metrics over time. These visualizations help in monitoring
+	patient progress and comparing trends across different patients.
+
+	Methods
+	create_wound_area_plot(df, patient_id=None)
+		Create a wound area progression plot for one or all patients.
+
+	create_temperature_chart(df)
+		Create a chart showing wound temperature measurements and gradients.
+
+	create_impedance_chart(visits, measurement_mode="Absolute Impedance (|Z|)")
+		Create an interactive chart showing impedance measurements over time.
+
+	create_oxygenation_chart(patient_data, visits)
+		Create charts showing oxygenation and hemoglobin measurements over time.
+
+	create_exudate_chart(visits)
+		Create a chart showing exudate characteristics over time.
+
+	Private Methods
+	--------------
+	_remove_outliers(df, column, quantile_threshold=0.1)
+		Remove outliers from a DataFrame column using IQR and z-score methods.
+
+	_create_all_patients_plot(df)
+		Create an interactive line plot showing wound area progression for all patients.
+
+	_create_single_patient_plot(df, patient_id)
+		Create a detailed wound area and dimensions plot for a single patient.
+	"""
 
 	@staticmethod
 	def create_wound_area_plot(df: pd.DataFrame, patient_id: Optional[int] = None) -> go.Figure:
-		"""Create wound area progression plot."""
+		"""
+		Create a wound area progression plot for either a single patient or all patients.
+
+		This function generates a visualization of wound area changes over time.
+		If a patient_id is provided, it creates a plot specific to that patient.
+		Otherwise, it creates a comparative plot for all patients in the DataFrame.
+
+		Parameters
+		----------
+		df : pd.DataFrame
+			DataFrame containing wound area measurements and dates
+		patient_id : Optional[int], default=None
+			The ID of a specific patient to plot. If None, plots data for all patients
+
+		Returns
+		-------
+		go.Figure
+			A Plotly figure object containing the wound area progression plot
+		"""
 		if patient_id:
 			return Visualizer._create_single_patient_plot(df, patient_id)
 		return Visualizer._create_all_patients_plot(df)
 
 	@staticmethod
 	def _remove_outliers(df: pd.DataFrame, column: str, quantile_threshold: float = 0.1) -> pd.DataFrame:
-		"""Remove outliers using quantile thresholds and z-score validation.
-
-		Args:
-			df: DataFrame containing the data
-			column: Column name to check for outliers
-			quantile_threshold: Value between 0 and 0.5 for quantile-based filtering (0 = no filtering)
 		"""
+		Remove outliers from a DataFrame column using a combination of IQR and z-score methods.
+
+		This function identifies and filters out outlier values in the specified column
+		using both the Interquartile Range (IQR) method and z-scores. It's designed to be
+		conservative in outlier removal, requiring that values pass both tests to be retained.
+
+		Parameters
+		----------
+		df : pd.DataFrame
+			The input DataFrame containing the column to be filtered
+		column : str
+			The name of the column to remove outliers from
+		quantile_threshold : float, default=0.1
+			The quantile threshold used to calculate Q1 and Q3
+			Lower values result in more aggressive filtering
+			Value must be > 0; if ≤ 0, no filtering is performed
+
+		Returns
+		-------
+		pd.DataFrame
+			A filtered copy of the input DataFrame with outliers removed
+
+		Notes
+		-----
+		- Values less than 0 are considered outliers (forced to lower_bound of 0)
+		- If all values are the same (IQR=0) or there are fewer than 3 data points, the original DataFrame is returned unchanged
+		- The function combines two outlier detection methods:
+			1. IQR method: filters values outside [Q1-1.5*IQR, Q3+1.5*IQR]
+			2. Z-score method: filters values with z-score > 3
+		"""
+
 		try:
 			if quantile_threshold <= 0 or len(df) < 3:  # Not enough data points or no filtering requested
 				return df
@@ -243,7 +335,36 @@ class Visualizer:
 
 	@staticmethod
 	def _create_all_patients_plot(df: pd.DataFrame) -> go.Figure:
-		"""Create wound area plot for all patients."""
+		"""
+		Create an interactive line plot showing wound area progression for all patients over time.
+
+		This function generates a Plotly figure where each patient's wound area is plotted against
+		days since their first visit. The plot includes interactive features such as hovering for
+		patient details and an outlier threshold control to filter extreme values.
+
+		Parameters
+		----------
+		df : pd.DataFrame
+			DataFrame containing patient wound data with columns:
+			- 'Record ID': Patient identifier
+			- 'Visit date': Date of the wound assessment
+			- 'Calculated Wound Area': Wound area measurements in square centimeters
+
+		Returns
+		-------
+		go.Figure
+			A Plotly figure object containing the wound area progression plot for all patients.
+			The figure includes:
+			- Individual patient lines with distinct colors
+			- Interactive hover information with patient ID and wound area
+			- Y-axis automatically scaled based on outlier threshold setting
+			- Annotation explaining outlier removal status
+
+		Notes
+		-----
+		The function adds a Streamlit number input widget for controlling outlier removal threshold.
+		Patient progression lines are colored based on their healing rates.
+		"""
 		# Add outlier threshold control
 		col1, col2 = st.columns([4, 1])
 		with col2:
@@ -2749,8 +2870,12 @@ class Dashboard:
 			DataManager.download_word_report(st=st, report_path=llm_reports['report_path'])
 
 
-		def _run_llm_analysis(patient_data, prompt):
+		def stream_callback(data):
+			if data["type"] == "thinking":
+				thinking_container.markdown(f"### Thinking Process\n\n{data['content']}")
 
+
+		def _run_llm_analysis(prompt: str, patient_metadata: dict=None, analysis_results: dict=None) -> dict:
 
 			if self.llm_model == "deepseek-r1":
 
@@ -2762,49 +2887,26 @@ class Dashboard:
 				thinking_container = st.empty()
 				thinking_container.markdown("### Thinking Process\n\n*Thinking...*")
 
-				# Define callback for streaming updates
-				def stream_callback(data):
-					if data["type"] == "thinking":
-						thinking_container.markdown(f"### Thinking Process\n\n{data['content']}")
-
-				# Run analysis with streaming
-				analysis = llm.analyze_patient_data(patient_data, callback=stream_callback)
-
 				# Update the analysis container with final results
 				analysis_container.markdown(f"### Analysis\n\n{analysis}")
 
-				# Get thinking process
 				thinking_process = llm.get_thinking_process()
 
-				# Generate report
-				report_path = DataManager.create_and_save_report(patient_metadata=patient_data, analysis_results=analysis, report_path=None)
-
-				# Return data dictionary
-				return dict(
-					analysis_results=analysis,
-					patient_metadata=patient_data['patient_metadata'],
-					prompt=prompt,
-					report_path=report_path,
-					thinking_process=thinking_process
-				)
 			else:
+				thinking_process = None
 
-				analysis = llm.analyze_patient_data(patient_data)
 
-				# Get thinking process if available
-				thinking_process = llm.get_thinking_process()
+			# Store analysis in session state for this patient
+			report_path = DataManager.create_and_save_report(patient_metadata=patient_metadata, analysis_results=analysis_results, report_path=None)
 
-				# Store analysis in session state for this patient
-				report_path = DataManager.create_and_save_report(patient_metadata=patient_data, analysis_results=analysis, report_path=None)
-
-				# Return data dictionary
-				return dict(
-					analysis_results=analysis,
-					patient_metadata=patient_data['patient_metadata'],
-					prompt=prompt,
-					report_path=report_path,
-					thinking_process=thinking_process
-				)
+			# Return data dictionary
+			return dict(
+				analysis_results = analysis,
+				patient_metadata = patient_metadata,
+				prompt           = prompt,
+				report_path      = report_path,
+				thinking_process = thinking_process
+			)
 
 		st.header("LLM-Powered Wound Analysis")
 
@@ -2816,12 +2918,14 @@ class Dashboard:
 
 			llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
 
+			callback = stream_callback if self.llm_model == "deepseek-r1" else None
 
 			if selected_patient == "All Patients":
 				if st.button("Run Analysis", key="run_analysis"):
-					patient_data = self.data_processor.get_population_statistics()
-					prompt = llm._format_population_prompt(patient_data)
-					st.session_state.llm_reports['all_patients'] = _run_llm_analysis(patient_data=patient_data, prompt=prompt)
+					population_data = self.data_processor.get_population_statistics()
+					prompt = llm._format_population_prompt(population_data=population_data)
+					analysis = llm.analyze_population_data(population_data=population_data, callback=callback)
+					st.session_state.llm_reports['all_patients'] = _run_llm_analysis(prompt=prompt, analysis_results=analysis, patient_metadata=population_data)
 
 				# Display analysis if it exists for this patient
 				if 'all_patients' in st.session_state.llm_reports:
@@ -2833,8 +2937,9 @@ class Dashboard:
 
 				if st.button("Run Analysis", key="run_analysis"):
 					patient_data = self.data_processor.get_patient_visits(int(patient_id))
-					prompt = llm._format_per_patient_prompt(patient_data)
-					st.session_state.llm_reports[patient_id] = _run_llm_analysis(patient_data=patient_data, prompt=prompt)
+					prompt = llm._format_per_patient_prompt(patient_data=patient_data)
+					analysis = llm.analyze_patient_data(patient_data=patient_data, callback=callback)
+					st.session_state.llm_reports[patient_id] = _run_llm_analysis(prompt=prompt, analysis_results=analysis, patient_metadata=patient_data['patient_metadata'])
 
 				# Display analysis if it exists for this patient
 				if patient_id in st.session_state.llm_reports:
@@ -2941,6 +3046,11 @@ class Dashboard:
 				index=available_models.index(default_model) if default_model in available_models else 0
 			)
 
+			# Add warning for deepseek-r1 model
+			if self.llm_model == "deepseek-r1":
+				st.warning("**Warning:** The DeepSeek R1 model is currently experiencing connection issues. Please select a different model for reliable results.", icon="⚠️")
+				self.llm_model = "llama-3.3-70b-fp8"
+
 			with st.expander("Advanced Model Settings"):
 
 				api_key = st.text_input("API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
@@ -2953,24 +3063,6 @@ class Dashboard:
 						os.environ["OPENAI_BASE_URL"] = base_url
 
 
-			# st.header("About This Dashboard")
-			# st.write("""
-			# This Streamlit dashboard visualizes wound healing data collected with smart bandage technology.
-
-			# The analysis focuses on key metrics:
-			# - Impedance measurements (Z, Z', Z'')
-			# - Temperature gradients
-			# - Oxygenation levels
-			# - Patient risk factors
-			# """)
-
-			# st.header("Statistical Methods")
-			# st.write("""
-			# The visualization is supported by these statistical approaches:
-			# - Longitudinal analysis of healing trajectories
-			# - Risk factor significance assessment
-			# - Comparative analysis across wound types
-			# """)
 
 	def _render_all_patients_overview(self, df: pd.DataFrame) -> None:
 		"""
