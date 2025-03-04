@@ -2869,11 +2869,6 @@ class Dashboard:
 			DataManager.download_word_report(st=st, report_path=llm_reports['report_path'])
 
 
-		def stream_callback(data):
-			if data["type"] == "thinking":
-				thinking_container.markdown(f"### Thinking Process\n\n{data['content']}")
-
-
 		def _run_llm_analysis(prompt: str, patient_metadata: dict=None, analysis_results: dict=None) -> dict:
 
 			if self.llm_model == "deepseek-r1":
@@ -2883,7 +2878,7 @@ class Dashboard:
 				analysis_container.markdown("### Analysis\n\n*Generating analysis...*")
 
 				# Create a container for the thinking process
-				thinking_container = st.empty()
+
 				thinking_container.markdown("### Thinking Process\n\n*Thinking...*")
 
 				# Update the analysis container with final results
@@ -2907,7 +2902,13 @@ class Dashboard:
 				thinking_process = thinking_process
 			)
 
+		def stream_callback(data):
+			if data["type"] == "thinking":
+				thinking_container.markdown(f"### Thinking Process\n\n{data['content']}")
+
 		st.header("LLM-Powered Wound Analysis")
+
+		thinking_container = st.empty()
 
 		# Initialize reports dictionary in session state if it doesn't exist
 		if 'llm_reports' not in st.session_state:

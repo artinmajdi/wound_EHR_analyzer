@@ -5,8 +5,8 @@ import pathlib
 from datetime import datetime
 from typing import Tuple
 
-from utils.data_processor import WoundDataProcessor, DataManager
-from utils.llm_interface import WoundAnalysisLLM
+from wound_analysis.utils.data_processor import WoundDataProcessor, DataManager
+from wound_analysis.utils.llm_interface import WoundAnalysisLLM
 
 def setup_logging(log_dir: pathlib.Path) -> Tuple[pathlib.Path, pathlib.Path]:
     """Set up logging configuration and return log file paths."""

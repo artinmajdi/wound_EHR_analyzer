@@ -60,6 +60,12 @@ See [INSTALL.md](INSTALL.md) for detailed pip installation instructions.
 ./scripts/run_docker.sh start
 
 # 3. Access the dashboard at http://localhost:8501
+
+# 4. Run CLI analysis for a specific patient record
+./scripts/run_docker.sh cli 41
+
+# 5. Verify dataset structure and integrity
+./scripts/run_docker.sh verify
 ```
 
 #### Option 2: Conda Environment (Recommended for Development)

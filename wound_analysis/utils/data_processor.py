@@ -954,25 +954,27 @@ class DataManager:
 			# 3. Calculate healing rate (% change in wound area per visit)
 			healing_rates = []
 			for i, row in patient_data.iterrows():
-				if row['Visit Number'] == 1 or len(patient_data[patient_data['Visit Number'] < row['Visit Number']]) == 0:
-					healing_rates.append(0)  # No healing rate for first visit
+				# If first visit or no previous visits exist, healing rate is 0
+				if row['Visit Number'] == 1:
+					healing_rates.append(0)
+					continue
+
+				# Get the most recent previous visit using idxmax() instead of filtering twice
+				prev_visits = patient_data[patient_data['Visit Number'] < row['Visit Number']]
+				if prev_visits.empty:
+					healing_rates.append(0)
+					continue
+
+				prev_visit_idx = prev_visits['Visit Number'].idxmax()
+				prev_area = patient_data.loc[prev_visit_idx, wc.wound_area]
+				curr_area = row[wc.wound_area]
+
+				# Calculate healing rate if values are valid
+				if pd.notna(prev_area) and pd.notna(curr_area) and prev_area > 0:
+					healing_rate = (prev_area - curr_area) / prev_area * 100
+					healing_rates.append(healing_rate)
 				else:
-					# Find the most recent previous visit
-					prev_visits = patient_data[patient_data['Visit Number'] < row['Visit Number']]
-					prev_visit  = prev_visits[prev_visits['Visit Number'] == prev_visits['Visit Number'].max()]
-
-					if len(prev_visit) > 0 and wc.wound_area in patient_data.columns:
-						prev_area = prev_visit[wc.wound_area].values[0]
-						curr_area = row[wc.wound_area]
-
-						# Check for valid values to avoid division by zero
-						if prev_area > 0 and not pd.isna(prev_area) and not pd.isna(curr_area):
-							healing_rate = (prev_area - curr_area) / prev_area * 100  # Percentage decrease
-							healing_rates.append(healing_rate)
-						else:
-							healing_rates.append(0)
-					else:
-						healing_rates.append(0)
+					healing_rates.append(0)
 
 			# Calculate average healing rate and determine if improving
 			valid_rates = [rate for rate in healing_rates if rate > 0]
@@ -1027,17 +1029,17 @@ class DataManager:
 
 		# Get column names from schema
 		schema = DataColumns()
-		pi = schema.patient_identifiers
-		vis = schema.visit_info
-		temp = schema.temperature
-		dem = schema.demographics
-		hm = schema.healing_metrics
+		pi     = schema.patient_identifiers
+		vis    = schema.visit_info
+		temp   = schema.temperature
+		dem    = schema.demographics
+		hm     = schema.healing_metrics
 
 		# Temperature gradients
 		if all(col in df.columns for col in [temp.center_temp, temp.edge_temp, temp.peri_temp]):
 			df[temp.center_edge_gradient] = df[temp.center_temp] - df[temp.edge_temp]
-			df[temp.edge_peri_gradient] = df[temp.edge_temp] - df[temp.peri_temp]
-			df[temp.total_temp_gradient] = df[temp.center_temp] - df[temp.peri_temp]
+			df[temp.edge_peri_gradient]   = df[temp.edge_temp] - df[temp.peri_temp]
+			df[temp.total_temp_gradient]  = df[temp.center_temp] - df[temp.peri_temp]
 
 		# BMI categories
 		if dem.bmi in df.columns:
@@ -1057,9 +1059,9 @@ class DataManager:
 			)
 
 			# Initialize columns with explicit dtypes
-			df[hm.healing_rate] = pd.Series(0.0, index=df.index, dtype=float)
+			df[hm.healing_rate]           = pd.Series(0.0, index=df.index, dtype=float)
 			df[hm.estimated_days_to_heal] = pd.Series(np.nan, index=df.index, dtype=float)
-			df[hm.overall_improvement] = pd.Series(np.nan, index=df.index, dtype=str)
+			df[hm.overall_improvement]    = pd.Series(np.nan, index=df.index, dtype=str)
 
 		return df
 
@@ -2185,7 +2187,7 @@ class ImpedanceAnalyzer:
 		or Remodeling phase by analyzing tissue health scores, frequency response characteristics,
 		and Cole parameters from bioimpedance measurements.
 
-		Parameters:
+		Parameters
 		----------
 		analyses : dict
 			A dictionary containing various wound analysis results with the following keys:
@@ -2193,7 +2195,7 @@ class ImpedanceAnalyzer:
 			- 'frequency_response': dict with keys 'alpha_dispersion' and 'beta_dispersion'
 			- 'cole_parameters': dict containing Cole-Cole model parameters
 
-		Returns:
+		Returns
 		-------
 		dict
 			A dictionary with the following keys:
@@ -2201,7 +2203,7 @@ class ImpedanceAnalyzer:
 			- 'characteristics': list, notable characteristics of the identified stage
 			- 'confidence': str, confidence level of the classification ('Low', 'Moderate', or 'High')
 
-		Notes:
+		Notes
 		-----
 		The classification uses the following general criteria:
 		- Inflammatory: High alpha dispersion, low tissue health score
@@ -2508,4 +2510,3 @@ class ImpedanceAnalyzer:
 		df['Visit date'] = pd.to_datetime(df['Visit date']).dt.strftime('%m-%d-%Y')
 
 		return df
-

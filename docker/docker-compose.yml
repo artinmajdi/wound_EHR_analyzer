@@ -1,7 +1,6 @@
-
 services:
   wound-analysis:
-    build: 
+    build:
       context: ..
       dockerfile: docker/Dockerfile
     ports:
@@ -19,7 +18,7 @@ services:
     # command: bash -c "ls -la /app/dataset && ls -la /app/dataset/impedance_frequency_sweep && streamlit run wound_analysis/dashboard.py"
 
   cli:
-    build: 
+    build:
       context: ..
       dockerfile: docker/Dockerfile
     volumes:
@@ -29,12 +28,13 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL}
       - PYTHONPATH=/app
-    command: python wound_analysis/main.py --record-id 41
+      - RECORD_ID=${RECORD_ID:-41}  # Default to 41 if not set
+    command: python wound_analysis/main.py --record-id ${RECORD_ID:-41}
     profiles:
       - cli
 
   verify:
-    build: 
+    build:
       context: ..
       dockerfile: docker/Dockerfile
     volumes:
