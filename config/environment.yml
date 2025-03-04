@@ -11,4 +11,4 @@ dependencies:
   - scipy
   - plotly
   - pip:
-    - -r requirements.txt
+    - -r ../requirements.txt

@@ -5,6 +5,7 @@ import os
 import re
 import time
 from typing import Dict, List
+import pathlib
 
 # Third-party imports
 import httpx
@@ -15,7 +16,7 @@ from langchain_openai import ChatOpenAI
 from transformers import pipeline
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent / '.env')
 
 logger = logging.getLogger(__name__)
 
