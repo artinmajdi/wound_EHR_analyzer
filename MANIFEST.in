@@ -1,0 +1,10 @@
+include LICENSE
+include README.md
+include requirements.txt
+recursive-include config *
+recursive-include docs *.md
+recursive-include scripts *.sh
+recursive-include wound_analysis *.py
+recursive-include wound_analysis/utils *.py
+prune dataset
+prune tests
