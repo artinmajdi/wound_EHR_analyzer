@@ -24,6 +24,8 @@ case $1 in
     echo "Starting Docker containers..."
     # Use --env-file to explicitly point to the .env file
     docker compose -f "$ROOT_DIR/docker/docker-compose.yml" --env-file "$ROOT_DIR/.env" up -d
+    echo " ✔ Docker containers started successfully."
+    echo " ✔ You can now access the application at http://localhost:8501/"
     ;;
   stop)
     echo "Stopping Docker containers..."

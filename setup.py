@@ -35,7 +35,7 @@ setup(
     entry_points={
         'console_scripts': [
             'wound-analysis=wound_analysis.main:main',
-            'wound-dashboard=wound_analysis.dashboard:main',
+            'wound-dashboard=wound_analysis.cli:run_dashboard',
         ],
     },
     keywords="wound care, healthcare, LLM, AI, medical analysis",

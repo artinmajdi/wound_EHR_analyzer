@@ -536,16 +536,14 @@ class WoundAnalysisLLM:
         Args:
             messages (list): A list of message objects to send to the model.
             callback (callable, optional): A function that will be called with updates during streaming.
-                                          The callback receives a dictionary with 'type' and 'content' keys.
-                                          Types include: 'thinking', 'raw', and 'error'.
+                                            The callback receives a dictionary with 'type' and 'content' keys.
+                                            Types include: 'thinking', 'raw', and 'error'.
 
         Returns:
-            str: The conclusion extracted from the response, or the full response if no
-                 structured conclusion was found.
+            str: The conclusion extracted from the response, or the full response if no structured conclusion was found.
 
         Raises:
-            Various exceptions may be caught internally, but the method aims to always return
-            some form of result, even in case of errors.
+            Various exceptions may be caught internally, but the method aims to always return some form of result, even in case of errors.
         """
 
 

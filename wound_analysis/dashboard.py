@@ -210,7 +210,6 @@ class Config:
 		if 'report_path' not in st.session_state:
 			st.session_state.report_path = None
 
-
 class Visualizer:
 	"""A class that provides visualization methods for wound analysis data.
 

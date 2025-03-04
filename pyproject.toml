@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wound_analysis"
+version = "1.0.0"
+description = "Wound Care Analysis System using LLMs and sensor data"
+readme = "README.md"
+authors = [
+    {name = "Artin Majdi", email = "artinmajdi@example.com"}
+]
+license = {text = "CC BY-NC 4.0"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Healthcare Industry",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+keywords = ["wound care", "healthcare", "LLM", "AI", "medical analysis"]
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "scipy>=1.11.0",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "python-docx>=0.8.11",
+    "python-dotenv>=0.19.0",
+    "streamlit>=1.30.0",
+    "plotly>=5.18.0",
+    "pillow>=10.0.0",
+    "pydantic>=2.0.0",
+    "langchain-core>=0.1.0",
+    "langchain-openai>=0.0.1",
+    "openai>=0.27.0",
+    "openpyxl>=3.1.0",
+    "protobuf>=3.20.0",
+    "sacremoses",
+    "watchdog"
+]
+
+[project.urls]
+Homepage = "https://github.com/artinmajdi/Wound_management_interpreter_LLM"
+Documentation = "https://github.com/artinmajdi/Wound_management_interpreter_LLM/docs"
+Repository = "https://github.com/artinmajdi/Wound_management_interpreter_LLM.git"
+Issues = "https://github.com/artinmajdi/Wound_management_interpreter_LLM/issues"
+
+[project.scripts]
+wound-analysis = "wound_analysis.main:main"
+wound-dashboard = "wound_analysis.cli:run_dashboard"
+
+[tool.setuptools]
+packages = ["wound_analysis"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+wound_analysis = ["**/*.py"]

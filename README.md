@@ -32,6 +32,24 @@ This application leverages large language models (LLMs) to analyze wound care da
 
 We provide convenient scripts for all setup operations. Choose the deployment method that best fits your needs:
 
+#### Option 0: Pip Installation (Simplest Method)
+
+```bash
+# Install directly from PyPI (once published)
+pip install wound-analysis
+
+# Or install the latest version from GitHub
+pip install git+https://github.com/artinmajdi/Wound_management_interpreter_LLM.git
+
+# Run the dashboard
+wound-dashboard
+
+# Or run analysis from command line
+wound-analysis --record-id 41
+```
+
+See [INSTALL.md](INSTALL.md) for detailed pip installation instructions.
+
 #### Option 1: Docker Deployment (Recommended for Production)
 
 ```bash
