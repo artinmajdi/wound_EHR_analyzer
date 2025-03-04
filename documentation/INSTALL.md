@@ -1,5 +1,7 @@
 # Installation Guide for Wound Management Interpreter LLM
 
+[← Back to Main README](../README.md) | [Documentation Index](index.md)
+
 This document provides instructions for installing the Wound Management Interpreter LLM package using pip.
 
 ## Installation Methods
