@@ -1,0 +1,16 @@
+name: wound_analysis
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - pandas
+  - matplotlib
+  - scipy
+  - plotly
+  - pip:
+    - python-dotenv>=0.19.0
+    - watchdog>=2.3.0
+    - -r ../config/requirements.txt
