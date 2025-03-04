@@ -1,5 +1,7 @@
 # Installation Guide for Wound Management Interpreter LLM
 
+[← Back to Main README](../README.md) | [Documentation Index](index.md)
+
 This document provides instructions for installing the Wound Management Interpreter LLM package using pip.
 
 ## Installation Methods
@@ -79,4 +81,4 @@ twine upload dist/*
 
 ## Build and Publish Process
 
-Make sure to update the version number in `config/setup.py` before publishing a new release.
+Make sure to update the version number in `setup.py` before publishing a new release.

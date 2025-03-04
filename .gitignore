@@ -20,6 +20,9 @@ wheels/
 .installed.cfg
 *.egg
 
+wound_analysis/utils/logs/*.docx
+wound_analysis/utils/logs/*.log
+
 # Virtual Environment
 venv/
 ENV/

@@ -17,8 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Install the package in development mode
-# Try to install from root first (using symlinks) and fall back to config directory if needed
-RUN pip install -e . || pip install -e config/
+RUN pip install -e .
 
 # Create directories for data and output if they don't exist
 RUN mkdir -p dataset/impedance_frequency_sweep

@@ -3,7 +3,7 @@
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 
-A professional AI-powered tool for analyzing and interpreting wound care management data, providing healthcare professionals with advanced insights and recommendations.
+An AI-powered tool for analyzing and interpreting wound care management data, providing healthcare professionals with advanced insights and recommendations.
 
 <!-- [📚 View Full Documentation](docs/index.md) -->
 
@@ -99,22 +99,33 @@ streamlit run wound_analysis/dashboard.py
 
 ## Documentation
 
-- [**Configuration Guide**](docs/configuration.md): Environment variables and configuration options
-- [**Docker Usage Guide**](docs/docker_usage.md): Detailed containerization instructions
-- [**API Documentation**](docs/index.md): API reference and component documentation
+- [**Configuration Guide**](documentation/configuration.md): Environment variables and configuration options
+- [**Docker Usage Guide**](documentation/docker_usage.md): Detailed containerization instructions
+- [**API Documentation**](documentation/index.md): API reference and component documentation
+- [**Installation Guide**](documentation/INSTALL.md): Pip installation instructions
 
 ## Project Structure
 
 ```
 wound_management_interpreter_LLM/
+├── setup.py                  # Package configuration
 ├── config/                   # Configuration files
 │   ├── .env.example          # Template for environment variables
-│   └── environment.yml       # Conda environment specification
+│   ├── environment.yml       # Conda environment specification
+│   ├── MANIFEST.in           # Package manifest file
+│   ├── pyproject.toml        # Modern Python project metadata
+│   ├── pytest.ini            # PyTest configuration
+│   └── requirements.txt      # Python dependencies
+├── documentation/            # Documentation files
+│   ├── INSTALL.md            # Installation instructions
+│   ├── LICENSE               # License file
+│   ├── configuration.md      # Configuration guide
+│   ├── docker_usage.md       # Docker deployment instructions
+│   └── index.md              # Documentation index
 ├── docker/                   # Docker configuration
 │   ├── Dockerfile            # Container definition
 │   ├── docker-compose.yml    # Service orchestration
 │   └── .dockerignore         # Build exclusions
-├── docs/                     # Documentation
 ├── scripts/                  # Utility scripts
 │   ├── run_docker.sh         # Docker management script
 │   ├── setup_conda.sh        # Conda environment setup
@@ -123,18 +134,12 @@ wound_management_interpreter_LLM/
 ├── wound_analysis/           # Core application code
 │   ├── dashboard.py          # Streamlit interface
 │   ├── main.py               # CLI entry point
+│   ├── cli.py                # Command line interface
 │   └── utils/                # Utility modules
 ├── dataset/                  # Data directory (mounted at runtime)
-├── requirements.txt          # Python dependencies
-└── setup.py                  # Package configuration
-├── documentation/           # Documentation files
-│   ├── INSTALL.md          # Installation instructions
-│   └── LICENSE             # License file
-└── config/                 # Configuration files
-    ├── .env.example        # Template for environment variables
-    ├── environment.yml     # Conda environment specification
-    ├── requirements.txt    # Python dependencies
-    └── setup.py            # Package configuration
+├── .env                      # Environment variables
+└── ide_config/               # IDE configuration
+    └── Wound_management_interpreter_LLM.code-workspace  # VSCode workspace file
 ```
 
 ## License
