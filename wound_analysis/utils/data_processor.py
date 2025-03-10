@@ -875,6 +875,8 @@ class DataManager:
 			pd.DataFrame: The preprocessed wound data.
 		"""
 
+		df = df.copy()
+
 		# Get column names from schema
 		schema = DataColumns()
 		pi = schema.patient_identifiers
@@ -1026,6 +1028,28 @@ class DataManager:
 
 	@staticmethod
 	def _create_derived_features(df: pd.DataFrame) -> pd.DataFrame:
+		"""
+		Creates derived features from raw dataframe columns.
+
+		This function adds new calculated columns to the input DataFrame based on existing data:
+		- Temperature gradients (center-edge, edge-perimeter, total gradients)
+		- BMI categorization using standard health ranges
+		- Days since first visit for each patient
+		- Initializes healing metric columns (healing rate, estimated days to heal, overall improvement)
+
+		Parameters
+		----------
+		df : pd.DataFrame
+			Input DataFrame containing wound assessment data with columns specified in DataColumns schema
+
+		Returns
+		-------
+		pd.DataFrame
+			DataFrame with original columns plus newly derived features
+		"""
+
+		# Make a copy to avoid SettingWithCopyWarning
+		df = df.copy()
 
 		# Get column names from schema
 		schema = DataColumns()
@@ -1038,7 +1062,7 @@ class DataManager:
 		# Temperature gradients
 		if all(col in df.columns for col in [temp.center_temp, temp.edge_temp, temp.peri_temp]):
 			df[temp.center_edge_gradient] = df[temp.center_temp] - df[temp.edge_temp]
-			df[temp.edge_peri_gradient]   = df[temp.edge_temp] - df[temp.peri_temp]
+			df[temp.edge_peri_gradient]   = df[temp.edge_temp]   - df[temp.peri_temp]
 			df[temp.total_temp_gradient]  = df[temp.center_temp] - df[temp.peri_temp]
 
 		# BMI categories
@@ -1059,9 +1083,9 @@ class DataManager:
 			)
 
 			# Initialize columns with explicit dtypes
-			df[hm.healing_rate]           = pd.Series(0.0, index=df.index, dtype=float)
-			df[hm.estimated_days_to_heal] = pd.Series(np.nan, index=df.index, dtype=float)
-			df[hm.overall_improvement]    = pd.Series(np.nan, index=df.index, dtype=str)
+			df.loc[:, hm.healing_rate]           = pd.Series(0.0, index=df.index, dtype=float)
+			df.loc[:, hm.estimated_days_to_heal] = pd.Series(np.nan, index=df.index, dtype=float)
+			df.loc[:, hm.overall_improvement]    = pd.Series(np.nan, index=df.index, dtype=str)
 
 		return df
 
@@ -1379,8 +1403,330 @@ class DataManager:
 			doc.save(report_path)
 
 
+class ImpedanceExcelProcessor:
+	"""
+	Processes and manages impedance data from Excel files containing frequency sweep measurements.
+
+	This class handles the loading, parsing, and caching of impedance frequency sweep data
+	from Excel files. It extracts key frequency data points (lowest, center, highest frequencies)
+	for each patient visit and provides methods to retrieve specific visit data.
+
+	The processor maintains a cache to improve performance when repeatedly accessing
+	the same data files.
+
+	Attributes
+	cache : dict
+		A dictionary that stores processed data to avoid redundant file operations.
+		Data is organized by cache keys (based on record ID and file path).
+
+	Methods
+	get_visit_data(impedance_freq_sweep_path, record_id, visit_date)
+		Retrieves processed impedance data for a specific visit.
+
+	_process_excel_file(impedance_freq_sweep_path, record_id, cache_key)
+		Processes an Excel file and caches the extracted data.
+
+	_process_sheet(excel_file, sheet_name)
+		Extracts date and frequency data from a specific sheet in an Excel file.
+
+	_parse_date(date_cell_value, sheet_name)
+		Parses date values from various formats to standardized MM-DD-YYYY format.
+
+	_extract_frequency_data(df_bottom, parsed_date)
+		Extracts key frequency data points from processed DataFrame.
+
+	- Excel files are expected to be named as '{record_id}.xlsx'
+	- Each sheet in an Excel file typically represents a visit date
+	- For each visit, three key impedance measurements are extracted: lowest frequency, center frequency (max negative phase), and highest frequency
+	"""
+	def __init__(self):
+		self.cache = {}
+
+	def get_visit_data(self, impedance_freq_sweep_path: pathlib.Path, record_id: int, visit_date: str) -> Optional[pd.DataFrame]:
+		"""
+		Retrieves frequency sweep impedance data for a specific visit.
+
+		This method checks the cache for previously processed data before extracting
+		visit-specific data from an Excel file. It handles the data retrieval and
+		processing workflow.
+
+		Parameters
+		----------
+		impedance_freq_sweep_path : pathlib.Path
+			Path to the Excel file containing impedance frequency sweep data.
+		record_id : int
+			Unique identifier for the patient record.
+		visit_date : str
+			Date of the visit for which data is requested.
+
+		Returns
+		-------
+		Optional[pd.DataFrame]
+			DataFrame containing impedance data for the specified visit date, with 'index'
+			set as the index column. Returns None if no data is available for the specified date.
+		"""
+
+		# Check cache first
+		cache_key = f"{record_id}_{impedance_freq_sweep_path}"
+
+		# Process file if not in cache
+		if cache_key not in self.cache:
+			self._process_excel_file(impedance_freq_sweep_path, record_id, cache_key)
+
+		# Return data for requested visit date if available
+		if cache_key in self.cache and visit_date in self.cache[cache_key]:
+			freq_data = self.cache[cache_key][visit_date]
+			return pd.DataFrame(freq_data).set_index('index')
+
+		return None
+
+	def _process_excel_file(self, impedance_freq_sweep_path: pathlib.Path, record_id: int, cache_key: str) -> None:
+		"""
+		Process an Excel file containing impedance frequency sweep data for a specific record.
+
+		This method extracts data from each sheet in the Excel file, where each sheet typically
+		represents a visit date. The processed data is stored in a dictionary organized by visit date
+		and cached using the provided cache key.
+
+		Parameters
+		----------
+		impedance_freq_sweep_path : pathlib.Path
+			Path to the directory containing impedance frequency sweep Excel files
+		record_id : int
+			The record ID used to locate the specific Excel file
+		cache_key : str
+			Key to use for storing the processed data in the cache
+
+		Returns
+		-------
+		None
+			The method stores the processed data in the cache under cache_key
+
+		Notes
+		-----
+		- The Excel file should be named as '{record_id}.xlsx'
+		- Each sheet in the Excel file is processed using the _process_sheet method
+		- If the Excel file doesn't exist, a warning is logged and the method returns
+		- Exceptions during file processing are caught and logged as errors
+		"""
+		# Find the Excel file
+		excel_file = impedance_freq_sweep_path / f'{record_id}.xlsx'
+		if not excel_file.exists():
+			logger.warning(f"Failed to find Excel file for record ID: {excel_file}")
+			return
+
+		visit_data_by_date = {}
+
+		try:
+			# Use context manager for proper resource handling
+			with pd.ExcelFile(excel_file) as xl:
+				for sheet_name in xl.sheet_names:
+					sheet_data = self._process_sheet(excel_file, sheet_name)
+					if sheet_data:
+						parsed_date, freq_data = sheet_data
+						visit_data_by_date[parsed_date] = freq_data
+
+			# Store in cache
+			self.cache[cache_key] = visit_data_by_date
+			logger.info(f"Processed {len(visit_data_by_date)} visits for record ID: {record_id}")
+
+		except Exception as e:
+			logger.error(f"Error processing Excel file {excel_file}: {e}")
+
+	def _process_sheet(self, excel_file: pathlib.Path, sheet_name: str) -> Optional[tuple]:
+		"""
+		Process a single sheet from an Excel file to extract date and frequency data.
+
+		This method reads the header to extract the date, validates the sheet structure,
+		and processes the bottom half of the sheet to extract frequency data.
+
+		Parameters
+		----------
+		excel_file : pathlib.Path
+			Path to the Excel file to process
+		sheet_name : str
+			Name of the sheet to process within the Excel file
+
+		Returns
+		-------
+		Optional[tuple]
+			A tuple containing (parsed_date, frequency_data) if successful,
+			None if any validation fails or an exception occurs
+
+		Notes
+		-----
+		The method expects:
+		- Date information in cell C1 (index [0,2])
+		- Data rows starting from the second row (skiprows=1)
+		- Processes only the bottom half of the available data rows
+		"""
+		try:
+			# Read header row
+			header_df = pd.read_excel(excel_file, sheet_name=sheet_name, nrows=1, header=None)
+
+			# Validate header
+			if header_df.shape[1] < 3:
+				logger.warning(f"Sheet {sheet_name} has insufficient columns")
+				return None
+
+			# Extract and parse date
+			date_cell_value = header_df.iloc[0, 2]
+			if pd.isna(date_cell_value):
+				logger.warning(f"No date found in sheet {sheet_name}")
+				return None
+
+			parsed_date = self._parse_date(date_cell_value, sheet_name)
+			if not parsed_date:
+				return None
+
+			# Process data
+			df = pd.read_excel(excel_file, sheet_name=sheet_name, skiprows=1)
+			df.columns = df.columns.str.strip()
+
+			# Get bottom half
+			half_point = len(df) // 2
+			df_bottom = df.iloc[half_point:]
+
+			# Extract frequency data
+			freq_data = self._extract_frequency_data(df_bottom, parsed_date)
+
+			return parsed_date, freq_data
+
+		except Exception as e:
+			logger.warning(f"Error processing sheet {sheet_name}: {e}")
+			return None
+
+	def _parse_date(self, date_cell_value, sheet_name: str) -> Optional[str]:
+		"""
+		Parses a date value from a cell and converts it to a standardized format.
+
+		This method attempts to parse dates in various formats commonly found in spreadsheets,
+		converting them to a consistent 'MM-DD-YYYY' format for standardization across the application.
+
+		Args:
+			date_cell_value: The cell value containing a date, can be a string or a date object
+			sheet_name (str): Name of the Excel sheet containing the date (used for logging purposes)
+
+		Returns:
+			Optional[str]: The parsed date in 'MM-DD-YYYY' format if successful, None otherwise
+
+		Notes:
+			- Handles multiple date formats including YYYY-DD-MM, DD/MM/YYYY, MM/DD/YYYY, etc.
+			- Logs warning messages when date parsing fails
+			- If the input contains both date and time, only the date portion is parsed
+		"""
+		try:
+			# Convert to string and extract date part
+			date_str = str(date_cell_value)
+			date_part = date_str.split(' ')[0] if ' ' in date_str else date_str
+
+			# Try different date formats
+			date_formats = [
+				"%Y-%d-%m",  # 2024-30-08
+				"%d/%m/%Y",  # 30/08/2024
+				"%m/%d/%Y",  # 08/30/2024
+				"%Y/%m/%d",  # 2024/08/30
+				"%d-%m-%Y",  # 30-08-2024
+				"%m-%d-%Y",  # 08-30-2024
+				"%Y-%m-%d",  # 2024-08-30
+			]
+
+			for date_format in date_formats:
+				try:
+					parsed_date = datetime.strptime(date_part, date_format).strftime('%m-%d-%Y')
+					logger.debug(f"Parsed date {date_part} using format {date_format}")
+					return parsed_date
+				except ValueError:
+					continue
+
+			logger.warning(f"Could not parse date '{date_part}' in sheet {sheet_name}")
+			return None
+
+		except Exception as e:
+			logger.warning(f"Error parsing date: {e}")
+			return None
+
+	def _extract_frequency_data(self, df_bottom: pd.DataFrame, parsed_date: str) -> list:
+		"""
+		Extract frequency data at key frequency points from the dataframe.
+
+		This method identifies the lowest, highest, and center frequency points
+		from the impedance data and extracts corresponding electrical measurements.
+		The center frequency is determined as the frequency with the maximum negative phase.
+
+		Parameters
+		----------
+		df_bottom : pd.DataFrame
+			DataFrame containing the frequency data with columns:
+			'freq / Hz', 'Z / Ohm', "Z' / Ohm", "-Z'' / Ohm", "neg. Phase / °"
+		parsed_date : str
+			The date of the visit in string format
+
+		Returns
+		-------
+		list
+			A list of dictionaries containing the extracted data for each key frequency:
+			lowest, center, and highest. Each dictionary contains:
+			- 'Visit date': parsed date
+			- 'Visit number': None (to be filled later)
+			- 'frequency': frequency value as string
+			- 'Z': impedance magnitude
+			- 'Z_prime': real part of impedance
+			- 'Z_double_prime': imaginary part of impedance
+			- 'neg. Phase / °': negative phase angle
+			- 'index': identifier of frequency type ('lowest_freq', 'center_freq', or 'highest_freq')
+		"""
+		# Find key frequencies
+		lowest_freq  = df_bottom['freq / Hz'].min()
+		highest_freq = df_bottom['freq / Hz'].max()
+		center_freq  = df_bottom.loc[df_bottom['neg. Phase / °'].idxmax(), 'freq / Hz']
+
+		# Create data for each frequency
+		freq_data = []
+		for freq_type, freq in [
+			('lowest_freq',  lowest_freq),
+			('center_freq',  center_freq),
+			('highest_freq', highest_freq)
+		]:
+			row = df_bottom[df_bottom['freq / Hz'] == freq].iloc[0]
+			freq_data.append({
+				'Visit date'    : parsed_date,
+				'Visit number'  : None,
+				'frequency'     : str(freq),
+				'Z'             : row["Z / Ohm"],
+				'Z_prime'       : row["Z' / Ohm"],
+				'Z_double_prime': row["-Z'' / Ohm"],
+				'neg. Phase / °': row["neg. Phase / °"],
+				'index'         : freq_type
+			})
+
+		return freq_data
+
+
 class ImpedanceAnalyzer:
 	"""Handles advanced bioimpedance analysis and clinical interpretation."""
+
+	# Create a single instance of the processor
+	_excel_processor = ImpedanceExcelProcessor()
+
+	@staticmethod
+	def process_impedance_sweep_xlsx(impedance_freq_sweep_path: pathlib.Path, record_id: int, visit_date_being_processed: str) -> Optional[pd.DataFrame]:
+		"""
+		Process impedance sweep data from an Excel file for a specific record ID and visit date.
+
+		This function reads the Excel file containing impedance sweep data for a given patient,
+		extracts the relevant information for the specified visit date, and returns it as a
+		processed DataFrame.
+
+		Args:
+			impedance_freq_sweep_path: Path to directory containing impedance sweep Excel files
+			record_id: The unique identifier for the patient record
+			visit_date_being_processed: The specific visit date to process, in 'mm-dd-yyyy' format
+
+		Returns:
+			DataFrame with processed impedance data or None if not found/processing fails
+		"""
+		return ImpedanceAnalyzer._excel_processor.get_visit_data( impedance_freq_sweep_path=impedance_freq_sweep_path, record_id=record_id, visit_date=visit_date_being_processed )
 
 	@staticmethod
 	def calculate_visit_changes(current_visit, previous_visit):
@@ -2416,97 +2762,3 @@ class ImpedanceAnalyzer:
 		analysis['healing_stage'] = self.classify_wound_healing_stage(analysis)
 
 		return analysis
-
-	@staticmethod
-	def process_impedance_sweep_xlsx(impedance_freq_sweep_path: pathlib.Path, record_id: int, visit_date_being_processed) -> Optional[pd.DataFrame]:
-		"""
-			Process impedance sweep data from an Excel file for a specific record ID and visit date.
-
-			This function reads the Excel file containing impedance sweep data for a given patient,
-			extracts the relevant information for the specified visit date, and returns it as a
-			processed DataFrame.
-
-			Args:
-				record_id (int): The unique identifier for the patient record.
-				visit_date_being_processed (str): The specific visit date to process, in 'mm-dd-yyyy' format.
-
-			Returns:
-				Optional[pd.DataFrame]: A DataFrame containing the processed impedance sweep data
-				for the specified visit date, or None if the file doesn't exist or processing fails.
-
-			Raises:
-				FileNotFoundError: If the Excel file for the given record_id is not found.
-				ValueError: If the visit date cannot be extracted from the sheet name.
-		"""
-
-		# Find the Excel file for this record
-		excel_file = impedance_freq_sweep_path / f'{record_id}.xlsx'
-		if not excel_file.exists():
-			print(f"Failed to find Excel file for record ID: {excel_file}")
-			# st.error(f"Failed to find Excel file for record ID: {excel_file}")
-			return None
-
-
-		# Read all sheets from the Excel file
-		xl = pd.ExcelFile(excel_file)
-
-		# Process each sheet (visit date)
-		dfs = []
-		for sheet_name in xl.sheet_names:
-
-			# Extract visit date from filename
-			match = re.search(rf"{record_id}_visit_(\d+)_(\d+)-(\d+)-(\d+)", sheet_name)
-			if not match:
-				logger.warning(f"Could not extract visit date from filename: {sheet_name}")
-				return None
-			visit_number = match.group(1)
-			visit_date = datetime.strptime(f"{match.group(2)}/{match.group(3)}/{match.group(4)}", "%m/%d/%Y").strftime('%m-%d-%Y')
-
-			if visit_date != visit_date_being_processed:
-				continue
-
-			# Read the sheet
-			df = pd.read_excel(excel_file, sheet_name=sheet_name, skiprows=1)
-
-			# Clean column names and select relevant columns
-			df.columns = df.columns.str.strip()
-
-			# Get only the bottom half of the dataframe
-			half_point = len(df) // 2
-			df_bottom  = df.iloc[half_point:]
-
-			# Find frequencies of interest in the bottom half
-			lowest_freq  = df_bottom['freq / Hz'].min()
-			highest_freq = df_bottom['freq / Hz'].max()
-
-			# Calculate the difference between Z' and -Z" and find where it's minimum
-			# df_bottom['z_diff'] = abs(df_bottom["Z' / Ohm"] - df_bottom["-Z'' / Ohm"])
-			center_freq = df_bottom.loc[df_bottom['neg. Phase / °'].idxmax(), 'freq / Hz']
-
-			# Get data for these three frequencies
-			freq_data = []
-			for freq_type, freq in [('lowest_freq', lowest_freq), ('center_freq', center_freq), ('highest_freq', highest_freq)]:
-				row = df_bottom[df_bottom['freq / Hz'] == freq].iloc[0]
-				freq_data.append({
-					'Visit date'    : visit_date,
-					'Visit number'  : visit_number,
-					'frequency'     : str(freq),
-					'Z'             : row["Z / Ohm"],
-					'Z_prime'       : row["Z' / Ohm"],
-					'Z_double_prime': row["-Z'' / Ohm"],
-					'neg. Phase / °': row["neg. Phase / °"],
-					'index'         : freq_type
-				})
-
-			dfs.extend(freq_data)
-
-		if not dfs:
-			return None
-
-		# Create DataFrame from processed data
-		df = pd.DataFrame(dfs).set_index('index')
-
-		# Convert Visit date to datetime and format
-		df['Visit date'] = pd.to_datetime(df['Visit date']).dt.strftime('%m-%d-%Y')
-
-		return df
