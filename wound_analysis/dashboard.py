@@ -17,10 +17,10 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 # Local application imports
-from utils.column_schema import DataColumns
-from utils.data_processor import DataManager, ImpedanceAnalyzer, WoundDataProcessor
-from utils.llm_interface import WoundAnalysisLLM
-from utils.statistical_analysis import CorrelationAnalysis
+from wound_analysis.utils.column_schema import DataColumns
+from wound_analysis.utils.data_processor import DataManager, ImpedanceAnalyzer, WoundDataProcessor
+from wound_analysis.utils.llm_interface import WoundAnalysisLLM
+from wound_analysis.utils.statistical_analysis import CorrelationAnalysis
 
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
