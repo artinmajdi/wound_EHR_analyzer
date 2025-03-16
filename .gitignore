@@ -28,6 +28,7 @@ dataset/impedance_frequency_sweep/palmsense_Mar_10_2025/
 dataset/
 .env
 *.code-workspace
+documentation/sync_repos_guide.md
 
 # Virtual Environment
 venv/
