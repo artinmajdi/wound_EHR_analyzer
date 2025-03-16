@@ -23,6 +23,13 @@ wheels/
 wound_analysis/utils/logs/*.docx
 wound_analysis/utils/logs/*.log
 dataset/impedance_frequency_sweep/palmsense_Mar_10_2025/
+
+
+# Public Branch Stuff
+dataset/
+.env
+*.code-workspace
+
 # Virtual Environment
 venv/
 ENV/
