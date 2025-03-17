@@ -329,6 +329,7 @@ class Dashboard:
 			# Create two columns for clustering controls
 			col1, col2, col3 = st.columns([1, 2, 1])
 
+
 			with col1:
 				# Number of clusters selection
 				# n_clusters = st.slider("Number of Clusters", min_value=2, max_value=10, value=3, help="Select the number of clusters to divide patient data into")
