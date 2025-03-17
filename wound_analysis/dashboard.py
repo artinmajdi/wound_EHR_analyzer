@@ -11,16 +11,19 @@ load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent / '.env')
 # Third-party imports
 import numpy as np
 import pandas as pd
+import sklearn
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
+# from plotly.subplots import make_subplots
 
 # Local application imports
-from wound_analysis.utils.column_schema import DataColumns
 from wound_analysis.utils.data_processor import DataManager, ImpedanceAnalyzer, WoundDataProcessor
 from wound_analysis.utils.llm_interface import WoundAnalysisLLM
 from wound_analysis.utils.statistical_analysis import CorrelationAnalysis
+from wound_analysis.dashboard_components.settings import DashboardSettings
+from wound_analysis.dashboard_components.visualizer import Visualizer
+
 
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
@@ -31,1049 +34,6 @@ def debug_log(message):
 		f.write(f"{message}\n")
 	st.sidebar.text(message)
 
-@dataclass
-class DashboardSettings:
-	"""Configuration class for the Wound Care Management & Interpreter Dashboard.
-
-	This class defines constants, settings, and utility methods used throughout the
-	dashboard application, including page layout settings, data schema definitions,
-	and analysis parameters.
-
-	Attributes:
-		PAGE_TITLE (str): The title displayed on the dashboard.
-		PAGE_ICON (str): The emoji icon used for the page favicon.
-		LAYOUT (str): The Streamlit layout type, set to "wide".
-		COLUMN_SCHEMA (DataColumns): Schema definition for data columns.
-		EXUDATE_TYPE_INFO (dict): Dictionary containing clinical information about different
-			types of wound exudate, including descriptions, clinical indications, and severity levels.
-
-	Methods:
-		get_exudate_analysis: Analyzes exudate characteristics and provides clinical interpretation.
-		initialize: Sets up the Streamlit session state with necessary variables.
-	"""
-
-	PAGE_TITLE: str = "Wound Care Management & Interpreter Dashboard"
-	PAGE_ICON : str = "🩹"
-	LAYOUT    : str = "wide"
-	COLUMN_SCHEMA: DataColumns            = field(default_factory=DataColumns)
-
-	# Constants for bioimpedance analysis
-	# ANOMALY_THRESHOLD                       : float = 2.5  # Z-score threshold for anomaly detection
-	# MIN_VISITS_FOR_ANALYSIS                 : int   = 3  # Minimum visits needed for trend analysis
-	# SIGNIFICANT_CHANGE_THRESHOLD            : float = 15.0  # Percentage change threshold
-	# INFECTION_RISK_RATIO_THRESHOLD          : float = 15.0  # Low/high frequency ratio threshold
-	# SIGNIFICANT_CHANGE_THRESHOLD_IMPEDANCE  : float = 15.0  # Percentage change threshold for resistance/absolute impedance
-	# SIGNIFICANT_CHANGE_THRESHOLD_CAPACITANCE: float = 20.0  # Percentage change threshold for capacitance
-	# INFLAMMATORY_INCREASE_THRESHOLD         : float = 30.0  # Percentage increase threshold for low-frequency resistance
-
-	# Exudate analysis information
-	EXUDATE_TYPE_INFO = {
-		'Serous': {
-			'description': 'Straw-colored, clear, thin',
-			'indication': 'Normal healing process',
-			'severity': 'info'
-		},
-		'Serosanguineous': {
-			'description': 'Pink or light red, thin',
-			'indication': 'Presence of blood cells in early healing',
-			'severity': 'info'
-		},
-		'Sanguineous': {
-			'description': 'Red, thin',
-			'indication': 'Active bleeding or trauma',
-			'severity': 'warning'
-		},
-		'Seropurulent': {
-			'description': 'Cloudy, milky, or creamy',
-			'indication': 'Possible early infection or inflammation',
-			'severity': 'warning'
-		},
-		'Purulent': {
-			'description': 'Yellow, tan, or green, thick',
-			'indication': 'Active infection present',
-			'severity': 'error'
-		}
-	}
-
-	@staticmethod
-	def get_exudate_analysis(volume: str, viscosity: str, exudate_types: str = None) -> dict:
-		"""
-			Provides clinical interpretation and treatment implications for exudate characteristics.
-
-			Args:
-				volume: The exudate volume level ('High', 'Medium', or 'Low')
-				viscosity: The exudate viscosity level ('High', 'Medium', or 'Low')
-				exudate_type: The type of exudate (e.g., 'Serous', 'Purulent')
-
-			Returns:
-				A dictionary containing:
-				- volume_analysis: Interpretation of volume level
-				- viscosity_analysis: Interpretation of viscosity level
-				- type_info: Information about the exudate type
-				- treatment_implications: List of treatment recommendations
-		"""
-
-		result = {
-			"volume_analysis": "",
-			"viscosity_analysis": "",
-			"type_info": {},
-			"treatment_implications": []
-		}
-
-		# Volume interpretation
-		if volume == 'High':
-			result["volume_analysis"] = """
-			**High volume exudate** is common in:
-			- Chronic venous leg ulcers
-			- Dehisced surgical wounds
-			- Inflammatory ulcers
-			- Burns
-
-			This may indicate active inflammation or healing processes.
-			"""
-		elif volume == 'Low':
-			result["volume_analysis"] = """
-			**Low volume exudate** is typical in:
-			- Necrotic wounds
-			- Ischaemic/arterial wounds
-			- Neuropathic diabetic foot ulcers
-
-			Monitor for signs of insufficient moisture.
-			"""
-
-		# Viscosity interpretation
-		if viscosity == 'High':
-			result["viscosity_analysis"] = """
-			**High viscosity** (thick) exudate may indicate:
-			- High protein content
-			- Possible infection
-			- Inflammatory processes
-			- Presence of necrotic material
-
-			Consider reassessing treatment approach.
-			"""
-		elif viscosity == 'Low':
-			result["viscosity_analysis"] = """
-			**Low viscosity** (thin) exudate may suggest:
-			- Low protein content
-			- Possible venous condition
-			- Potential malnutrition
-			- Presence of fistulas
-
-			Monitor fluid balance and nutrition.
-			"""
-		for exudate_type in [t.strip() for t in exudate_types.split(',')]:
-			if exudate_type and exudate_type in DashboardSettings.EXUDATE_TYPE_INFO:
-				result["type_info"][exudate_type] = DashboardSettings.EXUDATE_TYPE_INFO[exudate_type]
-
-		# Treatment implications based on volume and viscosity
-		if volume == 'High' and viscosity == 'High':
-			result["treatment_implications"] = [
-				"- Consider highly absorbent dressings",
-				"- More frequent dressing changes may be needed",
-				"- Monitor for maceration of surrounding tissue"
-			]
-		elif volume == 'Low' and viscosity == 'Low':
-			result["treatment_implications"] = [
-				"- Use moisture-retentive dressings",
-				"- Protect wound bed from desiccation",
-				"- Consider hydrating dressings"
-			]
-
-		return result
-
-
-	@staticmethod
-	def initialize() -> None:
-		"""
-		Initializes the Streamlit session state with necessary variables.
-
-		This function sets up the following session state variables if they don't exist:
-		- processor: Stores the wound image processor instance
-		- analysis_complete: Boolean flag indicating if analysis has been completed
-		- analysis_results: Stores the results of wound analysis
-		- report_path: Stores the file path to the generated report
-
-		Returns:
-			None
-		"""
-
-		if 'processor' not in st.session_state:
-			st.session_state.processor = None
-
-		if 'analysis_complete' not in st.session_state:
-			st.session_state.analysis_complete = False
-
-		if 'analysis_results' not in st.session_state:
-			st.session_state.analysis_results = None
-
-		if 'report_path' not in st.session_state:
-			st.session_state.report_path = None
-
-class Visualizer:
-	"""A class that provides visualization methods for wound analysis data.
-
-	The Visualizer class contains static methods for creating various plots and charts
-	to visualize wound healing metrics over time. These visualizations help in monitoring
-	patient progress and comparing trends across different patients.
-
-	Methods
-	create_wound_area_plot(df, patient_id=None)
-		Create a wound area progression plot for one or all patients.
-
-	create_temperature_chart(df)
-		Create a chart showing wound temperature measurements and gradients.
-
-	create_impedance_chart(visits, measurement_mode="Absolute Impedance (|Z|)")
-		Create an interactive chart showing impedance measurements over time.
-
-	create_oxygenation_chart(patient_data, visits)
-		Create charts showing oxygenation and hemoglobin measurements over time.
-
-	create_exudate_chart(visits)
-		Create a chart showing exudate characteristics over time.
-
-	Private Methods
-	--------------
-	_remove_outliers(df, column, quantile_threshold=0.1)
-		Remove outliers from a DataFrame column using IQR and z-score methods.
-
-	_create_all_patients_plot(df)
-		Create an interactive line plot showing wound area progression for all patients.
-
-	_create_single_patient_plot(df, patient_id)
-		Create a detailed wound area and dimensions plot for a single patient.
-	"""
-
-	@staticmethod
-	def create_wound_area_plot(df: pd.DataFrame, patient_id: Optional[int] = None) -> go.Figure:
-		"""
-		Create a wound area progression plot for either a single patient or all patients.
-
-		This function generates a visualization of wound area changes over time.
-		If a patient_id is provided, it creates a plot specific to that patient.
-		Otherwise, it creates a comparative plot for all patients in the DataFrame.
-
-		Parameters
-		----------
-		df : pd.DataFrame
-			DataFrame containing wound area measurements and dates
-		patient_id : Optional[int], default=None
-			The ID of a specific patient to plot. If None, plots data for all patients
-
-		Returns
-		-------
-		go.Figure
-			A Plotly figure object containing the wound area progression plot
-		"""
-		if patient_id:
-			return Visualizer._create_single_patient_plot(df, patient_id)
-		return Visualizer._create_all_patients_plot(df)
-
-	@staticmethod
-	def _remove_outliers(df: pd.DataFrame, column: str, quantile_threshold: float = 0.1) -> pd.DataFrame:
-		"""
-		Remove outliers from a DataFrame column using a combination of IQR and z-score methods.
-
-		This function identifies and filters out outlier values in the specified column
-		using both the Interquartile Range (IQR) method and z-scores. It's designed to be
-		conservative in outlier removal, requiring that values pass both tests to be retained.
-
-		Parameters
-		----------
-		df : pd.DataFrame
-			The input DataFrame containing the column to be filtered
-		column : str
-			The name of the column to remove outliers from
-		quantile_threshold : float, default=0.1
-			The quantile threshold used to calculate Q1 and Q3
-			Lower values result in more aggressive filtering
-			Value must be > 0; if ≤ 0, no filtering is performed
-
-		Returns
-		-------
-		pd.DataFrame
-			A filtered copy of the input DataFrame with outliers removed
-
-		Notes
-		-----
-		- Values less than 0 are considered outliers (forced to lower_bound of 0)
-		- If all values are the same (IQR=0) or there are fewer than 3 data points, the original DataFrame is returned unchanged
-		- The function combines two outlier detection methods:
-			1. IQR method: filters values outside [Q1-1.5*IQR, Q3+1.5*IQR]
-			2. Z-score method: filters values with z-score > 3
-		"""
-
-		try:
-			if quantile_threshold <= 0 or len(df) < 3:  # Not enough data points or no filtering requested
-				return df
-
-			Q1 = df[column].quantile(quantile_threshold)
-			Q3 = df[column].quantile(1 - quantile_threshold)
-			IQR = Q3 - Q1
-
-			if IQR == 0:  # All values are the same
-				return df
-
-			lower_bound = max(0, Q1 - 1.5 * IQR)  # Ensure non-negative values
-			upper_bound = Q3 + 1.5 * IQR
-
-			# Calculate z-scores for additional validation
-			z_scores = abs((df[column] - df[column].mean()) / df[column].std())
-
-			# Combine IQR and z-score methods
-			mask = (df[column] >= lower_bound) & (df[column] <= upper_bound) & (z_scores <= 3)
-
-			return df[mask].copy()
-
-		except Exception as e:
-			print(f"------- Error removing outliers: {e} ----- ")
-			print(df['Oxygenation (%)'].to_frame().describe())
-			print(df['Oxygenation (%)'].to_frame())
-			return df
-
-	@staticmethod
-	def _create_all_patients_plot(df: pd.DataFrame) -> go.Figure:
-		"""
-		Create an interactive line plot showing wound area progression for all patients over time.
-
-		This function generates a Plotly figure where each patient's wound area is plotted against
-		days since their first visit. The plot includes interactive features such as hovering for
-		patient details and an outlier threshold control to filter extreme values.
-
-		Parameters
-		----------
-		df : pd.DataFrame
-			DataFrame containing patient wound data with columns:
-			- 'Record ID': Patient identifier
-			- 'Visit date': Date of the wound assessment
-			- 'Calculated Wound Area': Wound area measurements in square centimeters
-
-		Returns
-		-------
-		go.Figure
-			A Plotly figure object containing the wound area progression plot for all patients.
-			The figure includes:
-			- Individual patient lines with distinct colors
-			- Interactive hover information with patient ID and wound area
-			- Y-axis automatically scaled based on outlier threshold setting
-			- Annotation explaining outlier removal status
-
-		Notes
-		-----
-		The function adds a Streamlit number input widget for controlling outlier removal threshold.
-		Patient progression lines are colored based on their healing rates.
-		"""
-		# Add outlier threshold control
-		col1, col2 = st.columns([4, 1])
-		with col2:
-			outlier_threshold = st.number_input(
-				"Temperature Outlier Threshold",
-				min_value=0.0,
-				max_value=0.5,
-				value=0.0,
-				step=0.01,
-				help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
-			)
-
-		fig = go.Figure()
-
-		# Get the filtered data for y-axis limits
-		all_wound_areas_df = pd.DataFrame({'wound_area': df['Calculated Wound Area'].dropna()})
-		filtered_df = Visualizer._remove_outliers(all_wound_areas_df, 'wound_area', outlier_threshold)
-
-		# Set y-axis limits based on filtered data
-		lower_bound = 0
-		upper_bound = (filtered_df['wound_area'].max() if outlier_threshold > 0 else all_wound_areas_df['wound_area'].max()) * 1.05
-
-		# Store patient statistics for coloring
-		patient_stats = []
-
-		for pid in df['Record ID'].unique():
-			patient_df = df[df['Record ID'] == pid].copy()
-			patient_df['Days_Since_First_Visit'] = (pd.to_datetime(patient_df['Visit date']) - pd.to_datetime(patient_df['Visit date']).min()).dt.days
-
-			# Remove NaN values
-			patient_df = patient_df.dropna(subset=['Days_Since_First_Visit', 'Calculated Wound Area'])
-
-			if not patient_df.empty:
-				# Calculate healing rate for this patient
-				if len(patient_df) >= 2:
-					first_area = patient_df.loc[patient_df['Days_Since_First_Visit'].idxmin(), 'Calculated Wound Area']
-					last_area = patient_df.loc[patient_df['Days_Since_First_Visit'].idxmax(), 'Calculated Wound Area']
-					total_days = patient_df['Days_Since_First_Visit'].max()
-
-					if total_days > 0:
-						healing_rate = (first_area - last_area) / total_days
-						patient_stats.append({
-							'pid': pid,
-							'healing_rate': healing_rate,
-							'initial_area': first_area
-						})
-
-				fig.add_trace(go.Scatter(
-					x=patient_df['Days_Since_First_Visit'],
-					y=patient_df['Calculated Wound Area'],
-					mode='lines+markers',
-					name=f'Patient {pid}',
-					hovertemplate=(
-						'Day: %{x}<br>'
-						'Area: %{y:.1f} cm²<br>'
-						'<extra>Patient %{text}</extra>'
-					),
-					text=[str(pid)] * len(patient_df),
-					line=dict(width=2),
-					marker=dict(size=8)
-				))
-
-		# Update layout with improved styling
-		fig.update_layout(
-			title=dict(
-				text="Wound Area Progression - All Patients",
-				font=dict(size=20)
-			),
-			xaxis=dict(
-				title="Days Since First Visit",
-				title_font=dict(size=14),
-				gridcolor='lightgray',
-				showgrid=True
-			),
-			yaxis=dict(
-				title="Wound Area (cm²)",
-				title_font=dict(size=14),
-				range=[lower_bound, upper_bound],
-				gridcolor='lightgray',
-				showgrid=True
-			),
-			hovermode='closest',
-			showlegend=True,
-			legend=dict(
-				yanchor="top",
-				y=1,
-				xanchor="left",
-				x=1.02,
-				bgcolor="rgba(255, 255, 255, 0.8)",
-				bordercolor="lightgray",
-				borderwidth=1
-			),
-			margin=dict(l=60, r=120, t=50, b=50),
-			plot_bgcolor='white'
-		)
-
-		# Update annotation text based on outlier threshold
-		annotation_text = (
-			"Note: No outliers removed" if outlier_threshold == 0 else
-			f"Note: Outliers removed using combined IQR and z-score methods<br>"
-			f"Threshold: {outlier_threshold:.2f} quantile"
-		)
-
-		fig.add_annotation(
-			text=annotation_text,
-			xref="paper", yref="paper",
-			x=0.99, y=0.02,
-			showarrow=False,
-			font=dict(size=10, color="gray"),
-			xanchor="right",
-			yanchor="bottom",
-			align="right"
-		)
-
-		return fig
-
-	@staticmethod
-	def _create_single_patient_plot(df: pd.DataFrame, patient_id: int) -> go.Figure:
-		"""
-		Create a detailed plot showing wound healing progression for a single patient.
-
-		This function generates a Plotly figure with multiple traces showing the wound area,
-		dimensions (length, width, depth), and a trend line for the wound area. It also
-		calculates and displays the healing rate if sufficient data is available.
-
-		Parameters
-		----------
-		df : pd.DataFrame
-			DataFrame containing wound measurements data with columns:
-			'Record ID', 'Days_Since_First_Visit', 'Calculated Wound Area',
-			'Length (cm)', 'Width (cm)', 'Depth (cm)'
-
-		patient_id : int
-			The patient identifier to filter data for
-
-		Returns
-		-------
-		go.Figure
-			A Plotly figure object containing the wound progression plot with:
-			- Wound area measurements (blue line)
-			- Wound length measurements (green line)
-			- Wound width measurements (red line)
-			- Wound depth measurements (brown line)
-			- Trend line for wound area (dashed red line, if sufficient data points)
-			- Annotation showing healing rate and status (if sufficient time elapsed)
-
-		Notes
-		-----
-		- The trend line is calculated using linear regression (numpy.polyfit)
-		- Healing rate is calculated as (first_area - last_area) / total_days
-		- The plot includes hover information and unified hover mode
-		"""
-		patient_df = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
-
-		fig = go.Figure()
-		fig.add_trace(go.Scatter(
-			x=patient_df['Days_Since_First_Visit'],
-			y=patient_df['Calculated Wound Area'],
-			mode='lines+markers',
-			name='Wound Area',
-			line=dict(color='blue'),
-			hovertemplate='%{y:.1f} cm²'
-		))
-
-		fig.add_trace(go.Scatter(
-			x=patient_df['Days_Since_First_Visit'],
-			y=patient_df['Length (cm)'],
-			mode='lines+markers',
-			name='Length (cm)',
-			line=dict(color='green'),
-			hovertemplate='%{y:.1f} cm'
-		))
-
-		fig.add_trace(go.Scatter(
-			x=patient_df['Days_Since_First_Visit'],
-			y=patient_df['Width (cm)'],
-			mode='lines+markers',
-			name='Width (cm)',
-			line=dict(color='red'),
-			hovertemplate='%{y:.1f} cm'
-		))
-
-		fig.add_trace(go.Scatter(
-			x=patient_df['Days_Since_First_Visit'],
-			y=patient_df['Depth (cm)'],
-			mode='lines+markers',
-			name='Depth (cm)',
-			line=dict(color='brown'),
-			hovertemplate='%{y:.1f} cm'
-		))
-
-		if len(patient_df) >= 2:
-
-			x = patient_df['Days_Since_First_Visit'].values
-			y = patient_df['Calculated Wound Area'].values
-			mask = np.isfinite(x) & np.isfinite(y)
-
-			# Add trendline
-			if np.sum(mask) >= 2:
-				z = np.polyfit(x[mask], y[mask], 1)
-				p = np.poly1d(z)
-
-				# Add trend line
-				fig.add_trace(go.Scatter(
-					x=patient_df['Days_Since_First_Visit'],
-					y=p(patient_df['Days_Since_First_Visit']),
-					mode='lines',
-					name='Trend',
-					line=dict(color='red', dash='dash'),
-					hovertemplate='Day %{x}<br>Trend: %{y:.1f} cm²'
-				))
-
-			# Calculate and display healing rate
-			total_days = patient_df['Days_Since_First_Visit'].max()
-			if total_days > 0:
-				first_area = patient_df.loc[patient_df['Days_Since_First_Visit'].idxmin(), 'Calculated Wound Area']
-				last_area = patient_df.loc[patient_df['Days_Since_First_Visit'].idxmax(), 'Calculated Wound Area']
-				healing_rate = (first_area - last_area) / total_days
-				healing_status = "Improving" if healing_rate > 0 else "Worsening"
-				healing_rate_text = f"Healing Rate: {healing_rate:.2f} cm²/day<br> {healing_status}"
-			else:
-				healing_rate_text = "Insufficient time between measurements for healing rate calculation"
-
-			fig.add_annotation(
-				x=0.02,
-				y=0.98,
-				xref="paper",
-				yref="paper",
-				text=healing_rate_text,
-				showarrow=False,
-				font=dict(size=12),
-				bgcolor="rgba(255, 255, 255, 0.8)",
-				bordercolor="black",
-				borderwidth=1
-			)
-
-		fig.update_layout(
-			title=f"Wound Area Progression - Patient {patient_id}",
-			xaxis_title="Days Since First Visit",
-			yaxis_title="Wound Area (cm²)",
-			hovermode='x unified',
-			showlegend=True
-		)
-
-
-
-		return fig
-
-	@staticmethod
-	def create_temperature_chart(df):
-		"""
-		Creates an interactive temperature chart for wound analysis using Plotly.
-
-		The function generates line charts for available temperature measurements (Center, Edge, Peri-wound)
-		and bar charts for temperature gradients when all three measurements are available.
-
-		Parameters:
-		-----------
-		df : pandas.DataFrame
-			DataFrame containing wound temperature data with columns:
-			- 'Visit date': Dates of wound assessment visits
-			- 'Center of Wound Temperature (Fahrenheit)': Temperature at wound center (optional)
-			- 'Edge of Wound Temperature (Fahrenheit)': Temperature at wound edge (optional)
-			- 'Peri-wound Temperature (Fahrenheit)': Temperature of surrounding tissue (optional)
-			- 'Skipped Visit?': Indicator for skipped visits
-
-		Returns:
-		--------
-		plotly.graph_objs._figure.Figure
-			A Plotly figure object with temperature measurements as line charts on the primary y-axis
-			and temperature gradients as bar charts on the secondary y-axis (if all temperature types available).
-
-		Notes:
-		------
-		- Skipped visits are excluded from visualization
-		- Derived temperature gradients are calculated when all three temperature measurements are available
-		- Color coding: Center (red), Edge (orange), Peri-wound (blue)
-		- Temperature gradients are displayed as semi-transparent bars
-		"""
-		# Check which temperature columns have data
-		temp_cols = {
-			'Center': 'Center of Wound Temperature (Fahrenheit)',
-			'Edge': 'Edge of Wound Temperature (Fahrenheit)',
-			'Peri': 'Peri-wound Temperature (Fahrenheit)'
-		}
-
-		# Remove rows where all three temperature values are NaN
-		# df_temp = df_temp.dropna(subset=list(temp_cols.values()))
-		# Remove skipped visits
-		df = df[df['Skipped Visit?'] != 'Yes']
-
-		# Create derived variables for temperature if they exist
-		if all(col in df.columns for col in ['Center of Wound Temperature (Fahrenheit)', 'Edge of Wound Temperature (Fahrenheit)', 'Peri-wound Temperature (Fahrenheit)']):
-			df['Center-Edge Temp Gradient'] = df['Center of Wound Temperature (Fahrenheit)'] - df['Edge of Wound Temperature (Fahrenheit)']
-			df['Edge-Peri Temp Gradient']   = df['Edge of Wound Temperature (Fahrenheit)']   - df['Peri-wound Temperature (Fahrenheit)']
-			df['Total Temp Gradient']       = df['Center of Wound Temperature (Fahrenheit)'] - df['Peri-wound Temperature (Fahrenheit)']
-
-		available_temps = {k: v for k, v in temp_cols.items()
-							if v in df.columns and not df[v].isna().all()}
-
-		fig = make_subplots(specs=[[{"secondary_y": len(available_temps) == 3}]])
-
-		# Color mapping for temperature lines
-		colors = {'Center': 'red', 'Edge': 'orange', 'Peri': 'blue'}
-
-		# Add available temperature lines
-		for temp_name, col_name in available_temps.items():
-			fig.add_trace(
-				go.Scatter(
-					x=df['Visit date'],
-					y=df[col_name],
-					name=f"{temp_name} Temp",
-					line=dict(color=colors[temp_name]),
-					mode='lines+markers'
-				)
-			)
-
-		# Only add gradients if all three temperatures are available
-		if len(available_temps) == 3:
-			# Calculate temperature gradients
-			df['Center-Edge'] = df[temp_cols['Center']] - df[temp_cols['Edge']]
-			df['Edge-Peri']   = df[temp_cols['Edge']] - df[temp_cols['Peri']]
-
-			# Add gradient bars on secondary y-axis
-			fig.add_trace(
-				go.Bar(
-					x=df['Visit date'],
-					y=df['Center-Edge'],
-					name="Center-Edge Gradient",
-					opacity=0.5,
-					marker_color='lightpink'
-				),
-				secondary_y=True
-			)
-			fig.add_trace(
-				go.Bar(
-					x=df['Visit date'],
-					y=df['Edge-Peri'],
-					name="Edge-Peri Gradient",
-					opacity=0.5,
-					marker_color='lightblue'
-				),
-				secondary_y=True
-			)
-
-			# Add secondary y-axis title only if showing gradients
-			fig.update_yaxes(title_text="Temperature Gradient (°F)", secondary_y=True)
-
-		return fig
-
-	@staticmethod
-	def create_impedance_chart(visits, measurement_mode: str = "Absolute Impedance (|Z|)"):
-		"""
-		Create an interactive chart displaying impedance measurements over time for different frequencies.
-
-		This function processes visit data that contains sensor impedance measurements and generates
-		a plotly figure showing the selected impedance parameter (absolute impedance, resistance, or capacitance)
-		across visits on a logarithmic scale.
-
-		Parameters:
-		-----------
-		visits : list
-			List of visit dictionaries, each containing visit date and sensor data with impedance measurements.
-			Each visit should have the structure:
-			{
-				'visit_date': datetime,
-				'sensor_data': {
-					'impedance': {
-						'high_frequency'  : {'Z': float, 'resistance': float, 'capacitance': float, 'frequency': float},
-						'center_frequency': {'Z': float, 'resistance': float, 'capacitance': float, 'frequency': float},
-						'low_frequency'   : {'Z': float, 'resistance': float, 'capacitance': float, 'frequency': float}
-					}
-				}
-			}
-
-		measurement_mode : str, optional
-			Type of impedance measurement to display. Options are:
-			- "Absolute Impedance (|Z|)" (default)
-			- "Resistance"
-			- "Capacitance"
-
-		Returns:
-		--------
-		plotly.graph_objects.Figure
-			Interactive plotly figure showing the selected impedance parameter over time with
-			separate traces for each frequency (high, center, low).
-			The y-axis is displayed on a logarithmic scale for better visualization.
-		"""
-
-		dates = []
-		high_freq_z  , high_freq_r,   high_freq_c   = [], [], []
-		center_freq_z, center_freq_r, center_freq_c = [], [], []
-		low_freq_z   , low_freq_r,    low_freq_c    = [], [], []
-
-		high_freq_val, center_freq_val, low_freq_val = None, None, None
-
-		for visit in visits:
-			date = visit['visit_date']
-			sensor_data = visit.get('sensor_data', {})
-			impedance_data = sensor_data.get('impedance', {})
-
-			dates.append(date)
-
-			# Process high frequency data
-			high_freq = impedance_data.get('high_frequency', {})
-			try:
-				z_val = float(high_freq.get('Z')) 			if high_freq.get('Z') 			not in (None, '') else None
-				r_val = float(high_freq.get('resistance'))  if high_freq.get('resistance')  not in (None, '') else None
-				c_val = float(high_freq.get('capacitance')) if high_freq.get('capacitance') not in (None, '') else None
-
-				if high_freq.get('frequency'):
-					high_freq_val = high_freq.get('frequency')
-
-				high_freq_z.append(z_val)
-				high_freq_r.append(r_val)
-				high_freq_c.append(c_val)
-			except (ValueError, TypeError):
-				high_freq_z.append(None)
-				high_freq_r.append(None)
-				high_freq_c.append(None)
-
-			# Process center frequency data
-			center_freq = impedance_data.get('center_frequency', {})
-			try:
-				z_val = float(center_freq.get('Z')) 		 if center_freq.get('Z') 			not in (None, '') else None
-				r_val = float(center_freq.get('resistance'))  if center_freq.get('resistance')  not in (None, '') else None
-				c_val = float(center_freq.get('capacitance')) if center_freq.get('capacitance') not in (None, '') else None
-
-				if center_freq.get('frequency'):
-					center_freq_val = center_freq.get('frequency')
-
-				center_freq_z.append(z_val)
-				center_freq_r.append(r_val)
-				center_freq_c.append(c_val)
-			except (ValueError, TypeError):
-				center_freq_z.append(None)
-				center_freq_r.append(None)
-				center_freq_c.append(None)
-
-			# Process low frequency data
-			low_freq = impedance_data.get('low_frequency', {})
-			try:
-				z_val = float(low_freq.get('Z')) 		   if low_freq.get('Z') 		  not in (None, '') else None
-				r_val = float(low_freq.get('resistance'))  if low_freq.get('resistance')  not in (None, '') else None
-				c_val = float(low_freq.get('capacitance')) if low_freq.get('capacitance') not in (None, '') else None
-
-				if low_freq.get('frequency'):
-					low_freq_val = low_freq.get('frequency')
-
-				low_freq_z.append(z_val)
-				low_freq_r.append(r_val)
-				low_freq_c.append(c_val)
-
-			except (ValueError, TypeError):
-				low_freq_z.append(None)
-				low_freq_r.append(None)
-				low_freq_c.append(None)
-
-		fig = go.Figure()
-
-		# Format frequency labels
-		# high_freq_label   = f"{float(high_freq_val):.0f}Hz"   if high_freq_val 	 else "High Freq"
-		# center_freq_label = f"{float(center_freq_val):.0f}Hz" if center_freq_val else "Center Freq"
-		# low_freq_label    = f"{float(low_freq_val):.0f}Hz" 	  if low_freq_val	 else "Low Freq"
-
-		high_freq_label   = "Highest Freq"
-		center_freq_label = "Center Freq (Max Phase Angle)"
-		low_freq_label    = "Lowest Freq"
-
-		# Add high frequency traces
-		if measurement_mode == "Absolute Impedance (|Z|)":
-			if any(x is not None for x in high_freq_z):
-				fig.add_trace(go.Scatter(
-					x=dates, y=high_freq_z,
-					name=f'|Z| ({high_freq_label})',
-					mode='lines+markers'
-				))
-		elif measurement_mode == "Resistance":
-			if any(x is not None for x in high_freq_r):
-				fig.add_trace(go.Scatter(
-					x=dates, y=high_freq_r,
-					name=f'Resistance ({high_freq_label})',
-					mode='lines+markers'
-				))
-		elif measurement_mode == "Capacitance":
-			if any(x is not None for x in high_freq_c):
-				fig.add_trace(go.Scatter(
-					x=dates, y=high_freq_c,
-					name=f'Capacitance ({high_freq_label})',
-					mode='lines+markers'
-				))
-
-		# Add center frequency traces
-		if measurement_mode == "Absolute Impedance (|Z|)":
-			if any(x is not None for x in center_freq_z):
-				fig.add_trace(go.Scatter(
-					x=dates, y=center_freq_z,
-					name=f'|Z| ({center_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dot')
-				))
-		elif measurement_mode == "Resistance":
-			if any(x is not None for x in center_freq_r):
-				fig.add_trace(go.Scatter(
-					x=dates, y=center_freq_r,
-					name=f'Resistance ({center_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dot')
-				))
-		elif measurement_mode == "Capacitance":
-			if any(x is not None for x in center_freq_c):
-				fig.add_trace(go.Scatter(
-					x=dates, y=center_freq_c,
-					name=f'Capacitance ({center_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dot')
-				))
-
-		# Add low frequency traces
-		if measurement_mode == "Absolute Impedance (|Z|)":
-			if any(x is not None for x in low_freq_z):
-				fig.add_trace(go.Scatter(
-					x=dates, y=low_freq_z,
-					name=f'|Z| ({low_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dash')
-				))
-		elif measurement_mode == "Resistance":
-			if any(x is not None for x in low_freq_r):
-				fig.add_trace(go.Scatter(
-					x=dates, y=low_freq_r,
-					name=f'Resistance ({low_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dash')
-				))
-		elif measurement_mode == "Capacitance":
-			if any(x is not None for x in low_freq_c):
-				fig.add_trace(go.Scatter(
-					x=dates, y=low_freq_c,
-					name=f'Capacitance ({low_freq_label})',
-					mode='lines+markers',
-					line=dict(dash='dash')
-				))
-
-		fig.update_layout(
-			title='Impedance Measurements Over Time',
-			xaxis_title='Visit Date',
-			yaxis_title='Impedance Values',
-			hovermode='x unified',
-			showlegend=True,
-			height=600,
-			yaxis=dict(type='log'),  # Use log scale for better visualization
-		)
-
-		return fig
-
-	@staticmethod
-	def create_oxygenation_chart(patient_data, visits):
-		"""
-		Creates two charts for visualizing oxygenation and hemoglobin data.
-
-		Parameters:
-		-----------
-		patient_data : pandas.DataFrame
-			DataFrame containing patient visit data with columns 'Visit date',
-			'Oxyhemoglobin Level', and 'Deoxyhemoglobin Level'.
-		visits : list
-			List of dictionaries, each containing visit data with keys 'visit_date'
-			and 'sensor_data'. The 'sensor_data' dictionary should contain
-			'oxygenation' and 'hemoglobin' measurements.
-
-		Returns:
-		--------
-		tuple
-			A tuple containing two plotly figures:
-			- fig_bar: A stacked bar chart showing Oxyhemoglobin and Deoxyhemoglobin levels
-			- fig_line: A line chart showing Oxygenation percentage and Hemoglobin levels over time
-
-		Notes:
-		------
-		The hemoglobin values are multiplied by 100 for visualization purposes in the line chart.
-		"""
-		fig_bar = go.Figure()
-		fig_bar.add_trace(go.Bar(
-			x=patient_data['Visit date'],
-			y=patient_data['Oxyhemoglobin Level'],
-			name="Oxyhemoglobin",
-			marker_color='red'
-		))
-		fig_bar.add_trace(go.Bar(
-			x=patient_data['Visit date'],
-			y=patient_data['Deoxyhemoglobin Level'],
-			name="Deoxyhemoglobin",
-			marker_color='purple'
-		))
-		fig_bar.update_layout(
-			title=f"Hemoglobin Components",
-			xaxis_title="Visit Date",
-			yaxis_title="Level (g/dL)",
-			barmode='stack',
-			legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
-		)
-
-		# Create an interactive chart showing oxygenation and hemoglobin measurements over time.
-		dates = []
-		oxygenation = []
-		hemoglobin = []
-
-		for visit in visits:
-			date = visit['visit_date']
-			sensor_data = visit['sensor_data']
-			dates.append(date)
-			oxygenation.append(sensor_data.get('oxygenation'))
-
-			# Handle None values for hemoglobin measurements
-			hb = sensor_data.get('hemoglobin')
-			hemoglobin.append(100 * hb if hb is not None else None)
-
-		fig_line = go.Figure()
-		fig_line.add_trace(go.Scatter(x=dates, y=oxygenation, name='Oxygenation (%)', mode='lines+markers'))
-		fig_line.add_trace(go.Scatter(x=dates, y=hemoglobin, name='Hemoglobin', mode='lines+markers'))
-
-		fig_line.update_layout(
-			title='Oxygenation and Hemoglobin Measurements Over Time',
-			xaxis_title='Visit Date',
-			yaxis_title='Value',
-			hovermode='x unified'
-		)
-		return fig_bar, fig_line
-
-	@staticmethod
-	def create_exudate_chart(visits):
-		"""
-		Create a chart showing exudate characteristics over time.
-
-		This function processes a series of visit data to visualize changes in wound exudate
-		characteristics across multiple visits. It displays exudate volume as a line graph,
-		and exudate type and viscosity as text markers on separate horizontal lines.
-
-		Parameters:
-		-----------
-		visits : list
-			A list of dictionaries, where each dictionary represents a visit and contains:
-			- 'visit_date': datetime or string, the date of the visit
-			- 'wound_info': dict, containing wound information including an 'exudate' key with:
-				- 'volume': numeric, the volume of exudate
-				- 'type': string, the type of exudate (e.g., serous, sanguineous)
-				- 'viscosity': string, the viscosity of exudate (e.g., thin, thick)
-
-		Returns:
-		--------
-		go.Figure
-			A plotly figure object containing the exudate characteristics chart with
-			three potential traces: volume as a line graph, and type and viscosity as
-			text markers on fixed y-positions.
-
-		Note:
-		-----
-		The function handles missing data gracefully, only plotting traces if data exists.
-		"""
-
-		dates = []
-		volumes = []
-		types = []
-		viscosities = []
-
-		for visit in visits:
-			date       = visit['visit_date']
-			wound_info = visit['wound_info']
-			exudate    = wound_info.get('exudate', {})
-			dates.append(date)
-			volumes.append(exudate.get('volume', None))
-			types.append(exudate.get('type', None))
-			viscosities.append(exudate.get('viscosity', None))
-
-		# Create figure for categorical data
-		fig = go.Figure()
-
-		# Add volume as lines
-		if any(volumes):
-			fig.add_trace(go.Scatter(x=dates, y=volumes, name='Volume', mode='lines+markers'))
-
-		# Add types and viscosities as markers with text
-		if any(types):
-			fig.add_trace(go.Scatter(
-				x=dates,
-				y=[1]*len(dates),
-				text=types,
-				name='Type',
-				mode='markers+text',
-				textposition='bottom center'
-			))
-
-		if any(viscosities):
-			fig.add_trace(go.Scatter(
-				x=dates,
-				y=[0]*len(dates),
-				text=viscosities,
-				name='Viscosity',
-				mode='markers+text',
-				textposition='top center'
-			))
-
-		fig.update_layout(
-			# title='Exudate Characteristics Over Time',
-			xaxis_title='Visit Date',
-			yaxis_title='Properties',
-			hovermode='x unified'
-		)
-		return fig
 
 class Dashboard:
 	"""Main dashboard class for the Wound Analysis application.
@@ -1092,7 +52,7 @@ class Dashboard:
 	- LLM-powered wound analysis
 
 	Attributes:
-		config (Config): Configuration settings for the application
+		DashboardSettings (DashboardSettings): Configuration settings for the application
 		data_manager (DataManager): Handles data loading and processing operations
 		visualizer (Visualizer): Creates data visualizations for the dashboard
 		impedance_analyzer (ImpedanceAnalyzer): Processes and interprets impedance measurements
@@ -1118,7 +78,7 @@ class Dashboard:
 		"""
 	def __init__(self):
 		"""Initialize the dashboard."""
-		self.config             = Config()
+		self.DashboardSettings             = DashboardSettings()
 		self.data_manager       = DataManager()
 		self.visualizer         = Visualizer()
 		self.impedance_analyzer = ImpedanceAnalyzer()
@@ -1133,11 +93,11 @@ class Dashboard:
 	def setup(self) -> None:
 		"""Set up the dashboard configuration."""
 		st.set_page_config(
-			page_title = self.config.PAGE_TITLE,
-			page_icon  = self.config.PAGE_ICON,
-			layout     = self.config.LAYOUT
+			page_title = self.DashboardSettings.PAGE_TITLE,
+			page_icon  = self.DashboardSettings.PAGE_ICON,
+			layout     = self.DashboardSettings.LAYOUT
 		)
-		Config.initialize()
+		DashboardSettings.initialize()
 		self._create_left_sidebar()
 
 	@staticmethod
@@ -1190,7 +150,7 @@ class Dashboard:
 		self.data_processor = WoundDataProcessor(df=df, impedance_freq_sweep_path=self.impedance_freq_sweep_path)
 
 		# Header
-		st.title(self.config.PAGE_TITLE)
+		st.title(self.DashboardSettings.PAGE_TITLE)
 
 		# Patient selection
 		patient_ids = sorted(df['Record ID'].unique())
@@ -1354,15 +314,313 @@ class Dashboard:
 		-----
 		The method performs the following operations:
 		1. Creates a filtered dataset based on user-controlled outlier thresholds
-		2. Renders a scatter plot showing relationships between impedance variables
-		3. Displays additional population-level charts for impedance analysis
+		2. Allows clustering of data based on selected features
+		3. Renders a scatter plot showing relationships between impedance variables
+		4. Displays additional charts for population-level impedance analysis
 		"""
 
 		# Create a copy of the dataframe for analysis
 		analysis_df = df.copy()
 
+		# Create an expander for clustering options
+		with st.expander("Patient Data Clustering", expanded=True):
+			st.markdown("### Cluster Analysis Settings")
+
+			# Create two columns for clustering controls
+			col1, col2, col3 = st.columns([1, 1, 1])
+
+			with col1:
+				# Number of clusters selection
+				n_clusters = st.slider("Number of Clusters", min_value=2, max_value=10, value=3,
+									   help="Select the number of clusters to divide patient data into")
+
+			with col2:
+				# Features for clustering selection
+				cluster_features = st.multiselect(
+					"Features for Clustering",
+					options=[
+						"Skin Impedance (kOhms) - Z",
+						"Calculated Wound Area",
+						"Center of Wound Temperature (Fahrenheit)",
+						"Oxygenation (%)",
+						"Hemoglobin Level",
+						"Calculated Age at Enrollment",
+						"BMI",
+						"Days_Since_First_Visit",
+						"Healing Rate (%)"
+					],
+					default=["Skin Impedance (kOhms) - Z", "Calculated Wound Area", "Healing Rate (%)"],
+					help="Select features to be used for clustering patients"
+				)
+
+			with col3:
+				# Method selection
+				clustering_method = st.selectbox(
+					"Clustering Method",
+					options=["K-Means", "Hierarchical", "DBSCAN"],
+					index=0,
+					help="Select the clustering algorithm to use"
+				)
+
+				# Add button to run clustering
+				run_clustering = st.button("Run Clustering")
+
+		# Session state for clusters
+		if 'clusters' not in st.session_state:
+			st.session_state.clusters = None
+			st.session_state.cluster_df = None
+			st.session_state.selected_cluster = None
+			st.session_state.feature_importance = None
+
+		# Run clustering if requested
+		if run_clustering and len(cluster_features) > 0:
+			try:
+				# Create a feature dataframe for clustering
+				clustering_df = analysis_df[cluster_features].copy()
+
+				# Handle missing values
+				clustering_df = clustering_df.fillna(clustering_df.mean())
+
+				# Standardize the features
+				from sklearn.preprocessing import StandardScaler
+				from sklearn.cluster import KMeans, DBSCAN
+				from sklearn.metrics import silhouette_score
+				from scipy.cluster.hierarchy import linkage, fcluster
+				import numpy as np
+
+				# Drop rows with any remaining NaN values
+				clustering_df = clustering_df.dropna()
+
+				if len(clustering_df) > n_clusters:  # Ensure we have more data points than clusters
+					# Get indices of valid rows to map back to original dataframe
+					valid_indices = clustering_df.index
+
+					# Standardize the data
+					scaler = StandardScaler()
+					scaled_features = scaler.fit_transform(clustering_df)
+
+					# Perform clustering based on selected method
+					if clustering_method == "K-Means":
+						clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+						cluster_labels = clusterer.fit_predict(scaled_features)
+
+						# Calculate feature importance for K-Means
+						centers = clusterer.cluster_centers_
+						feature_importance = {}
+						for i, feature in enumerate(cluster_features):
+							# Calculate the variance of this feature across cluster centers
+							variance = np.var([center[i] for center in centers])
+							feature_importance[feature] = variance
+
+						# Normalize the feature importance
+						max_importance = max(feature_importance.values())
+						feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
+
+					elif clustering_method == "Hierarchical":
+						# Perform hierarchical clustering
+						Z = linkage(scaled_features, 'ward')
+						cluster_labels = fcluster(Z, n_clusters, criterion='maxclust') - 1  # Adjust to 0-based
+
+						# For hierarchical clustering, use silhouette coefficients for feature importance
+						feature_importance = {}
+						for i, feature in enumerate(cluster_features):
+							# Create single-feature clustering and measure its quality
+							single_feature = scaled_features[:, i:i+1]
+							if len(np.unique(single_feature)) > 1:  # Only if feature has variation
+								temp_clusters = fcluster(linkage(single_feature, 'ward'), n_clusters, criterion='maxclust')
+								try:
+									score = silhouette_score(single_feature, temp_clusters)
+									feature_importance[feature] = max(0, score)  # Ensure non-negative
+								except:
+									feature_importance[feature] = 0.01  # Fallback value
+							else:
+								feature_importance[feature] = 0.01
+
+						# Normalize the feature importance
+						if max(feature_importance.values()) > 0:
+							max_importance = max(feature_importance.values())
+							feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
+
+					else:  # DBSCAN
+						# Calculate epsilon based on data
+						from sklearn.neighbors import NearestNeighbors
+						neigh = NearestNeighbors(n_neighbors=3)
+						neigh.fit(scaled_features)
+						distances, _ = neigh.kneighbors(scaled_features)
+						distances = np.sort(distances[:, 2], axis=0)  # Distance to 3rd nearest neighbor
+						epsilon = np.percentile(distances, 90)  # Use 90th percentile as epsilon
+
+						clusterer = DBSCAN(eps=epsilon, min_samples=max(3, len(scaled_features)//30))
+						cluster_labels = clusterer.fit_predict(scaled_features)
+
+						# For DBSCAN, count points in each cluster as a measure of feature importance
+						from collections import Counter
+						counts = Counter(cluster_labels)
+
+						# Adjust n_clusters to actual number found by DBSCAN
+						n_clusters = len([k for k in counts.keys() if k >= 0])  # Exclude noise points (label -1)
+
+						# Calculate feature importance for DBSCAN using variance within clusters
+						feature_importance = {}
+						for i, feature in enumerate(cluster_features):
+							variances = []
+							for label in set(cluster_labels):
+								if label >= 0:  # Exclude noise points
+									cluster_data = scaled_features[cluster_labels == label, i]
+									if len(cluster_data) > 1:
+										variances.append(np.var(cluster_data))
+							if variances:
+								feature_importance[feature] = 1.0 - min(1.0, np.mean(variances)/np.var(scaled_features[:, i]))
+							else:
+								feature_importance[feature] = 0.01
+
+						# Normalize feature importance
+						if max(feature_importance.values()) > 0:
+							max_importance = max(feature_importance.values())
+							feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
+
+					# Create a new column in the original dataframe with cluster labels
+					cluster_mapping = pd.Series(cluster_labels, index=valid_indices)
+					analysis_df.loc[valid_indices, 'Cluster'] = cluster_mapping
+
+					# Handle any NaN in cluster column (rows that were dropped during clustering)
+					analysis_df['Cluster'] = analysis_df['Cluster'].fillna(-1).astype(int)
+
+					# Store clustering results in session state
+					st.session_state.clusters = sorted(analysis_df['Cluster'].unique())
+					st.session_state.cluster_df = analysis_df
+					st.session_state.feature_importance = feature_importance
+					st.session_state.selected_cluster = None  # Reset selected cluster
+
+					# Display success message
+					st.success(f"Successfully clustered data into {n_clusters} clusters using {clustering_method}!")
+
+					# Display cluster distribution
+					cluster_counts = analysis_df['Cluster'].value_counts().sort_index()
+
+					# Filter out noise points (label -1) for visualization
+					if -1 in cluster_counts:
+						noise_count = cluster_counts[-1]
+						cluster_counts = cluster_counts[cluster_counts.index >= 0]
+						st.info(f"Note: {noise_count} points were classified as noise (only applies to DBSCAN)")
+
+					# Create a bar chart for cluster sizes
+					fig = px.bar(
+						x=cluster_counts.index,
+						y=cluster_counts.values,
+						labels={'x': 'Cluster', 'y': 'Number of Patients/Visits'},
+						title=f"Cluster Distribution",
+						color=cluster_counts.index,
+						text=cluster_counts.values
+					)
+
+					fig.update_traces(textposition='outside')
+					fig.update_layout(showlegend=False)
+					st.plotly_chart(fig, use_container_width=True)
+
+					# Create a spider/radar chart showing feature importance for clustering
+					if feature_importance:
+						# Create a radar chart for feature importance
+						categories = list(feature_importance.keys())
+						values = list(feature_importance.values())
+
+						fig = go.Figure()
+						fig.add_trace(go.Scatterpolar(
+							r=values,
+							theta=categories,
+							fill='toself',
+							name='Feature Importance'
+						))
+
+						fig.update_layout(
+							title="Feature Importance in Clustering",
+							polar=dict(
+								radialaxis=dict(visible=True, range=[0, 1]),
+							),
+							showlegend=False
+						)
+
+						st.plotly_chart(fig, use_container_width=True)
+				else:
+					st.error("Not enough valid data points for clustering. Try selecting different features or reducing the number of clusters.")
+
+			except Exception as e:
+				st.error(f"Error during clustering: {str(e)}")
+				import traceback
+				st.error(traceback.format_exc())
+
+		# Check if clustering has been performed
+		if st.session_state.clusters is not None and st.session_state.cluster_df is not None:
+			# Create selection for which cluster to analyze
+			st.markdown("### Cluster Selection")
+
+			cluster_options = [f"All Data"]
+			for cluster_id in sorted([c for c in st.session_state.clusters if c >= 0]):
+				cluster_count = len(st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id])
+				cluster_options.append(f"Cluster {cluster_id} (n={cluster_count})")
+
+			selected_option = st.selectbox(
+				"Select cluster to analyze:",
+				options=cluster_options,
+				index=0
+			)
+
+			# Update the selected cluster in session state
+			if selected_option == "All Data":
+				st.session_state.selected_cluster = None
+				working_df = analysis_df
+			else:
+				cluster_id = int(selected_option.split(" ")[1].split("(")[0])
+				st.session_state.selected_cluster = cluster_id
+				working_df = st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id].copy()
+
+				# Display cluster characteristics
+				st.markdown(f"### Characteristics of Cluster {cluster_id}")
+
+				# Create summary statistics for this cluster vs. overall population
+				summary_stats = []
+
+				for feature in cluster_features:
+					if feature in working_df.columns:
+						try:
+							cluster_mean = working_df[feature].mean()
+							overall_mean = analysis_df[feature].mean()
+							diff_pct = ((cluster_mean - overall_mean) / overall_mean * 100) if overall_mean != 0 else 0
+
+							summary_stats.append({
+								"Feature": feature,
+								"Cluster Mean": f"{cluster_mean:.2f}",
+								"Population Mean": f"{overall_mean:.2f}",
+								"Difference": f"{diff_pct:+.1f}%",
+								"Significant": abs(diff_pct) > 15
+							})
+						except:
+							pass
+
+				if summary_stats:
+					summary_df = pd.DataFrame(summary_stats)
+
+					# Create a copy of the styling DataFrame to avoid the KeyError
+					styled_df = summary_df.copy()
+
+					# Define the highlight function that uses a custom attribute instead of accessing the DataFrame
+					def highlight_significant(row):
+						is_significant = row['Significant'] if 'Significant' in row else False
+						# Return styling for all columns except 'Significant'
+						return ['background-color: yellow' if is_significant else '' for _ in range(len(row))]
+
+					# Apply styling to all columns, then drop the 'Significant' column for display
+					styled_df = styled_df.style.apply(highlight_significant, axis=1)
+					styled_df.hide(axis="columns", names=["Significant"])
+
+					# Display the styled DataFrame
+					st.table(styled_df)
+					st.info("Highlighted rows indicate features where this cluster differs from the overall population by >15%")
+		else:
+			working_df = analysis_df
+
 		# Add outlier threshold control and calculate correlation
-		filtered_df = self._display_impedance_correlation_controls(analysis_df)
+		filtered_df = self._display_impedance_correlation_controls(working_df)
 
 		# Create scatter plot if we have valid data
 		if not filtered_df.empty:
@@ -1371,28 +629,28 @@ class Dashboard:
 			st.warning("No valid data available for the scatter plot.")
 
 		# Create additional visualizations in a two-column layout
-		self._render_population_impedance_charts(df)
+		self._render_population_impedance_charts(working_df)
 
 	def _display_impedance_correlation_controls(self, df: pd.DataFrame) -> pd.DataFrame:
 		"""
-		Displays controls for analyzing the correlation between skin impedance and healing rate.
+		Displays comprehensive statistical analysis between selected features.
 
-		This method creates UI controls for configuring outlier thresholds, calculates the correlation
-		between skin impedance and healing rate, and displays the correlation statistics. It also
-		processes the dataframe by clipping extreme healing rate values and ensuring consistent
-		diabetes status for each patient.
+		This method creates UI controls for configuring outlier thresholds and displays:
+		1. Correlation matrix between all selected features
+		2. Statistical significance (p-values)
+		3. Effect sizes and confidence intervals
+		4. Basic descriptive statistics for each feature
 
 		Parameters
 		----------
 		df : pd.DataFrame
-			The input dataframe containing wound data with columns for skin impedance and healing rate
+			The input dataframe containing wound data with all selected features
 
 		Returns
 		-------
 		pd.DataFrame
-			Processed dataframe with outliers removed and consistent diabetes status
+			Processed dataframe with outliers removed
 		"""
-
 		col1, _, col3 = st.columns([2, 3, 3])
 
 		with col1:
@@ -1400,27 +658,138 @@ class Dashboard:
 				"Impedance Outlier Threshold",
 				min_value=0.0,
 				max_value=0.9,
-				value=0.2,
+				value=0.0,
 				step=0.05,
 				help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
 			)
 
-		# Calculate correlation with outlier handling
-		stats_analyzer = CorrelationAnalysis(data=df, x_col='Skin Impedance (kOhms) - Z', y_col='Healing Rate (%)', outlier_threshold=outlier_threshold)
-		valid_df, r, p = stats_analyzer.calculate_correlation()
+		# Get the selected features for analysis
+		features_to_analyze = [
+			"Skin Impedance (kOhms) - Z",
+			"Calculated Wound Area",
+			"Center of Wound Temperature (Fahrenheit)",
+			"Oxygenation (%)",
+			"Hemoglobin Level",
+			"Healing Rate (%)"
+		]
 
-		# Display correlation statistics
-		with col3:
-			st.info(stats_analyzer.get_correlation_text())
+		# Filter features that exist in the dataframe
+		features_to_analyze = [f for f in features_to_analyze if f in df.columns]
 
-		# Prepare data for visualization
-		valid_df['Healing Rate (%)'] = valid_df['Healing Rate (%)'].clip(-100, 100)
+		# Create a copy of the dataframe with only the features we want to analyze
+		analysis_df = df[features_to_analyze].copy()
 
-		# Add consistent diabetes status for each patient
-		first_diabetes_status = valid_df.groupby('Record ID')['Diabetes?'].first()
-		valid_df['Diabetes?'] = valid_df['Record ID'].map(first_diabetes_status)
+		# Remove outliers if threshold is set
+		if outlier_threshold > 0:
+			for col in analysis_df.columns:
+				q_low = analysis_df[col].quantile(outlier_threshold)
+				q_high = analysis_df[col].quantile(1 - outlier_threshold)
+				analysis_df = analysis_df[
+					(analysis_df[col] >= q_low) &
+					(analysis_df[col] <= q_high)
+				]
 
-		return valid_df
+		# Calculate correlation matrix
+		corr_matrix = analysis_df.corr()
+
+		# Calculate p-values for correlations
+		def calculate_pvalue(x, y):
+			from scipy import stats
+			mask = ~(np.isnan(x) | np.isnan(y))
+			if np.sum(mask) < 2:
+				return np.nan
+			return stats.pearsonr(x[mask], y[mask])[1]
+
+		p_values = pd.DataFrame(
+			[[calculate_pvalue(analysis_df[col1], analysis_df[col2])
+			  for col2 in analysis_df.columns]
+			 for col1 in analysis_df.columns],
+			columns=analysis_df.columns,
+			index=analysis_df.columns
+		)
+
+		# Display correlation heatmap
+		st.subheader("Feature Correlation Analysis")
+
+		# Create correlation heatmap
+		fig = px.imshow(
+			corr_matrix,
+			labels=dict(color="Correlation"),
+			x=corr_matrix.columns,
+			y=corr_matrix.columns,
+			color_continuous_scale="RdBu",
+			aspect="auto"
+		)
+		fig.update_layout(
+			title="Correlation Matrix Heatmap",
+			width=800,
+			height=600
+		)
+		st.plotly_chart(fig, use_container_width=True)
+
+		# Display detailed statistics
+		st.subheader("Statistical Summary")
+
+		# Create tabs for different statistical views
+		tab1, tab2, tab3 = st.tabs(["Correlation Details", "Descriptive Stats", "Effect Sizes"])
+
+		with tab1:
+			# Display significant correlations
+			st.markdown("#### Significant Correlations (p < 0.05)")
+			significant_corrs = []
+			for i in range(len(features_to_analyze)):
+				for j in range(i+1, len(features_to_analyze)):
+					if p_values.iloc[i,j] < 0.05:
+						significant_corrs.append({
+							"Feature 1": features_to_analyze[i],
+							"Feature 2": features_to_analyze[j],
+							"Correlation": f"{corr_matrix.iloc[i,j]:.3f}",
+							"p-value": f"{p_values.iloc[i,j]:.3e}"
+						})
+
+			if significant_corrs:
+				st.table(pd.DataFrame(significant_corrs))
+			else:
+				st.info("No significant correlations found.")
+
+		with tab2:
+			# Display descriptive statistics
+			st.markdown("#### Descriptive Statistics")
+			desc_stats = analysis_df.describe()
+			desc_stats.loc["skew"] = analysis_df.skew()
+			desc_stats.loc["kurtosis"] = analysis_df.kurtosis()
+			st.dataframe(desc_stats)
+
+		with tab3:
+			# Calculate and display effect sizes
+			st.markdown("#### Effect Sizes (Cohen's d) relative to Impedance")
+			from scipy import stats
+
+			effect_sizes = []
+			impedance_col = "Skin Impedance (kOhms) - Z"
+
+			if impedance_col in features_to_analyze:
+				for col in features_to_analyze:
+					if col != impedance_col:
+						# Calculate Cohen's d
+						d = (analysis_df[col].mean() - analysis_df[impedance_col].mean()) / \
+							np.sqrt((analysis_df[col].var() + analysis_df[impedance_col].var()) / 2)
+
+						effect_sizes.append({
+							"Feature": col,
+							"Cohen's d": f"{d:.3f}",
+							"Effect Size": "Large" if abs(d) > 0.8 else "Medium" if abs(d) > 0.5 else "Small",
+							"95% CI": f"[{d-1.96*np.sqrt(4/len(analysis_df)):.3f}, {d+1.96*np.sqrt(4/len(analysis_df)):.3f}]"
+						})
+
+				if effect_sizes:
+					st.table(pd.DataFrame(effect_sizes))
+				else:
+					st.info("No effect sizes could be calculated.")
+			else:
+				st.info("Impedance measurements not available for effect size calculation.")
+
+		return analysis_df
 
 	def _render_impedance_scatter_plot(self, df: pd.DataFrame) -> None:
 		"""
@@ -1429,14 +798,27 @@ class Dashboard:
 		Args:
 			df: DataFrame containing impedance and healing rate data
 		"""
+		# Create a copy to avoid modifying the original dataframe
+		plot_df = df.copy()
+
+		# Handle missing values in Calculated Wound Area
+		if 'Calculated Wound Area' in plot_df.columns:
+			# Fill NaN with the mean, or 1 if all values are NaN
+			mean_area = plot_df['Calculated Wound Area'].mean()
+			plot_df['Calculated Wound Area'] = plot_df['Calculated Wound Area'].fillna(mean_area if pd.notnull(mean_area) else 1)
+
+		# Define hover data columns we want to show if available
+		hover_columns = ['Record ID', 'Event Name', 'Wound Type']
+		available_hover = [col for col in hover_columns if col in plot_df.columns]
+
 		fig = px.scatter(
-			df,
+			plot_df,
 			x='Skin Impedance (kOhms) - Z',
 			y='Healing Rate (%)',
-			color='Diabetes?',
-			size='Calculated Wound Area',
+			color='Diabetes?' if 'Diabetes?' in plot_df.columns else None,
+			size='Calculated Wound Area' if 'Calculated Wound Area' in plot_df.columns else None,
 			size_max=30,
-			hover_data=['Record ID', 'Event Name', 'Wound Type'],
+			hover_data=available_hover,
 			title="Impedance vs Healing Rate Correlation"
 		)
 
@@ -1511,7 +893,7 @@ class Dashboard:
 		patient_id : int
 			The unique identifier for the patient to analyze
 
-		Returns
+		Returns:
 		-------
 		None
 			This method renders UI elements directly to the Streamlit dashboard
@@ -1837,7 +1219,7 @@ class Dashboard:
 			Args:
 				changes: Dictionary mapping parameter names to percentage changes
 				significant_changes: Dictionary mapping parameter names to boolean values
-					indicating clinical significance
+					indicating clinically significant
 		"""
 		st.markdown("#### Changes Since Previous Visit", help="""The changes since previous visit are based on bioelectrical impedance analysis (BIA) principles to evaluate the composition of biological tissues based on the frequency-dependent response to electrical current.""")
 
@@ -2746,7 +2128,7 @@ class Dashboard:
 					volume           = visit['wound_info']['exudate'].get('volume', 'N/A')
 					viscosity        = visit['wound_info']['exudate'].get('viscosity', 'N/A')
 					exudate_type_str = str(visit['wound_info']['exudate'].get('type', 'N/A'))
-					exudate_analysis = Config.get_exudate_analysis(volume=volume, viscosity=viscosity, exudate_types=exudate_type_str)
+					exudate_analysis = DashboardSettings.get_exudate_analysis(volume=volume, viscosity=viscosity, exudate_types=exudate_type_str)
 
 					with col1:
 						st.markdown("### Volume Analysis")
@@ -2777,8 +2159,8 @@ class Dashboard:
 						# Process each exudate type
 						highest_severity = 'info'  # Track highest severity for overall implications
 						for exudate_type in exudate_types:
-							if exudate_type in Config.EXUDATE_TYPE_INFO:
-								info = Config.EXUDATE_TYPE_INFO[exudate_type]
+							if exudate_type in DashboardSettings.EXUDATE_TYPE_INFO:
+								info = DashboardSettings.EXUDATE_TYPE_INFO[exudate_type]
 								message = f"""
 								**Description:** {info['description']} \n
 								**Clinical Indication:** {info['indication']}
@@ -2903,9 +2285,9 @@ class Dashboard:
 					stats_data = diab_stats.loc[status]
 					improvement_rate = (valid_df[valid_df['Diabetes?'] == status]['Healing Rate (%)'] < 0).mean() * 100
 					st.write(f"- {status}: Average Healing Rate = {stats_data[('Healing Rate (%)', 'mean')]}% "
-							f"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
-							f"SD={stats_data[('Healing Rate (%)', 'std')]}, "
-							f"Improvement Rate={improvement_rate:.1f}%)")
+							"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
+							"SD={stats_data[('Healing Rate (%)', 'std')]}, "
+							"Improvement Rate={improvement_rate:.1f}%)")
 
 				# Compare wound types distribution
 				wound_diab = pd.crosstab(valid_df['Diabetes?'], valid_df['Wound Type'], normalize='index') * 100
@@ -2960,9 +2342,9 @@ class Dashboard:
 					stats_data = smoke_stats.loc[status]
 					improvement_rate = (valid_df[valid_df['Smoking status'] == status]['Healing Rate (%)'] < 0).mean() * 100
 					st.write(f"- {status}: Average Healing Rate = {stats_data[('Healing Rate (%)', 'mean')]}% "
-							f"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
-							f"SD={stats_data[('Healing Rate (%)', 'std')]}, "
-							f"Improvement Rate={improvement_rate:.1f}%)")
+							"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
+							"SD={stats_data[('Healing Rate (%)', 'std')]}, "
+							"Improvement Rate={improvement_rate:.1f}%)")
 
 				# Wound type distribution by smoking status
 				wound_smoke = pd.crosstab(valid_df['Smoking status'], valid_df['Wound Type'], normalize='index') * 100
@@ -3019,9 +2401,9 @@ class Dashboard:
 					stats_data = bmi_stats.loc[category]
 					improvement_rate = (valid_df[valid_df['BMI Category'] == category]['Healing Rate (%)'] < 0).mean() * 100
 					st.write(f"- {category}: Average Healing Rate = {stats_data[('Healing Rate (%)', 'mean')]}% "
-							f"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
-							f"SD={stats_data[('Healing Rate (%)', 'std')]}, "
-							f"Improvement Rate={improvement_rate:.1f}%)")
+							"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
+							"SD={stats_data[('Healing Rate (%)', 'std')]}, "
+							"Improvement Rate={improvement_rate:.1f}%)")
 
 				# Wound type distribution by BMI category
 				wound_bmi = pd.crosstab(valid_df['BMI Category'], valid_df['Wound Type'], normalize='index') * 100
@@ -3480,7 +2862,7 @@ class Dashboard:
 		None
 			This method renders content to the Streamlit UI and doesn't return any value.
 
-		Notes:
+		Notes
 		-----
 		The method handles cases where data might be missing by displaying placeholder values.
 		It organizes information into three main sections:
@@ -3569,7 +2951,7 @@ class Dashboard:
 					st.markdown("**Infection**")
 					st.info(
 						f"Status: {get_metric_value(infection.get('status'))}\n\n"
-						f"WIfI Classification: {get_metric_value(infection.get('wifi_classification'))}"
+						"WiFi Classification: {get_metric_value(infection.get('wifi_classification'))}"
 					)
 
 			# Granulation information in a success box
