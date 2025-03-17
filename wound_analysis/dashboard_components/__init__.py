@@ -6,5 +6,6 @@ including settings, visualizations, and other UI elements.
 """
 
 from .settings import DashboardSettings
+from .visualizer import Visualizer
 
-__all__ = ['DashboardSettings']
+__all__ = ['DashboardSettings', 'Visualizer']
