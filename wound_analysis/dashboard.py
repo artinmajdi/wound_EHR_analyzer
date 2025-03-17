@@ -32,7 +32,7 @@ def debug_log(message):
 	st.sidebar.text(message)
 
 @dataclass
-class Config:
+class DashboardSettings:
 	"""Configuration class for the Wound Care Management & Interpreter Dashboard.
 
 	This class defines constants, settings, and utility methods used throughout the
@@ -163,8 +163,8 @@ class Config:
 			Monitor fluid balance and nutrition.
 			"""
 		for exudate_type in [t.strip() for t in exudate_types.split(',')]:
-			if exudate_type and exudate_type in Config.EXUDATE_TYPE_INFO:
-				result["type_info"][exudate_type] = Config.EXUDATE_TYPE_INFO[exudate_type]
+			if exudate_type and exudate_type in DashboardSettings.EXUDATE_TYPE_INFO:
+				result["type_info"][exudate_type] = DashboardSettings.EXUDATE_TYPE_INFO[exudate_type]
 
 		# Treatment implications based on volume and viscosity
 		if volume == 'High' and viscosity == 'High':
