@@ -42,7 +42,7 @@ class WoundDataProcessor:
 		# Clean column names
 		self.df.columns = self.df.columns.str.strip()
 
-	def get_patient_visits(self, record_id: int) -> Dict:
+	def get_patient_visits(self, record_id: int) -> dict:
 		"""
 			Retrieves all visit data for a specific patient.
 
@@ -91,7 +91,7 @@ class WoundDataProcessor:
 			logger.error(f"Error processing patient {record_id}: {str(e)}")
 			raise
 
-	def get_population_statistics(self) -> Dict:
+	def get_population_statistics(self) -> dict:
 		"""
 			Gather comprehensive population-level statistics for LLM analysis.
 
@@ -691,7 +691,7 @@ class WoundDataProcessor:
 			logger.warning(f"Error getting wound info: {str(e)}")
 			return {}
 
-	def _process_visit_data(self, visit, record_id: int) -> Optional[Dict]:
+	def _process_visit_data(self, visit: dict, record_id: int) -> Optional[Dict]:
 		"""
 			Process the data from a single patient visit and extract relevant information.
 
@@ -835,6 +835,13 @@ class WoundDataProcessor:
 			}
 		}
 
+	def get_patient_dataframe(self, record_id: int) -> pd.DataFrame:
+		"""
+		Get the patient dataframe for a given record ID.
+		"""
+		vis   = self.columns.visit_info
+		recid = self.columns.patient_identifiers.record_id
+		return self.df[self.df[recid] == record_id].sort_values(vis.visit_date)
 
 @dataclass
 class DataManager:
@@ -1088,31 +1095,6 @@ class DataManager:
 			df.loc[:, hm.overall_improvement]    = pd.Series(np.nan, index=df.index, dtype=str)
 
 		return df
-
-	@staticmethod
-	def get_patient_data(df: pd.DataFrame, patient_id: int) -> pd.DataFrame:
-		"""
-		Retrieves data for a specific patient from the dataframe.
-
-		This function filters a dataframe to return only records for a specific patient
-		identified by their patient_id, and sorts the results by 'Visit Number'.
-
-		Parameters:
-			df (pd.DataFrame): The source dataframe containing patient records.
-			patient_id (int): The unique identifier for the patient whose data is being retrieved.
-
-		Returns:
-			pd.DataFrame: A filtered and sorted dataframe containing only the specified patient's data.
-
-		Note:
-			This function relies on the DataColumns schema class to determine the column name for patient identifiers.
-		"""
-
-		# Get column names from schema
-		schema = DataColumns()
-		pi = schema.patient_identifiers
-
-		return df[df[pi.record_id] == patient_id].sort_values('Visit Number')
 
 	@staticmethod
 	def _extract_patient_metadata(patient_data) -> Dict:
@@ -1401,7 +1383,6 @@ class DataManager:
 		# Save the document
 		if report_path is not None:
 			doc.save(report_path)
-
 
 class ImpedanceExcelProcessor:
 	"""
@@ -1701,7 +1682,6 @@ class ImpedanceExcelProcessor:
 			})
 
 		return freq_data
-
 
 class ImpedanceAnalyzer:
 	"""Handles advanced bioimpedance analysis and clinical interpretation."""
@@ -2438,7 +2418,7 @@ class ImpedanceAnalyzer:
 		return results
 
 	@staticmethod
-	def generate_clinical_insights(analyses):
+	def generate_clinical_insights(analysis):
 		"""
 			Generates clinical insights based on various wound analysis results.
 
@@ -2476,8 +2456,8 @@ class ImpedanceAnalyzer:
 		insights = []
 
 		# Healing trajectory insights
-		if 'healing_trajectory' in analyses:
-			trajectory = analyses['healing_trajectory']
+		if 'healing_trajectory' in analysis:
+			trajectory = analysis['healing_trajectory']
 			if trajectory.get('status') == 'analyzed':
 				if trajectory.get('slope', 0) < -0.3 and trajectory.get('p_value', 1) < 0.05:
 					insights.append({
@@ -2493,8 +2473,8 @@ class ImpedanceAnalyzer:
 					})
 
 		# Infection risk insights
-		if 'infection_risk' in analyses:
-			risk = analyses['infection_risk']
+		if 'infection_risk' in analysis:
+			risk = analysis['infection_risk']
 			if risk.get('risk_score', 0) > 50:
 				insights.append({
 					"insight": f"Elevated infection risk detected ({risk.get('risk_score')}%)",
@@ -2504,8 +2484,8 @@ class ImpedanceAnalyzer:
 				})
 
 		# Tissue composition insights
-		if 'frequency_response' in analyses:
-			freq_response = analyses['frequency_response']
+		if 'frequency_response' in analysis:
+			freq_response = analysis['frequency_response']
 			if 'interpretation' in freq_response:
 				insights.append({
 					"insight": freq_response['interpretation'],
@@ -2514,8 +2494,8 @@ class ImpedanceAnalyzer:
 				})
 
 		# Anomaly detection insights
-		if 'anomalies' in analyses and analyses['anomalies']:
-			for param, anomaly in analyses['anomalies'].items():
+		if 'anomalies' in analysis and analysis['anomalies']:
+			for param, anomaly in analysis['anomalies'].items():
 				insights.append({
 					"insight": f"Significant {anomaly.get('direction')} in {anomaly.get('parameter')} detected (z-score: {anomaly.get('z_score', 0):.2f})",
 					"confidence": "High" if abs(anomaly.get('z_score', 0)) > 3 else "Moderate",
@@ -2525,7 +2505,7 @@ class ImpedanceAnalyzer:
 		return insights
 
 	@staticmethod
-	def classify_wound_healing_stage(analyses):
+	def classify_wound_healing_stage(analysis):
 		"""
 		Classifies the wound healing stage based on bioimpedance and tissue health analyses.
 
@@ -2565,16 +2545,16 @@ class ImpedanceAnalyzer:
 		confidence = "Low"
 
 		# Get tissue health index
-		tissue_health = analyses.get('tissue_health', (None, ""))
+		tissue_health = analysis.get('tissue_health', (None, ""))
 		health_score = tissue_health[0] if tissue_health else None
 
 		# Get frequency response
-		freq_response = analyses.get('frequency_response', {})
+		freq_response = analysis.get('frequency_response', {})
 		alpha = freq_response.get('alpha_dispersion', 0)
 		beta = freq_response.get('beta_dispersion', 0)
 
 		# Get Cole parameters
-		cole_params = analyses.get('cole_parameters', {})
+		cole_params = analysis.get('cole_parameters', {})
 
 		# Stage classification logic
 		if health_score is not None and freq_response and cole_params:
@@ -2625,7 +2605,8 @@ class ImpedanceAnalyzer:
 			"confidence": confidence
 		}
 
-	def prepare_population_stats(self, df: pd.DataFrame) -> tuple:
+	@staticmethod
+	def prepare_population_stats(df: pd.DataFrame) -> tuple:
 		"""
 		Calculate average impedance statistics across different groupings from the wound data.
 
@@ -2658,7 +2639,8 @@ class ImpedanceAnalyzer:
 
 		return avg_impedance, avg_by_type
 
-	def generate_clinical_analysis(self, current_visit, previous_visit=None) -> dict:
+	@staticmethod
+	def generate_clinical_analysis(current_visit: dict, previous_visit: dict=None) -> dict:
 		"""
 		Generate a comprehensive clinical analysis based on the current visit data and optionally compare with previous visit.
 
@@ -2687,21 +2669,22 @@ class ImpedanceAnalyzer:
 		analysis = {}
 
 		# Calculate tissue health index
-		analysis['tissue_health'] = self.calculate_tissue_health_index(visit=current_visit)
+		analysis['tissue_health'] = ImpedanceAnalyzer.calculate_tissue_health_index(visit=current_visit)
 
 		# Assess infection risk
-		analysis['infection_risk'] = self.assess_infection_risk(current_visit=current_visit, previous_visit=previous_visit)
+		analysis['infection_risk'] = ImpedanceAnalyzer.assess_infection_risk(current_visit=current_visit, previous_visit=previous_visit)
 
 		# Analyze tissue composition (frequency response)
-		analysis['frequency_response'] = self.analyze_frequency_response(visit=current_visit)
+		analysis['frequency_response'] = ImpedanceAnalyzer.analyze_frequency_response(visit=current_visit)
 
 		# Calculate changes since previous visit
 		if previous_visit:
-			analysis['changes'], analysis['significant_changes'] = self.calculate_visit_changes( current_visit=current_visit, previous_visit=previous_visit )
+			analysis['changes'], analysis['significant_changes'] = ImpedanceAnalyzer.calculate_visit_changes( current_visit=current_visit, previous_visit=previous_visit )
 
 		return analysis
 
-	def generate_advanced_analysis(self, visits) -> dict:
+	@staticmethod
+	def generate_advanced_analysis(visits: list) -> dict:
 		"""
 		This method performs comprehensive analysis of wound data across multiple patient visits,
 		including healing trajectory assessment, anomaly detection, Cole parameter calculations,
@@ -2734,31 +2717,31 @@ class ImpedanceAnalyzer:
 		analysis = {}
 
 		# Analyze healing trajectory
-		analysis['healing_trajectory'] = self.analyze_healing_trajectory(visits)
+		analysis['healing_trajectory'] = ImpedanceAnalyzer.analyze_healing_trajectory(visits=visits)
 
 		# Detect anomalies
-		analysis['anomalies'] = self.detect_impedance_anomalies(
-			visits[:-1], visits[-1]
+		analysis['anomalies'] = ImpedanceAnalyzer.detect_impedance_anomalies(
+			previous_visits=visits[:-1], current_visit=visits[-1]
 		)
 
 		# Calculate Cole parameters
-		analysis['cole_parameters'] = self.calculate_cole_parameters(visits[-1])
+		analysis['cole_parameters'] = ImpedanceAnalyzer.calculate_cole_parameters(visit=visits[-1])
 
 		# Get tissue health from most recent visit
-		analysis['tissue_health'] = self.calculate_tissue_health_index(visits[-1])
+		analysis['tissue_health'] = ImpedanceAnalyzer.calculate_tissue_health_index(visit=visits[-1])
 
 		# Get infection risk assessment
-		analysis['infection_risk'] = self.assess_infection_risk(
-			visits[-1], visits[-2] if len(visits) > 1 else None
+		analysis['infection_risk'] = ImpedanceAnalyzer.assess_infection_risk(
+			current_visit=visits[-1], previous_visit=visits[-2] if len(visits) > 1 else None
 		)
 
 		# Get frequency response analysis
-		analysis['frequency_response'] = self.analyze_frequency_response(visits[-1])
+		analysis['frequency_response'] = ImpedanceAnalyzer.analyze_frequency_response(visit=visits[-1])
 
 		# Generate clinical insights
-		analysis['insights'] = self.generate_clinical_insights(analysis)
+		analysis['insights'] = ImpedanceAnalyzer.generate_clinical_insights(analysis=analysis)
 
 		# Classify wound healing stage
-		analysis['healing_stage'] = self.classify_wound_healing_stage(analysis)
+		analysis['healing_stage'] = ImpedanceAnalyzer.classify_wound_healing_stage(analysis=analysis)
 
 		return analysis

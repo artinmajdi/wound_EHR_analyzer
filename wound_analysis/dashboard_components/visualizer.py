@@ -5,6 +5,9 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 
+from wound_analysis.utils.column_schema import DataColumns
+
+data_columns = DataColumns()
 
 class Visualizer:
 	"""A class that provides visualization methods for wound analysis data.
@@ -62,9 +65,10 @@ class Visualizer:
 		go.Figure
 			A Plotly figure object containing the wound area progression plot
 		"""
-		if patient_id:
-			return Visualizer._create_single_patient_plot(df, patient_id)
-		return Visualizer._create_all_patients_plot(df)
+		if patient_id is None or patient_id == "All Patients":
+			return Visualizer._create_all_patients_plot(df)
+
+		return Visualizer._create_single_patient_plot(df, patient_id)
 
 	@staticmethod
 	def _remove_outliers(df: pd.DataFrame, column: str, quantile_threshold: float = 0.1) -> pd.DataFrame:
@@ -312,7 +316,9 @@ class Visualizer:
 		- Healing rate is calculated as (first_area - last_area) / total_days
 		- The plot includes hover information and unified hover mode
 		"""
-		patient_df = df[df['Record ID'] == patient_id].sort_values('Days_Since_First_Visit')
+		record_id_str              = data_columns.patient_identifiers.record_id
+		days_since_first_visit_str = data_columns.visit_info.days_since_first_visit
+		patient_df = df[df[record_id_str] == patient_id].sort_values(days_since_first_visit_str)
 
 		fig = go.Figure()
 		fig.add_trace(go.Scatter(

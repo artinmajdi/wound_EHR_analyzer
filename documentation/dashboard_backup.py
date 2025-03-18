@@ -6,6 +6,8 @@ from typing import Optional
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
+
+from wound_analysis.utils.column_schema import DataColumns
 load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent / '.env')
 
 # Third-party imports
@@ -247,7 +249,7 @@ class Dashboard:
 			patient_id = int(selected_patient.split(" ")[1])
 			self._render_patient_overview(df, patient_id)
 			st.subheader("Wound Area Over Time")
-			fig = self.visualizer.create_wound_area_plot(DataManager.get_patient_data(df, patient_id), patient_id)
+			fig = self.visualizer.create_wound_area_plot(df=df, patient_id=patient_id)
 			st.plotly_chart(fig, use_container_width=True)
 
 	def _impedance_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
@@ -2277,8 +2279,8 @@ class Dashboard:
 				return '---'
 			return str(metric_name)
 
-
-		patient_df = DataManager.get_patient_data(df, patient_id)
+		column_name = DataColumns().patient_identifiers.record_id
+		patient_df = df[df[column_name] == patient_id].sort_values('Visit Number')
 		if patient_df.empty:
 			st.error("No data available for this patient.")
 			return
