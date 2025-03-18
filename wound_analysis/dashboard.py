@@ -327,8 +327,7 @@ class Dashboard:
 			st.markdown("### Cluster Analysis Settings")
 
 			# Create two columns for clustering controls
-			col1, col2, col3 = st.columns([1, 2, 1])
-
+			col1, col2, col3, col4 = st.columns([1, 1, 1,2])
 
 			with col1:
 				# Number of clusters selection
@@ -657,7 +656,7 @@ class Dashboard:
 
 		with col1:
 			outlier_threshold = st.number_input(
-				"Impedance Outlier Threshold",
+				"Impedance Outlier Threshold (Quantile)",
 				min_value=0.0,
 				max_value=0.9,
 				value=0.0,
