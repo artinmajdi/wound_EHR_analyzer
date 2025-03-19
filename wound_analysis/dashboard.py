@@ -225,7 +225,6 @@ class Dashboard:
 		with tabs[6]:
 			LLMAnalysisTab(selected_patient=selected_patient, data_processor=self.data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model, csv_dataset_path=self.csv_dataset_path).render()
 
-
 	def _exudate_tab(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""
 			Create and display the exudate analysis tab in the wound management dashboard.
@@ -796,8 +795,6 @@ class Dashboard:
 				est_healing_weeks = base_healing_weeks * risk_multiplier
 
 				st.markdown(f"**Estimated Healing Time:** {est_healing_weeks:.1f} weeks")
-
-
 
 	def _get_input_user_data(self) -> None:
 		"""
