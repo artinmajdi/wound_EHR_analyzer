@@ -33,7 +33,6 @@ from wound_analysis.dashboard_components.visualizer import Visualizer
 
 load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent / '.env')
 
-
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
 
