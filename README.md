@@ -1,4 +1,4 @@
-# Wound EHR Analyzer -Private-
+# Wound EHR Analyzer
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
@@ -19,6 +19,18 @@ This application leverages large language models (LLMs) to analyze wound care da
 - **Flexible Data Handling**: Support for diverse data types including images, time-series data, and clinical notes
 - **Robust Error Handling**: Graceful recovery from API interruptions and connection issues
 - **Containerized Deployment**: Docker support for consistent deployment across environments
+
+### Dashboard Components
+
+The interactive dashboard provides comprehensive wound analysis through specialized tabs:
+
+- **Overview**: Patient demographics, wound summary statistics, and population-level trends
+- **Impedance Analysis**: Electrical measurements visualization with clinical interpretations
+- **Temperature**: Thermal gradient analysis for wound assessment
+- **Oxygenation**: Tissue oxygen saturation monitoring and analysis
+- **Exudate**: Characterization and trending of wound drainage
+- **Risk Factors**: Patient-specific risk factor evaluation and impact analysis
+- **LLM Analysis**: AI-powered natural language processing for comprehensive wound assessment
 
 ## Quick Start
 
@@ -103,6 +115,8 @@ streamlit run wound_analysis/dashboard.py
 - [**Docker Usage Guide**](documentation/docker_usage.md): Detailed containerization instructions
 - [**API Documentation**](documentation/index.md): API reference and component documentation
 - [**Installation Guide**](documentation/INSTALL.md): Pip installation instructions
+- [**Data Processing**](documentation/data_processing.md): Information on supported data formats and processing pipelines
+- [**LLM Integration**](documentation/llm_integration.md): Guide to configuring and using different LLM models
 
 ## Project Structure
 
@@ -121,6 +135,8 @@ wound_management_interpreter_LLM/
 │   ├── LICENSE               # License file
 │   ├── configuration.md      # Configuration guide
 │   ├── docker_usage.md       # Docker deployment instructions
+│   ├── data_processing.md    # Data processing guide
+│   ├── llm_integration.md    # LLM integration guide
 │   └── index.md              # Documentation index
 ├── docker/                   # Docker configuration
 │   ├── Dockerfile            # Container definition
@@ -135,7 +151,14 @@ wound_management_interpreter_LLM/
 │   ├── dashboard.py          # Streamlit interface
 │   ├── main.py               # CLI entry point
 │   ├── cli.py                # Command line interface
-│   └── utils/                # Utility modules
+│   ├── utils/                # Utility modules
+│   └── dashboard_components/ # Dashboard components
+│       ├── overview.py       # Overview tab component
+│       ├── impedance.py      # Impedance analysis component
+│       ├── temperature.py    # Temperature analysis component
+│       ├── oxygenation.py    # Oxygenation analysis component
+│       ├── exudate.py        # Exudate analysis component
+│       └── risk_factors.py   # Risk factors analysis component
 ├── dataset/                  # Data directory (mounted at runtime)
 ├── .env                      # Environment variables
 └── ide_config/               # IDE configuration
