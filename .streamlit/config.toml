@@ -1,6 +1,8 @@
 [server]
 enableCORS = false
 enableXsrfProtection = false
+# Set the base path for imports
+scriptPath = "."
 
 [browser]
 gatherUsageStats = false
@@ -11,3 +13,12 @@ backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f0f2f6"
 textColor = "#262730"
 font = "sans serif"
+
+[runner]
+# This helps with Python module imports
+moduleImportPath = "."
+
+[pythonPath]
+# Add the project root to the Python path
+path = "."
+
