@@ -8,7 +8,6 @@ build/
 develop-eggs/
 dist/
 downloads/
-dataset/
 eggs/
 .eggs/
 lib/
@@ -20,18 +19,23 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-wound_analysis/temp/
+
+wound_analysis/utils/logs/*.docx
+wound_analysis/utils/logs/*.log
+dataset/impedance_frequency_sweep/palmsense_Mar_10_2025/
+
+# Public Branch Stuff
+dataset/
+.env
+*.code-workspace
+documentation/sync_repos_guide.md
+
 # Virtual Environment
 venv/
 ENV/
 env/
 .env/
 .venv/
-env.bak/
-env.local/
-
-# Project specific
-wound_analysis/utils/logs/*.docx
 
 # IDE
 .idea/
@@ -40,7 +44,7 @@ wound_analysis/utils/logs/*.docx
 *.swo
 
 # macOS
-.DS_Store
+.DS_Store/
 .AppleDouble
 .LSOverride
 

@@ -17,10 +17,10 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 # Local application imports
-from utils.column_schema import DataColumns
-from utils.data_processor import DataManager, ImpedanceAnalyzer, WoundDataProcessor
-from utils.llm_interface import WoundAnalysisLLM
-from utils.statistical_analysis import CorrelationAnalysis
+from wound_analysis.utils.column_schema import DataColumns
+from wound_analysis.utils.data_processor import DataManager, ImpedanceAnalyzer, WoundDataProcessor
+from wound_analysis.utils.llm_interface import WoundAnalysisLLM
+from wound_analysis.utils.statistical_analysis import CorrelationAnalysis
 
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
@@ -754,9 +754,9 @@ class Visualizer:
 		"""
 
 		dates = []
-		high_freq_z, high_freq_r, high_freq_c = [], [], []
+		high_freq_z  , high_freq_r,   high_freq_c   = [], [], []
 		center_freq_z, center_freq_r, center_freq_c = [], [], []
-		low_freq_z, low_freq_r, low_freq_c = [], [], []
+		low_freq_z   , low_freq_r,    low_freq_c    = [], [], []
 
 		high_freq_val, center_freq_val, low_freq_val = None, None, None
 
@@ -770,8 +770,8 @@ class Visualizer:
 			# Process high frequency data
 			high_freq = impedance_data.get('high_frequency', {})
 			try:
-				z_val = float(high_freq.get('Z')) if high_freq.get('Z') not in (None, '') else None
-				r_val = float(high_freq.get('resistance')) if high_freq.get('resistance') not in (None, '') else None
+				z_val = float(high_freq.get('Z')) 			if high_freq.get('Z') 			not in (None, '') else None
+				r_val = float(high_freq.get('resistance'))  if high_freq.get('resistance')  not in (None, '') else None
 				c_val = float(high_freq.get('capacitance')) if high_freq.get('capacitance') not in (None, '') else None
 
 				if high_freq.get('frequency'):
@@ -788,8 +788,8 @@ class Visualizer:
 			# Process center frequency data
 			center_freq = impedance_data.get('center_frequency', {})
 			try:
-				z_val = float(center_freq.get('Z')) if center_freq.get('Z') not in (None, '') else None
-				r_val = float(center_freq.get('resistance')) if center_freq.get('resistance') not in (None, '') else None
+				z_val = float(center_freq.get('Z')) 		 if center_freq.get('Z') 			not in (None, '') else None
+				r_val = float(center_freq.get('resistance'))  if center_freq.get('resistance')  not in (None, '') else None
 				c_val = float(center_freq.get('capacitance')) if center_freq.get('capacitance') not in (None, '') else None
 
 				if center_freq.get('frequency'):
@@ -806,8 +806,8 @@ class Visualizer:
 			# Process low frequency data
 			low_freq = impedance_data.get('low_frequency', {})
 			try:
-				z_val = float(low_freq.get('Z')) if low_freq.get('Z') not in (None, '') else None
-				r_val = float(low_freq.get('resistance')) if low_freq.get('resistance') not in (None, '') else None
+				z_val = float(low_freq.get('Z')) 		   if low_freq.get('Z') 		  not in (None, '') else None
+				r_val = float(low_freq.get('resistance'))  if low_freq.get('resistance')  not in (None, '') else None
 				c_val = float(low_freq.get('capacitance')) if low_freq.get('capacitance') not in (None, '') else None
 
 				if low_freq.get('frequency'):
@@ -816,6 +816,7 @@ class Visualizer:
 				low_freq_z.append(z_val)
 				low_freq_r.append(r_val)
 				low_freq_c.append(c_val)
+
 			except (ValueError, TypeError):
 				low_freq_z.append(None)
 				low_freq_r.append(None)
@@ -824,9 +825,13 @@ class Visualizer:
 		fig = go.Figure()
 
 		# Format frequency labels
-		high_freq_label = f"{float(high_freq_val):.0f}Hz" if high_freq_val else "High Freq"
-		center_freq_label = f"{float(center_freq_val):.0f}Hz" if center_freq_val else "Center Freq"
-		low_freq_label = f"{float(low_freq_val):.0f}Hz" if low_freq_val else "Low Freq"
+		# high_freq_label   = f"{float(high_freq_val):.0f}Hz"   if high_freq_val 	 else "High Freq"
+		# center_freq_label = f"{float(center_freq_val):.0f}Hz" if center_freq_val else "Center Freq"
+		# low_freq_label    = f"{float(low_freq_val):.0f}Hz" 	  if low_freq_val	 else "Low Freq"
+
+		high_freq_label   = "Highest Freq"
+		center_freq_label = "Center Freq (Max Phase Angle)"
+		low_freq_label    = "Lowest Freq"
 
 		# Add high frequency traces
 		if measurement_mode == "Absolute Impedance (|Z|)":

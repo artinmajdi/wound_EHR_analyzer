@@ -63,22 +63,3 @@ If you encounter any issues during installation:
 2. Try upgrading pip: `pip install --upgrade pip`
 3. For GPU support with PyTorch, follow the [PyTorch installation instructions](https://pytorch.org/get-started/locally/)
 4. Check that all dependencies are correctly installed: `pip list`
-
-## Publishing to PyPI (For Maintainers)
-
-To publish the package to PyPI:
-
-```bash
-# Install build tools
-pip install build twine
-
-# Build the package
-python -m build
-
-# Upload to PyPI
-twine upload dist/*
-```
-
-## Build and Publish Process
-
-Make sure to update the version number in `setup.py` before publishing a new release.

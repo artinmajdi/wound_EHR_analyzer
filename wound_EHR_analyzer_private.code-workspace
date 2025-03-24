@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"hide-files.files": [],
+		"github.copilot.chat.edits.codesearch.enabled": true,
+		"github.copilot.chat.editor.temporalContext.enabled": true,
+		"github.copilot.chat.edits.temporalContext.enabled": true,
+		"github.copilot.chat.followUps": "always",
+		"github.copilot.nextEditSuggestions.enabled": true,
+		"github.copilot.chat.enableUserPreferences": true,
+		"github.copilot.chat.generateTests.codeLens": true,
+		"github.copilot.chat.search.semanticTextResults": true,
+		"explorer.excludeGitIgnore": true
+	}
+}
