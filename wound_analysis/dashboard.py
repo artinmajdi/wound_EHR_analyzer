@@ -3,34 +3,36 @@ import os
 import pathlib
 from typing import Optional
 
+# Third-party imports
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
 # Load environment variables from .env file
 from dotenv import load_dotenv
 
-from wound_analysis.dashboard_components.exudate_tab import ExudateTab
-from wound_analysis.dashboard_components.impedance_tab import ImpedanceTab
-from wound_analysis.dashboard_components.llm_analysis_tab import LLMAnalysisTab
-from wound_analysis.dashboard_components.risk_factors_tab import RiskFactorsTab
-load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent / '.env')
-
-# Third-party imports
-import numpy as np
-import pandas as pd
-import sklearn
-import plotly.express as px
-import plotly.graph_objects as go
-import streamlit as st
-# from plotly.subplots import make_subplots
-
 # Local application imports
-from wound_analysis.utils.data_processor import DataManager, ImpedanceAnalyzer, WoundDataProcessor
-from wound_analysis.utils.llm_interface import WoundAnalysisLLM
-from wound_analysis.utils.statistical_analysis import CorrelationAnalysis
+from wound_analysis.dashboard_components import (
+	ExudateTab,
+	ImpedanceTab,
+	LLMAnalysisTab,
+	OverviewTab,
+	OxygenationTab,
+	RiskFactorsTab,
+	TemperatureTab,
+)
+from wound_analysis.utils import (
+	CorrelationAnalysis,
+	DataManager,
+	ImpedanceAnalyzer,
+	WoundAnalysisLLM,
+	WoundDataProcessor,
+)
 from wound_analysis.dashboard_components.settings import DashboardSettings
 from wound_analysis.dashboard_components.visualizer import Visualizer
-from wound_analysis.dashboard_components.overview_tab import OverviewTab
-from wound_analysis.dashboard_components.impedance_tab import ImpedanceTab
-from wound_analysis.dashboard_components.temperature_tab import TemperatureTab
-from wound_analysis.dashboard_components.oxygenation_tab import OxygenationTab
+
+load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent / '.env')
+
 
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
@@ -565,6 +567,7 @@ class Dashboard:
 				for status in diab_stats.index:
 					stats_data = diab_stats.loc[status]
 					improvement_rate = (valid_df[valid_df['Diabetes?'] == status]['Healing Rate (%)'] < 0).mean() * 100
+
 					st.write(f"- {status}: Average Healing Rate = {stats_data[('Healing Rate (%)', 'mean')]}% "
 							"(n={int(stats_data[('Healing Rate (%)', 'count')])}, "
 							"SD={stats_data[('Healing Rate (%)', 'std')]}, "
