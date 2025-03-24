@@ -115,10 +115,13 @@ class Dashboard:
 
     def setup(self) -> None:
         """Set up the dashboard configuration."""
-        # Note: set_page_config has been moved to streamlit_app.py
-        # to ensure it's the first Streamlit command executed
+        st.set_page_config(
+            page_title = self.DashboardSettings.PAGE_TITLE,
+            page_icon  = self.DashboardSettings.PAGE_ICON,
+            layout     = self.DashboardSettings.LAYOUT
+        )
         DashboardSettings.initialize()
-        # Left sidebar is now created in streamlit_app.py
+        self._create_left_sidebar()
 
     @staticmethod
     # @st.cache_data
