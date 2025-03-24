@@ -16,4 +16,5 @@ openpyxl>=3.1.0
 tiktoken>=0.3.0
 regex>=2022.0.0
 tqdm>=4.62.0
+python-docx
 -e .

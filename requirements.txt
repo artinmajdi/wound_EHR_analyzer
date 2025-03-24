@@ -31,3 +31,4 @@ requests>=2.25.0
 # Utilities
 tqdm>=4.62.0
 colorama>=0.4.4
+python-docx
