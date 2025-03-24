@@ -11,65 +11,25 @@ import streamlit as st
 # Load environment variables from .env file
 from dotenv import load_dotenv
 
-# Local application imports
-try:
-    # First try direct imports (for Streamlit Cloud deployment)
-    from wound_analysis.dashboard_components.exudate_tab import ExudateTab
-    from wound_analysis.dashboard_components.impedance_tab import ImpedanceTab
-    from wound_analysis.dashboard_components.llm_analysis_tab import LLMAnalysisTab
-    from wound_analysis.dashboard_components.overview_tab import OverviewTab
-    from wound_analysis.dashboard_components.oxygenation_tab import OxygenationTab
-    from wound_analysis.dashboard_components.risk_factors_tab import RiskFactorsTab
-    from wound_analysis.dashboard_components.temperature_tab import TemperatureTab
-    from wound_analysis.dashboard_components.settings import DashboardSettings
-    from wound_analysis.dashboard_components.visualizer import Visualizer
-    
-    from wound_analysis.utils.correlation_analysis import CorrelationAnalysis
-    from wound_analysis.utils.data_manager import DataManager
-    from wound_analysis.utils.impedance_analyzer import ImpedanceAnalyzer
-    from wound_analysis.utils.llm_analyzer import WoundAnalysisLLM
-    from wound_analysis.utils.wound_data_processor import WoundDataProcessor
-except ImportError as e:
-    # If direct imports fail, try package imports
-    try:
-        from wound_analysis.dashboard_components import (
-            ExudateTab,
-            ImpedanceTab,
-            LLMAnalysisTab,
-            OverviewTab,
-            OxygenationTab,
-            RiskFactorsTab,
-            TemperatureTab,
-        )
-        from wound_analysis.utils import (
-            CorrelationAnalysis,
-            DataManager,
-            ImpedanceAnalyzer,
-            WoundAnalysisLLM,
-            WoundDataProcessor,
-        )
-        from wound_analysis.dashboard_components.settings import DashboardSettings
-        from wound_analysis.dashboard_components.visualizer import Visualizer
-    except ImportError:
-        # If absolute imports fail, try relative imports (for development environment)
-        from .dashboard_components import (
-            ExudateTab,
-            ImpedanceTab,
-            LLMAnalysisTab,
-            OverviewTab,
-            OxygenationTab,
-            RiskFactorsTab,
-            TemperatureTab,
-        )
-        from .utils import (
-            CorrelationAnalysis,
-            DataManager,
-            ImpedanceAnalyzer,
-            WoundAnalysisLLM,
-            WoundDataProcessor,
-        )
-        from .dashboard_components.settings import DashboardSettings
-        from .dashboard_components.visualizer import Visualizer
+from wound_analysis.dashboard_components import (
+    ExudateTab,
+    ImpedanceTab,
+    LLMAnalysisTab,
+    OverviewTab,
+    OxygenationTab,
+    RiskFactorsTab,
+    TemperatureTab,
+)
+from wound_analysis.utils import (
+    CorrelationAnalysis,
+    DataManager,
+    ImpedanceAnalyzer,
+    WoundAnalysisLLM,
+    WoundDataProcessor,
+)
+from wound_analysis.dashboard_components.settings import DashboardSettings
+from wound_analysis.dashboard_components.visualizer import Visualizer
+
 
 # Try to load environment variables from different possible locations
 env_paths = [
