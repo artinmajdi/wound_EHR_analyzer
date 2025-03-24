@@ -273,7 +273,7 @@ if [ "$setup_env" = true ]; then
 
     # Prompt for API keys
     read -p "Enter your OpenAI API key (leave blank if not using): " openai_api_key
-    read -p "Enter your OpenAI API base URL (leave blank for default): " openai_api_base
+    read -p "Enter your OpenAI API base URL (leave blank for default): " OPENAI_BASE_URL
 
     # Create .env file
     echo "# Wound Analysis Environment Variables" > .env
@@ -285,8 +285,8 @@ if [ "$setup_env" = true ]; then
         echo "OPENAI_API_KEY=$openai_api_key" >> .env
     fi
 
-    if [ ! -z "$openai_api_base" ]; then
-        echo "OPENAI_API_BASE=$openai_api_base" >> .env
+    if [ ! -z "$OPENAI_BASE_URL" ]; then
+        echo "OPENAI_BASE_URL=$OPENAI_BASE_URL" >> .env
     fi
 
     # Add other environment variables
