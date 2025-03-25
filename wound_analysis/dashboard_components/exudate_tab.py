@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-from wound_analysis.utils import data_processor
-from wound_analysis.utils.column_schema import DataColumns
 from wound_analysis.utils.data_processor import WoundDataProcessor
 from wound_analysis.utils.statistical_analysis import CorrelationAnalysis
 from wound_analysis.dashboard_components.visualizer import Visualizer
