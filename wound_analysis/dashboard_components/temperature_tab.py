@@ -1,11 +1,10 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 
-from wound_analysis.utils.column_schema import DataColumns
+from wound_analysis.dashboard_components.visualizer import Visualizer
 from wound_analysis.utils.data_processor import WoundDataProcessor
 from wound_analysis.utils.statistical_analysis import CorrelationAnalysis
-from wound_analysis.dashboard_components.visualizer import Visualizer
 
 
 class TemperatureTab:

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional
+import streamlit as st
 
 from wound_analysis.utils.column_schema import DataColumns
 
@@ -169,7 +169,6 @@ class DashboardSettings:
         Returns:
             None
         """
-        import streamlit as st
 
         if 'processor' not in st.session_state:
             st.session_state.processor = None

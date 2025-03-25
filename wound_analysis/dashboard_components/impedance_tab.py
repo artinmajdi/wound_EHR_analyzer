@@ -1,12 +1,22 @@
-import numpy as np
-import streamlit as st
-import pandas as pd
+# Standard library imports
+import traceback
+from collections import Counter
 
+# Third-party imports
+import numpy as np
+import pandas as pd
+import streamlit as st
+from scipy import stats
+from scipy.cluster.hierarchy import linkage, fcluster
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.metrics import silhouette_score
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import StandardScaler
 import plotly.express as px
 import plotly.graph_objects as go
 
+# Local application imports
 from wound_analysis.dashboard_components.visualizer import Visualizer
-from wound_analysis.utils.column_schema import DataColumns
 from wound_analysis.utils.data_processor import ImpedanceAnalyzer, WoundDataProcessor
 
 class ImpedanceTab:
@@ -148,12 +158,7 @@ class ImpedanceTab:
 				# Handle missing values
 				clustering_df = clustering_df.fillna(clustering_df.mean())
 
-				# Standardize the features
-				from sklearn.preprocessing import StandardScaler
-				from sklearn.cluster import KMeans, DBSCAN
-				from sklearn.metrics import silhouette_score
-				from scipy.cluster.hierarchy import linkage, fcluster
-				import numpy as np
+
 
 				# Drop rows with any remaining NaN values
 				clustering_df = clustering_df.dropna()
@@ -210,7 +215,6 @@ class ImpedanceTab:
 
 					else:  # DBSCAN
 						# Calculate epsilon based on data
-						from sklearn.neighbors import NearestNeighbors
 						neigh = NearestNeighbors(n_neighbors=3)
 						neigh.fit(scaled_features)
 						distances, _ = neigh.kneighbors(scaled_features)
@@ -221,7 +225,6 @@ class ImpedanceTab:
 						cluster_labels = clusterer.fit_predict(scaled_features)
 
 						# For DBSCAN, count points in each cluster as a measure of feature importance
-						from collections import Counter
 						counts = Counter(cluster_labels)
 
 						# Adjust n_clusters to actual number found by DBSCAN
@@ -313,7 +316,6 @@ class ImpedanceTab:
 
 			except Exception as e:
 				st.error(f"Error during clustering: {str(e)}")
-				import traceback
 				st.error(traceback.format_exc())
 
 		# Check if clustering has been performed
@@ -462,7 +464,6 @@ class ImpedanceTab:
 
 		# Calculate p-values for correlations
 		def calculate_pvalue(x, y):
-			from scipy import stats
 			mask = ~(np.isnan(x) | np.isnan(y))
 			if np.sum(mask) < 2:
 				return np.nan
@@ -531,7 +532,6 @@ class ImpedanceTab:
 		with tab3:
 			# Calculate and display effect sizes
 			st.markdown("#### Effect Sizes (Cohen's d) relative to Impedance")
-			from scipy import stats
 
 			effect_sizes = []
 			impedance_col = "Skin Impedance (kOhms) - Z"
