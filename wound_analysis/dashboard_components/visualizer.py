@@ -5,7 +5,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 
-from wound_analysis.utils.column_schema import DataColumns
+from wound_analysis.utils.column_schema_label import DataColumns
 
 data_columns = DataColumns()
 

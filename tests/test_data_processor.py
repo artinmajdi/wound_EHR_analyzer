@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 
 # Import the modules to test
 from wound_analysis.utils.data_processor import WoundDataProcessor, DataManager, ImpedanceAnalyzer
-from wound_analysis.utils.column_schema import DataColumns
+from wound_analysis.utils.column_schema_label import DataColumns
 
 
 class TestWoundDataProcessor(unittest.TestCase):

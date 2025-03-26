@@ -14,7 +14,7 @@ import pandas as pd
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-from .column_schema import DataColumns
+from .column_schema_label import DataColumns
 
 try:
     from ..dashboard import debug_log

@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from typing import Dict, List, Optional
-from wound_analysis.utils.column_schema import DataColumns
+from wound_analysis.utils.column_schema_label import DataColumns
 from wound_analysis.utils.data_processor import WoundDataProcessor
 
 class RiskFactorsTab:

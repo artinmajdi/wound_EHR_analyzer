@@ -5,6 +5,6 @@ Utility modules for the Wound Management Interpreter LLM project.
 from .data_processor import DataManager, ImpedanceAnalyzer, WoundDataProcessor
 from .llm_interface import WoundAnalysisLLM
 from .statistical_analysis import CorrelationAnalysis
-from .column_schema import DataColumns
+from .column_schema_label import DataColumns
 
 __all__ = ['DataManager', 'ImpedanceAnalyzer', 'WoundDataProcessor', 'WoundAnalysisLLM', 'CorrelationAnalysis', 'DataColumns']
