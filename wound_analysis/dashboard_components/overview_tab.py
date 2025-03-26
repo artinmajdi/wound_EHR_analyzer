@@ -2,7 +2,7 @@ import numpy as np
 import streamlit as st
 import pandas as pd
 
-from wound_analysis.utils.column_schema import DataColumns
+from wound_analysis.utils.column_schema_label import DataColumns
 from wound_analysis.utils.data_processor import WoundDataProcessor
 from wound_analysis.dashboard_components.visualizer import Visualizer
 
