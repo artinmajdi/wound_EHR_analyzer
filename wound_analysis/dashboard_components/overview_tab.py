@@ -2,7 +2,7 @@ import numpy as np
 import streamlit as st
 import pandas as pd
 
-from wound_analysis.utils.column_schema_label import DataColumns
+from wound_analysis.utils.column_schema import DColumns
 from wound_analysis.utils.data_processor import WoundDataProcessor
 from wound_analysis.dashboard_components.visualizer import Visualizer
 
@@ -29,10 +29,11 @@ class OverviewTab:
 		This method directly renders content to the Streamlit UI and doesn't return any value.
 	"""
 
-	def __init__(self, df: pd.DataFrame, selected_patient: str, data_processor: WoundDataProcessor):
-		self.data_processor = data_processor
+	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
+		self.wound_data_processor = wound_data_processor
 		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
 		self.df = df
+		self.CN = DColumns(df=df)
 
 	def render(self) -> None:
 
@@ -41,8 +42,8 @@ class OverviewTab:
 		if self.patient_id == "All Patients":
 			self._render_all_patients_overview(df=self.df)
 		else:
-			df_patient = self.data_processor.get_patient_dataframe(record_id=self.patient_id)
-			visits 	   = self.data_processor.get_patient_visits(record_id=self.patient_id)['visits']
+			df_patient = self.wound_data_processor.get_patient_dataframe(record_id=self.patient_id)
+			visits 	   = self.wound_data_processor.get_patient_visits(record_id=self.patient_id)['visits']
 			self._render_patient_overview(df_patient=df_patient, visits=visits)
 
 			st.subheader("Wound Area Over Time")
@@ -62,7 +63,7 @@ class OverviewTab:
 		----------
 		df : pd.DataFrame
 			The dataframe containing wound data for all patients with columns:
-			- 'Record ID': Patient identifier
+			- CN.RECORD_ID: Patient identifier
 			- 'Days_Since_First_Visit': Number of days elapsed since first visit
 			- 'Estimated_Days_To_Heal': Predicted days until wound heals (if available)
 			- 'Healing Rate (%)': Rate of healing in cm²/day
@@ -86,13 +87,13 @@ class OverviewTab:
 
 		with col1:
 			# Calculate average days in study (actual duration so far)
-			avg_days_in_study = df.groupby('Record ID')['Days_Since_First_Visit'].max().mean()
+			avg_days_in_study = df.groupby(self.CN.RECORD_ID)[self.CN.DAYS_SINCE_FIRST_VISIT].max().mean()
 			st.metric("Average Days in Study", f"{avg_days_in_study:.1f} days")
 
 		with col2:
 			try:
 				# Calculate average estimated treatment duration for improving wounds
-				estimated_days = df.groupby('Record ID')['Estimated_Days_To_Heal'].mean()
+				estimated_days = df.groupby(self.CN.RECORD_ID)[self.CN.ESTIMATED_DAYS_TO_HEAL].mean()
 				valid_estimates = estimated_days[estimated_days.notna()]
 				if len(valid_estimates) > 0:
 					avg_estimated_duration = valid_estimates.mean()
@@ -104,7 +105,7 @@ class OverviewTab:
 
 		with col3:
 			# Calculate average healing rate excluding zeros and infinite values
-			healing_rates = df['Healing Rate (%)']
+			healing_rates = df[self.CN.HEALING_RATE]
 			valid_rates = healing_rates[(healing_rates != 0) & (np.isfinite(healing_rates))]
 			avg_healing_rate = np.mean(valid_rates) if len(valid_rates) > 0 else 0
 			st.metric("Average Healing Rate", f"{abs(avg_healing_rate):.2f} cm²/day")
@@ -112,17 +113,17 @@ class OverviewTab:
 		with col4:
 			try:
 				# Calculate improvement rate using only the last visit for each patient
-				if 'Overall_Improvement' not in df.columns:
-					df['Overall_Improvement'] = np.nan
+				if self.CN.OVERALL_IMPROVEMENT not in df.columns:
+					df[self.CN.OVERALL_IMPROVEMENT] = np.nan
 
 				# Get the last visit for each patient and calculate improvement rate
-				last_visits = df.groupby('Record ID').agg({
-					'Overall_Improvement': 'last',
-					'Healing Rate (%)': 'last'
+				last_visits = df.groupby(self.CN.RECORD_ID).agg({
+					self.CN.OVERALL_IMPROVEMENT: 'last',
+					self.CN.HEALING_RATE: 'last'
 				})
 
 				# Calculate improvement rate from patients with valid improvement status
-				valid_improvements = last_visits['Overall_Improvement'].dropna()
+				valid_improvements = last_visits[self.CN.OVERALL_IMPROVEMENT].dropna()
 				if len(valid_improvements) > 0:
 					improvement_rate = (valid_improvements == 'Yes').mean() * 100
 					st.metric("Improvement Rate", f"{improvement_rate:.1f}%")
@@ -176,17 +177,17 @@ class OverviewTab:
 
 		patient_data = df_patient.iloc[0]
 
-		metadata = self.data_processor._extract_patient_metadata(patient_data)
+		metadata = self.wound_data_processor._extract_patient_metadata(patient_data)
 
 		col1, col2, col3 = st.columns(3)
 
 		with col1:
 			st.subheader("Patient Demographics")
-			st.write(f"Age: {metadata.get('age')} years")
-			st.write(f"Sex: {metadata.get('sex')}")
-			st.write(f"BMI: {metadata.get('bmi')}")
-			st.write(f"Race: {metadata.get('race')}")
-			st.write(f"Ethnicity: {metadata.get('ethnicity')}")
+			st.write(f"Age: {metadata.get(self.CN.AGE)} years")
+			st.write(f"Sex: {metadata.get(self.CN.SEX)}")
+			st.write(f"BMI: {metadata.get(self.CN.BMI)}")
+			st.write(f"Race: {metadata.get(self.CN.RACE)}")
+			st.write(f"Ethnicity: {metadata.get(self.CN.ETHNICITY)}")
 
 		with col2:
 			st.subheader("Medical History")
@@ -201,8 +202,8 @@ class OverviewTab:
 				for condition, status in active_conditions.items():
 					st.write(f"{condition}: {status}")
 
-			smoking     = get_metric_value(patient_data.get("Smoking status"))
-			med_history = get_metric_value(patient_data.get("Medical History (select all that apply)"))
+			smoking     = get_metric_value(patient_data.get(self.CN.SMOKING_STATUS))
+			med_history = get_metric_value(patient_data.get(self.CN.MEDICAL_HISTORY))
 
 			st.write("Smoking Status:", "Yes" if smoking == "Current" else "No")
 			st.write("Hypertension:", "Yes" if "Cardiovascular" in str(med_history) else "No")
@@ -210,9 +211,9 @@ class OverviewTab:
 
 		with col3:
 			st.subheader("Diabetes Status")
-			st.write(f"Status: {get_metric_value(patient_data.get('Diabetes?'))}")
-			st.write(f"HbA1c: {get_metric_value(patient_data.get('Hemoglobin A1c (%)'))}%")
-			st.write(f"A1c available: {get_metric_value(patient_data.get('A1c  available within the last 3 months?'))}")
+			st.write(f"Status: {get_metric_value(patient_data.get(self.CN.DIABETES))}")
+			st.write(f"HbA1c: {get_metric_value(patient_data.get(self.CN.A1C))}%")
+			st.write(f"A1c available: {get_metric_value(patient_data.get(self.CN.A1C_AVAILABLE))}")
 
 
 		st.title("Wound Details (present at 1st visit)")

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import streamlit as st
 
-from wound_analysis.utils.column_schema_label import DataColumns
+from wound_analysis.utils.column_schema import DataColumns
 
 @dataclass
 class DashboardSettings:
@@ -181,3 +181,5 @@ class DashboardSettings:
 
         if 'report_path' not in st.session_state:
             st.session_state.report_path = None
+
+

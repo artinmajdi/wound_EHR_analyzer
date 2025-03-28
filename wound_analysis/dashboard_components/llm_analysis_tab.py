@@ -5,10 +5,6 @@ This module provides the LLMAnalysisTab class which handles the rendering and fu
 of the LLM Analysis tab, allowing users to analyze wound data using LLM services.
 """
 
-import os
-from typing import Callable
-
-import pandas as pd
 import streamlit as st
 
 from wound_analysis.utils.data_processor import WoundDataProcessor, DataManager
@@ -50,8 +46,8 @@ class LLMAnalysisTab:
 	- A download button is provided for exporting reports as Word documents
 	"""
 
-	def __init__(self, data_processor: WoundDataProcessor, llm_platform: str, llm_model: str, selected_patient: str, csv_dataset_path: str):
-		self.data_processor   = data_processor
+	def __init__(self, wound_data_processor: WoundDataProcessor, llm_platform: str, llm_model: str, selected_patient: str, csv_dataset_path: str):
+		self.wound_data_processor   = wound_data_processor
 		self.llm_platform     = llm_platform
 		self.llm_model        = llm_model
 		self.patient_id       = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
@@ -133,25 +129,25 @@ class LLMAnalysisTab:
 			if self.patient_id == "All Patients":
 
 				# Check if the model is llama-3.3-70b-fp8 and show warning
-				if self.llm_model == "llama-3.3-70b-fp8":
-					st.warning("The llama-3.3-70b-fp8 model currently doesn't work with All Patients view due to issues with the AI-Verde server. Please select a different model.")
-				else:
+				# if self.llm_model == "llama-3.3-70b-fp8":
+				# 	st.warning("The llama-3.3-70b-fp8 model currently doesn't work with All Patients view due to issues with the AI-Verde server. Please select a different model.")
+				# else:
 
-					if st.button("Run Analysis", key="run_analysis"):
-						population_data = self.data_processor.get_population_statistics()
-						prompt = llm._format_population_prompt(population_data=population_data)
-						analysis = llm.analyze_population_data(population_data=population_data, callback=callback)
-						st.session_state.llm_reports['all_patients'] = _run_llm_analysis(prompt=prompt, analysis_results=analysis, patient_metadata=population_data)
+				if st.button("Run Analysis", key="run_analysis"):
+					population_data = self.wound_data_processor.get_population_statistics()
+					prompt = llm._format_population_prompt(population_data=population_data)
+					analysis = llm.analyze_population_data(population_data=population_data, callback=callback)
+					st.session_state.llm_reports['all_patients'] = _run_llm_analysis(prompt=prompt, analysis_results=analysis, patient_metadata=population_data)
 
-					# Display analysis if it exists for this patient
-					if 'all_patients' in st.session_state.llm_reports:
-						_display_llm_analysis(st.session_state.llm_reports['all_patients'])
+				# Display analysis if it exists for this patient
+				if 'all_patients' in st.session_state.llm_reports:
+					_display_llm_analysis(st.session_state.llm_reports['all_patients'])
 
 			else:
 				st.subheader(f"Patient {self.patient_id}")
 
 				if st.button("Run Analysis", key="run_analysis"):
-					patient_data = self.data_processor.get_patient_visits(int(self.patient_id))
+					patient_data = self.wound_data_processor.get_patient_visits(int(self.patient_id))
 					prompt = llm._format_per_patient_prompt(patient_data=patient_data)
 					analysis = llm.analyze_patient_data(patient_data=patient_data, callback=callback)
 					st.session_state.llm_reports[self.patient_id] = _run_llm_analysis(prompt=prompt, analysis_results=analysis, patient_metadata=patient_data['patient_metadata'])
