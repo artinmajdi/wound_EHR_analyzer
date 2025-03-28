@@ -3,6 +3,8 @@ from typing import Dict, Union, Self
 import logging
 from scipy import stats
 
+from wound_analysis.utils.column_schema import DColumns
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,6 +19,7 @@ class StatisticalAnalysis:
             df: DataFrame containing wound healing data
         """
         self.df = df.copy()
+        self.CN = DColumns(df=df)
         self._preprocess_data()
 
     def _preprocess_data(self) -> None:
@@ -24,10 +27,10 @@ class StatisticalAnalysis:
         try:
             # Ensure numeric columns are float
             numeric_cols = [
-                'Calculated Wound Area',
-                'Healing Rate (%)',
-                'Total Temp Gradient',
-                'Skin Impedance (kOhms) - Z'
+                self.CN.WOUND_AREA,
+                self.CN.HEALING_RATE,
+                self.CN.TOTAL_GRADIENT,
+                self.CN.HIGHEST_FREQ_Z
             ]
 
             for col in numeric_cols:
@@ -35,9 +38,9 @@ class StatisticalAnalysis:
                     self.df[col] = pd.to_numeric(self.df[col], errors='coerce')
 
             # Sort data by Record ID and Visit Number
-            if 'Visit Number' in self.df.columns:
-                self.df['Visit Number'] = pd.to_numeric(self.df['Visit Number'], errors='coerce')
-                self.df = self.df.sort_values(['Record ID', 'Visit Number'])
+            if self.CN.VISIT_NUMBER in self.df.columns:
+                self.df[self.CN.VISIT_NUMBER] = pd.to_numeric(self.df[self.CN.VISIT_NUMBER], errors='coerce')
+                self.df = self.df.sort_values([self.CN.RECORD_ID, self.CN.VISIT_NUMBER])
 
         except Exception as e:
             logger.error(f"Error in data preprocessing: {str(e)}")
@@ -72,34 +75,34 @@ class StatisticalAnalysis:
             stats_data = {}
 
             # Count statistics
-            unique_patients = self.df['Record ID'].dropna().unique()
+            unique_patients = self.df[self.CN.RECORD_ID].dropna().unique()
             stats_data["Total Patients"] = len(unique_patients)
 
             # Calculate means safely
-            if 'Calculated Wound Area' in self.df.columns:
-                valid_areas = self.df['Calculated Wound Area'].dropna()
+            if self.CN.WOUND_AREA in self.df.columns:
+                valid_areas = self.df[self.CN.WOUND_AREA].dropna()
                 stats_data["Average Wound Area (cm²)"] = self._safe_mean(valid_areas)
 
-            if 'Healing Rate (%)' in self.df.columns:
+            if self.CN.healing_rate in self.df.columns:
                 valid_rates = self.df[
-                    (self.df['Healing Rate (%)'].notna()) &
-                    (self.df['Healing Rate (%)'] > 0)
-                ]['Healing Rate (%)']
+                    (self.df[self.CN.HEALING_RATE].notna()) &
+                    (self.df[self.CN.HEALING_RATE] > 0)
+                ][self.CN.HEALING_RATE]
                 stats_data["Average Healing Rate (%)"] = self._safe_mean(valid_rates)
 
-            if 'Total Temp Gradient' in self.df.columns:
-                valid_temps = self.df['Total Temp Gradient'].dropna()
+            if self.CN.TOTAL_GRADIENT in self.df.columns:
+                valid_temps = self.df[self.CN.TOTAL_GRADIENT].dropna()
                 stats_data["Average Temperature Gradient (°F)"] = self._safe_mean(valid_temps)
 
-            if 'Skin Impedance (kOhms) - Z' in self.df.columns:
-                valid_impedance = self.df['Skin Impedance (kOhms) - Z'].dropna()
+            if self.CN.HIGHEST_FREQ_Z in self.df.columns:
+                valid_impedance = self.df[self.CN.HIGHEST_FREQ_Z].dropna()
                 stats_data["Average Impedance (kOhms)"] = self._safe_mean(valid_impedance)
 
             # Add diabetes breakdown if available
-            if 'Diabetes?' in self.df.columns:
-                valid_diabetes = self.df.dropna(subset=['Diabetes?', 'Record ID'])
-                diabetic_count = len(valid_diabetes[valid_diabetes['Diabetes?'] == 'Yes']['Record ID'].unique())
-                non_diabetic_count = len(valid_diabetes[valid_diabetes['Diabetes?'] == 'No']['Record ID'].unique())
+            if self.CN.DIABETES in self.df.columns:
+                valid_diabetes = self.df.dropna(subset=[self.CN.DIABETES, self.CN.RECORD_ID])
+                diabetic_count = len(valid_diabetes[valid_diabetes[self.CN.DIABETES] == 'Yes'][self.CN.RECORD_ID].unique())
+                non_diabetic_count = len(valid_diabetes[valid_diabetes[self.CN.DIABETES] == 'No'][self.CN.RECORD_ID].unique())
                 stats_data["Diabetic Patients"] = diabetic_count
                 stats_data["Non-diabetic Patients"] = non_diabetic_count
 
@@ -128,7 +131,7 @@ class StatisticalAnalysis:
             Dict containing patient-specific statistics
         """
         try:
-            patient_data = self.df[self.df['Record ID'] == patient_id].copy()
+            patient_data = self.df[self.df[self.CN.RECORD_ID] == patient_id].copy()
             if patient_data.empty:
                 logger.warning(f"No data found for patient {patient_id}")
                 return {}
@@ -139,30 +142,30 @@ class StatisticalAnalysis:
             stats_data["Total Visits"] = len(patient_data)
 
             # Area measurements
-            if 'Calculated Wound Area' in patient_data.columns and len(patient_data) > 0:
-                stats_data["Initial Wound Area (cm²)"] = self._safe_float(patient_data.iloc[0]['Calculated Wound Area'])
-                stats_data["Latest Wound Area (cm²)"] = self._safe_float(patient_data.iloc[-1]['Calculated Wound Area'])
+            if self.CN.WOUND_AREA in patient_data.columns and len(patient_data) > 0:
+                stats_data["Initial Wound Area (cm²)"] = self._safe_float(patient_data.iloc[0][self.CN.WOUND_AREA])
+                stats_data["Latest Wound Area (cm²)"] = self._safe_float(patient_data.iloc[-1][self.CN.WOUND_AREA])
 
             # Calculate means safely
-            if 'Healing Rate (%)' in patient_data.columns:
+            if self.CN.healing_rate in patient_data.columns:
                 valid_rates = patient_data[
-                    (patient_data['Healing Rate (%)'].notna()) &
-                    (patient_data['Healing Rate (%)'] > 0)
-                ]['Healing Rate (%)']
+                    (patient_data[self.CN.HEALING_RATE].notna()) &
+                    (patient_data[self.CN.HEALING_RATE] > 0)
+                ][self.CN.HEALING_RATE]
                 stats_data["Average Healing Rate (%)"] = self._safe_mean(valid_rates)
 
-            if 'Total Temp Gradient' in patient_data.columns:
-                valid_temps = patient_data['Total Temp Gradient'].dropna()
+            if self.CN.TOTAL_GRADIENT in patient_data.columns:
+                valid_temps = patient_data[self.CN.TOTAL_GRADIENT].dropna()
                 stats_data["Average Temperature Gradient (°F)"] = self._safe_mean(valid_temps)
 
-            if 'Skin Impedance (kOhms) - Z' in patient_data.columns:
-                valid_impedance = patient_data['Skin Impedance (kOhms) - Z'].dropna()
+            if self.CN.HIGHEST_FREQ_Z in patient_data.columns:
+                valid_impedance = patient_data[self.CN.HIGHEST_FREQ_Z].dropna()
                 stats_data["Average Impedance (kOhms)"] = self._safe_mean(valid_impedance)
 
             # Calculate total healing progress
-            if len(patient_data) >= 2 and 'Calculated Wound Area' in patient_data.columns:
-                initial_area = self._safe_float(patient_data.iloc[0]['Calculated Wound Area'])
-                final_area = self._safe_float(patient_data.iloc[-1]['Calculated Wound Area'])
+            if len(patient_data) >= 2 and self.CN.WOUND_AREA in patient_data.columns:
+                initial_area = self._safe_float(patient_data.iloc[0][self.CN.WOUND_AREA])
+                final_area = self._safe_float(patient_data.iloc[-1][self.CN.WOUND_AREA])
                 if initial_area > 0:
                     total_healing = ((initial_area - final_area) / initial_area) * 100
                     stats_data["Total Healing Progress (%)"] = total_healing

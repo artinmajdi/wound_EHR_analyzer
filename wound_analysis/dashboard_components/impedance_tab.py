@@ -1,6 +1,7 @@
 # Standard library imports
 import traceback
 from collections import Counter
+from typing import List
 
 # Third-party imports
 import numpy as np
@@ -16,8 +17,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # Local application imports
-from wound_analysis.dashboard_components.visualizer import Visualizer
-from wound_analysis.utils.data_processor import ImpedanceAnalyzer, WoundDataProcessor
+from wound_analysis.utils.data_processor import ImpedanceAnalyzer, WoundDataProcessor, VisitsDataType, VisitsMetadataType
+from wound_analysis.utils.column_schema import DColumns
+
 
 class ImpedanceTab:
 	"""
@@ -52,10 +54,11 @@ class ImpedanceTab:
 				This method renders UI elements directly to the Streamlit app
 	"""
 
-	def __init__(self, df: pd.DataFrame, selected_patient: str, data_processor: WoundDataProcessor):
-		self.data_processor = data_processor
+	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
+		self.wound_data_processor = wound_data_processor
 		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
 		self.df = df
+		self.CN = DColumns(df=df)
 
 	def render(self) -> None:
 
@@ -64,7 +67,9 @@ class ImpedanceTab:
 		if self.patient_id == "All Patients":
 			ImpedanceTab._render_population(df=self.df)
 		else:
-			visits = self.data_processor.get_patient_visits(record_id=self.patient_id)['visits']
+			visits_meta_data: VisitsMetadataType   = self.wound_data_processor.get_patient_visits(record_id=self.patient_id)
+			visits          : List[VisitsDataType] = visits_meta_data['visits']
+
 			ImpedanceTab._render_patient(visits=visits)
 
 	@staticmethod
@@ -96,6 +101,8 @@ class ImpedanceTab:
 		4. Displays additional charts for population-level impedance analysis
 		"""
 
+		CN = DColumns(df=df)
+
 		# Create a copy of the dataframe for analysis
 		analysis_df = df.copy()
 
@@ -116,17 +123,17 @@ class ImpedanceTab:
 				cluster_features = st.multiselect(
 					"Features for Clustering",
 					options=[
-						"Skin Impedance (kOhms) - Z",
-						"Calculated Wound Area",
-						"Center of Wound Temperature (Fahrenheit)",
-						"Oxygenation (%)",
-						"Hemoglobin Level",
-						"Calculated Age at Enrollment",
-						"BMI",
-						"Days_Since_First_Visit",
-						"Healing Rate (%)"
+						CN.HIGHEST_FREQ_Z,
+						CN.WOUND_AREA,
+						CN.CENTER_TEMP,
+						CN.OXYGENATION,
+						CN.HEMOGLOBIN,
+						CN.AGE,
+						CN.BMI,
+						CN.DAYS_SINCE_FIRST_VISIT,
+						CN.HEALING_RATE
 					],
-					default=["Skin Impedance (kOhms) - Z", "Calculated Wound Area", "Healing Rate (%)"],
+					default=[CN.HIGHEST_FREQ_Z, CN.WOUND_AREA, CN.HEALING_RATE],
 					help="Select features to be used for clustering patients"
 				)
 
@@ -203,7 +210,8 @@ class ImpedanceTab:
 								try:
 									score = silhouette_score(single_feature, temp_clusters)
 									feature_importance[feature] = max(0, score)  # Ensure non-negative
-								except:
+								except Exception as e:
+									st.error(f"Error calculating silhouette score: {str(e)}")
 									feature_importance[feature] = 0.01  # Fallback value
 							else:
 								feature_importance[feature] = 0.01
@@ -279,7 +287,7 @@ class ImpedanceTab:
 						x=cluster_counts.index,
 						y=cluster_counts.values,
 						labels={'x': 'Cluster', 'y': 'Number of Patients/Visits'},
-						title=f"Cluster Distribution",
+						title="Cluster Distribution",
 						color=cluster_counts.index,
 						text=cluster_counts.values
 					)
@@ -323,7 +331,7 @@ class ImpedanceTab:
 			# Create selection for which cluster to analyze
 			st.markdown("### Cluster Selection")
 
-			cluster_options = [f"All Data"]
+			cluster_options = ["All Data"]
 			for cluster_id in sorted([c for c in st.session_state.clusters if c >= 0]):
 				cluster_count = len(st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id])
 				cluster_options.append(f"Cluster {cluster_id} (n={cluster_count})")
@@ -357,14 +365,15 @@ class ImpedanceTab:
 							diff_pct = ((cluster_mean - overall_mean) / overall_mean * 100) if overall_mean != 0 else 0
 
 							summary_stats.append({
-								"Feature": feature,
-								"Cluster Mean": f"{cluster_mean:.2f}",
+								"Feature"        : feature,
+								"Cluster Mean"   : f"{cluster_mean:.2f}",
 								"Population Mean": f"{overall_mean:.2f}",
-								"Difference": f"{diff_pct:+.1f}%",
-								"Significant": abs(diff_pct) > 15
+								"Difference"     : f"{diff_pct:+.1f}%",
+								"Significant"    : abs(diff_pct) > 15
 							})
-						except:
-							pass
+						except Exception as e:
+							st.error(f"Error calculating summary statistics: {str(e)}")
+							st.error(traceback.format_exc())
 
 				if summary_stats:
 					summary_df = pd.DataFrame(summary_stats)
@@ -401,7 +410,7 @@ class ImpedanceTab:
 		ImpedanceTab._population_charts(df=working_df)
 
 	@staticmethod
-	def _display_correlation_controls(df: pd.DataFrame) -> pd.DataFrame:
+	def _display_correlation_controls(df_for_cluster: pd.DataFrame) -> pd.DataFrame:
 		"""
 		Displays comprehensive statistical analysis between selected features.
 
@@ -421,6 +430,9 @@ class ImpedanceTab:
 		pd.DataFrame
 			Processed dataframe with outliers removed
 		"""
+
+		CN = DColumns(df=df_for_cluster)
+
 		col1, _, col3 = st.columns([2, 3, 3])
 
 		with col1:
@@ -435,19 +447,19 @@ class ImpedanceTab:
 
 		# Get the selected features for analysis
 		features_to_analyze = [
-			"Skin Impedance (kOhms) - Z",
-			"Calculated Wound Area",
-			"Center of Wound Temperature (Fahrenheit)",
-			"Oxygenation (%)",
-			"Hemoglobin Level",
-			"Healing Rate (%)"
+			CN.HIGHEST_FREQ_Z,
+			CN.WOUND_AREA,
+			CN.CENTER_TEMP,
+			CN.OXYGENATION,
+			CN.HEMOGLOBIN,
+			CN.HEALING_RATE
 		]
 
 		# Filter features that exist in the dataframe
-		features_to_analyze = [f for f in features_to_analyze if f in df.columns]
+		features_to_analyze = [f for f in features_to_analyze if f in df_for_cluster.columns]
 
 		# Create a copy of the dataframe with only the features we want to analyze
-		analysis_df = df[features_to_analyze].copy()
+		analysis_df = df_for_cluster[features_to_analyze].copy()
 
 		# Remove outliers if threshold is set
 		if outlier_threshold > 0:
@@ -471,8 +483,8 @@ class ImpedanceTab:
 
 		p_values = pd.DataFrame(
 			[[calculate_pvalue(analysis_df[col1], analysis_df[col2])
-			  for col2 in analysis_df.columns]
-			 for col1 in analysis_df.columns],
+				for col2 in analysis_df.columns]
+			for col1 in analysis_df.columns],
 			columns=analysis_df.columns,
 			index=analysis_df.columns
 		)
@@ -567,25 +579,28 @@ class ImpedanceTab:
 		Args:
 			df: DataFrame containing impedance and healing rate data
 		"""
+
+		CN = DColumns(df=df)
+
 		# Create a copy to avoid modifying the original dataframe
 		plot_df = df.copy()
 
 		# Handle missing values in Calculated Wound Area
-		if 'Calculated Wound Area' in plot_df.columns:
+		if CN.WOUND_AREA in plot_df.columns:
 			# Fill NaN with the mean, or 1 if all values are NaN
-			mean_area = plot_df['Calculated Wound Area'].mean()
-			plot_df['Calculated Wound Area'] = plot_df['Calculated Wound Area'].fillna(mean_area if pd.notnull(mean_area) else 1)
+			mean_area = plot_df[CN.WOUND_AREA].mean()
+			plot_df[CN.WOUND_AREA] = plot_df[CN.WOUND_AREA].fillna(mean_area if pd.notnull(mean_area) else 1)
 
 		# Define hover data columns we want to show if available
-		hover_columns = ['Record ID', 'Event Name', 'Wound Type']
+		hover_columns = [CN.RECORD_ID, CN.EVENT_NAME, CN.WOUND_TYPE]
 		available_hover = [col for col in hover_columns if col in plot_df.columns]
 
 		fig = px.scatter(
 			plot_df,
-			x='Skin Impedance (kOhms) - Z',
-			y='Healing Rate (%)',
-			color='Diabetes?' if 'Diabetes?' in plot_df.columns else None,
-			size='Calculated Wound Area' if 'Calculated Wound Area' in plot_df.columns else None,
+			x=CN.HIGHEST_FREQ_Z,
+			y=CN.HEALING_RATE,
+			color=CN.DIABETES if CN.DIABETES in plot_df.columns else None,
+			size=CN.WOUND_AREA if CN.WOUND_AREA in plot_df.columns else None,
 			size_max=30,
 			hover_data=available_hover,
 			title="Impedance vs Healing Rate Correlation"
@@ -620,6 +635,8 @@ class ImpedanceTab:
 			The method renders charts directly to the Streamlit UI
 		"""
 
+		CN = DColumns(df=df)
+
 		# Get prepared statistics
 		avg_impedance, avg_by_type = ImpedanceAnalyzer.prepare_population_stats(df=df)
 
@@ -629,8 +646,8 @@ class ImpedanceTab:
 			st.subheader("Impedance Components Over Time")
 			fig1 = px.line(
 				avg_impedance,
-				x='Visit Number',
-				y=["Skin Impedance (kOhms) - Z", "Skin Impedance (kOhms) - Z'", "Skin Impedance (kOhms) - Z''"],
+				x=CN.VISIT_NUMBER,
+				y=[CN.HIGHEST_FREQ_Z, CN.HIGHEST_FREQ_Z_PRIME, CN.HIGHEST_FREQ_Z_DOUBLE_PRIME],
 				title="Average Impedance Components by Visit",
 				markers=True
 			)
@@ -641,16 +658,16 @@ class ImpedanceTab:
 			st.subheader("Impedance by Wound Type")
 			fig2 = px.bar(
 				avg_by_type,
-				x='Wound Type',
-				y="Skin Impedance (kOhms) - Z",
+				x=CN.WOUND_TYPE,
+				y=CN.HIGHEST_FREQ_Z,
 				title="Average Impedance by Wound Type",
-				color='Wound Type'
+				color=CN.WOUND_TYPE
 			)
 			fig2.update_layout(xaxis_title="Wound Type", yaxis_title="Average Impedance Z (kOhms)")
 			st.plotly_chart(fig2, use_container_width=True)
 
 	@staticmethod
-	def _render_patient(visits: list) -> None:
+	def _render_patient(visits: List[VisitsDataType]) -> None:
 		"""
 		Renders the impedance analysis section for a specific patient in the dashboard.
 
@@ -669,10 +686,6 @@ class ImpedanceTab:
 		None
 			This method renders UI elements directly to the Streamlit dashboard
 		"""
-
-		# Get patient visits
-
-
 		# Create tabs for different analysis views
 		tab1, tab2, tab3 = st.tabs([
 			"Overview",
@@ -690,7 +703,7 @@ class ImpedanceTab:
 			ImpedanceTab._render_patient_advanced_analysis(visits=visits)
 
 	@staticmethod
-	def _patient_overview(visits: list) -> None:
+	def _patient_overview(visits: List[VisitsDataType]) -> None:
 		"""
 			Renders an overview section for patient impedance measurements.
 
@@ -721,7 +734,7 @@ class ImpedanceTab:
 		)
 
 		# Create impedance chart with selected mode
-		fig = Visualizer.create_impedance_chart(visits, measurement_mode=measurement_mode)
+		fig = ImpedanceTab.create_impedance_chart(visits=visits, measurement_mode=measurement_mode)
 		st.plotly_chart(fig, use_container_width=True)
 
 		# Logic behind analysis
@@ -739,7 +752,7 @@ class ImpedanceTab:
 		""", unsafe_allow_html=True)
 
 	@staticmethod
-	def _render_patient_clinical_analysis(visits: list) -> None:
+	def _render_patient_clinical_analysis(visits: List[VisitsDataType]) -> None:
 		"""
 			Renders the bioimpedance clinical analysis section for a patient's wound data.
 
@@ -749,7 +762,7 @@ class ImpedanceTab:
 
 			Args:
 				visits (list): A list of dictionaries containing visit data. Each dictionary
-						should have at least a 'visit_date' key and other wound measurement data.
+						should have at least a CN.VISIT_DATE key and other wound measurement data.
 
 			Returns:
 			-------
@@ -770,7 +783,9 @@ class ImpedanceTab:
 			return
 
 		# Create tabs for each visit
-		visit_tabs = st.tabs([f"{visit.get('visit_date', 'N/A')}" for visit in visits])
+		VISIT_DATE_TAG = WoundDataProcessor.get_visit_date_tag(visits)
+
+		visit_tabs = st.tabs([f"{visit.get(VISIT_DATE_TAG, 'N/A')}" for visit in visits])
 
 		for visit_idx, visit_tab in enumerate(visit_tabs):
 			with visit_tab:
@@ -779,15 +794,13 @@ class ImpedanceTab:
 				previous_visit = visits[visit_idx-1] if visit_idx > 0 else None
 
 				# Generate comprehensive clinical analysis
-				analysis = ImpedanceAnalyzer.generate_clinical_analysis(
-					current_visit=current_visit, previous_visit=previous_visit
-				)
+				analysis = ImpedanceAnalyzer.generate_clinical_analysis(current_visit=current_visit, previous_visit=previous_visit)
 
 				# Display results in a structured layout
 				ImpedanceTab._display_clinical_analysis_results(analysis=analysis, has_previous_visit=previous_visit is not None)
 
 	@staticmethod
-	def _render_patient_advanced_analysis(visits: list) -> None:
+	def _render_patient_advanced_analysis(visits: List[VisitsDataType]) -> None:
 		"""
 			Renders the advanced bioelectrical analysis section for a patient's wound data.
 
@@ -954,13 +967,13 @@ class ImpedanceTab:
 		"""
 
 		st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios. The process involves: "
-										"1) Extracting impedance data from sensor readings. "
-										"2) Calculating the ratio of low to high frequency impedance (LF/HF ratio). "
-										"3) Calculating phase angle if resistance and capacitance data are available. "
-										"4) Normalizing the LF/HF ratio and phase angle to a 0-100 scale. "
-										"5) Combining these scores with weightings to produce a final health score. "
-										"6) Providing an interpretation based on the health score. "
-										"The final score ranges from 0-100, with higher scores indicating better tissue health.")
+					"1) Extracting impedance data from sensor readings. "
+					"2) Calculating the ratio of low to high frequency impedance (LF/HF ratio). "
+					"3) Calculating phase angle if resistance and capacitance data are available. "
+					"4) Normalizing the LF/HF ratio and phase angle to a 0-100 scale. "
+					"5) Combining these scores with weightings to produce a final health score. "
+					"6) Providing an interpretation based on the health score. "
+					"The final score ranges from 0-100, with higher scores indicating better tissue health.")
 
 		health_score, health_interp = tissue_health
 
@@ -1266,9 +1279,9 @@ class ImpedanceTab:
 		st.markdown("### Wound Healing Stage Classification")
 
 		stage_colors = {
-			"Inflammatory": "red",
+			"Inflammatory" : "red",
 			"Proliferative": "orange",
-			"Remodeling": "green"
+			"Remodeling"   : "green"
 		}
 
 		stage_color = stage_colors.get(healing_stage['stage'], "blue")
@@ -1365,3 +1378,88 @@ class ImpedanceTab:
 					st.markdown(f"**Clinical Interpretation:** {insight['clinical_meaning']}")
 
 
+	@staticmethod
+	def create_impedance_chart(visits:List[VisitsDataType], measurement_mode:str = "Absolute Impedance (|Z|)") -> go.Figure:
+		"""Create an interactive chart displaying impedance measurements over time.
+
+		Args:
+			visits: List of visit dicts containing sensor impedance data
+			measurement_mode: Type of measurement to display (|Z|, Resistance, Capacitance)
+
+		Returns:
+			Plotly Figure object showing impedance measurements over time
+		"""
+
+		# Define measurement types and their corresponding data fields
+		MEASUREMENT_FIELDS = {
+			"Absolute Impedance (|Z|)": "Z",
+			"Resistance"              : "resistance",
+			"Capacitance"             : "capacitance"
+		}
+
+		# Frequency labels
+		FREQUENCY_LABELS = {
+			"high_frequency"  : "Highest Freq",
+			"center_frequency": "Center Freq (Max Phase Angle)",
+			"low_frequency"   : "Lowest Freq"
+		}
+
+		# Line styles for different frequencies
+		LINE_STYLES = {
+			"high_frequency"  : None,
+			"center_frequency": dict(dash='dot'),
+			"low_frequency"   : dict(dash='dash')
+		}
+
+		# Initialize data containers
+		dates = []
+		measurements = { freq: {field: [] 	for field in MEASUREMENT_FIELDS.values()}
+											for freq  in FREQUENCY_LABELS }
+
+		VISIT_DATE_TAG = WoundDataProcessor.get_visit_date_tag(visits)
+
+		# Process each visit
+		for visit in visits:
+			dates.append(visit[VISIT_DATE_TAG])
+
+			sensor_data    = visit.get('sensor_data', {})
+			impedance_data = sensor_data.get('impedance', {})
+
+			# Process each frequency
+			for freq in FREQUENCY_LABELS:
+				freq_data = impedance_data.get(freq, {})
+				for field in MEASUREMENT_FIELDS.values():
+					try:
+						val = float(freq_data.get(field)) if freq_data.get(field) not in (None, '') else None
+					except (ValueError, TypeError):
+						val = None
+					measurements[freq][field].append(val)
+
+		# Create figure
+		fig = go.Figure()
+		field = MEASUREMENT_FIELDS[measurement_mode]
+
+		# Add traces for each frequency
+		for freq in FREQUENCY_LABELS:
+			values = measurements[freq][field]
+			if any(v is not None for v in values):
+				fig.add_trace(go.Scatter(
+					x    = dates,
+					y    = values,
+					name = f'{measurement_mode.split()[0]} ({FREQUENCY_LABELS[freq]})',
+					mode = 'lines+markers',
+					line = LINE_STYLES[freq]
+				))
+
+		# Configure layout
+		fig.update_layout(
+			title       = 'Impedance Measurements Over Time',
+			xaxis_title = VISIT_DATE_TAG,
+			yaxis_title = f'{measurement_mode.split()[0]} Values',
+			hovermode   = 'x unified',
+			showlegend  = True,
+			height      = 600,
+			yaxis       = dict(type='log')
+		)
+
+		return fig

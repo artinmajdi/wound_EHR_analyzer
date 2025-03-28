@@ -336,10 +336,6 @@ class WoundAnalysisLLM:
             f"- Average Treatment Duration: {safe_float_format(population_data['summary']['avg_treatment_duration_days'])} days\n"
         )
 
-        # Add completion rate only if available
-        if population_data['summary'].get('completion_rate') is not None:
-            prompt += f"- Completion Rate: {safe_float_format(population_data['summary']['completion_rate'])}%\n"
-
         prompt += (
             "\n**Demographics Profile**:\n"
             f"- Age Statistics: {population_data['demographics']['age_stats']['summary']}\n"

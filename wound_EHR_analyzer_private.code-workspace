@@ -5,6 +5,7 @@
         }
     ],
     "settings": {
-        "hide-files.files": []
+        "hide-files.files": [],
+        "explorer.excludeGitIgnore": true,
     }
 }
