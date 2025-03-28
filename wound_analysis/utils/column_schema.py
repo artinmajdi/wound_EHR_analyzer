@@ -337,9 +337,12 @@ class DataColumns(BaseModel):
 
 
 class DColumns:
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df: pd.DataFrame=None):
         """Creates a class-level dictionary of all column names from a dataframe"""
-        DC = DataColumns().update(df=df)
+
+        DC = DataColumns()
+        if df is not None:
+            DC.update(df=df)
 
         # Create shortcuts to each category
         self.pi  = DC.patient_identifiers
