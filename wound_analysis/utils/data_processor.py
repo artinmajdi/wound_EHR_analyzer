@@ -741,9 +741,10 @@ class WoundDataProcessor:
 
 			if df is not None:
 				# Get data for this visit date
-				visit_df = df[df[self.CN.VISIT_DATE] == visit_date]
+				visit_df = df[df['visit_date_freq_sweep'] == visit_date]
 
 				if not visit_df.empty:
+					logger.debug(f"Found matching visit data with {len(visit_df)} rows")
 					# Get data for all three frequencies using the index
 					high_freq   = visit_df[visit_df.index == 'highest_freq'].iloc[0] if not visit_df[visit_df.index == 'highest_freq'].empty else None
 					center_freq = visit_df[visit_df.index == 'center_freq'].iloc[0]  if not visit_df[visit_df.index == 'center_freq'].empty  else None
@@ -1242,7 +1243,7 @@ class ImpedanceExcelProcessor:
 	"""
 	def __init__(self):
 		self.cache = {}
-		self.CN = DataColumns()
+		self.CN = DColumns(df=None)
 
 
 	def get_visit_data(self, impedance_freq_sweep_path: pathlib.Path, record_id: int, visit_date: str) -> Optional[pd.DataFrame]:
@@ -1268,20 +1269,29 @@ class ImpedanceExcelProcessor:
 			DataFrame containing impedance data for the specified visit date, with 'index'
 			set as the index column. Returns None if no data is available for the specified date.
 		"""
+		logger.debug(f"Retrieving visit data for record {record_id}, date {visit_date}")
 
 		# Check cache first
 		cache_key = f"{record_id}_{impedance_freq_sweep_path}"
+		logger.debug(f"Cache key: {cache_key}")
 
 		# Process file if not in cache
 		if cache_key not in self.cache:
+			logger.debug("Data not found in cache, processing Excel file")
 			self._process_excel_file(impedance_freq_sweep_path=impedance_freq_sweep_path, record_id=record_id, cache_key=cache_key)
+		else:
+			logger.debug("Found data in cache")
 
 		# Return data for requested visit date if available
 		if cache_key in self.cache and visit_date in self.cache[cache_key]:
+			logger.debug(f"Found visit data in cache for date {visit_date}")
 			freq_data = self.cache[cache_key][visit_date]
 			return pd.DataFrame(freq_data).set_index('index')
-
-		return None
+		else:
+			logger.debug(f"No data found for visit date {visit_date}")
+			if cache_key in self.cache:
+				logger.debug(f"Available dates in cache: {list(self.cache[cache_key].keys())}")
+			return None
 
 	def _process_excel_file(self, impedance_freq_sweep_path: pathlib.Path, record_id: int, cache_key: str) -> None:
 		"""
@@ -1320,21 +1330,18 @@ class ImpedanceExcelProcessor:
 
 		visit_data_by_date = {}
 
-		try:
-			# Use context manager for proper resource handling
-			with pd.ExcelFile(excel_file) as xl:
-				for sheet_name in xl.sheet_names:
-					sheet_data = self._process_sheet(excel_file, sheet_name)
-					if sheet_data:
-						parsed_date, freq_data = sheet_data
-						visit_data_by_date[parsed_date] = freq_data
+		# Use context manager for proper resource handling
+		with pd.ExcelFile(excel_file) as xl:
+			for sheet_name in xl.sheet_names:
+				sheet_data = self._process_sheet(excel_file, sheet_name)
+				if sheet_data:
+					parsed_date, freq_data = sheet_data
+					visit_data_by_date[parsed_date] = freq_data
 
-			# Store in cache
-			self.cache[cache_key] = visit_data_by_date
-			logger.info(f"Processed {len(visit_data_by_date)} visits for record ID: {record_id}")
+		# Store in cache
+		self.cache[cache_key] = visit_data_by_date
+		logger.info(f"Processed {len(visit_data_by_date)} visits for record ID: {record_id}")
 
-		except Exception as e:
-			logger.error(f"Error processing Excel file {excel_file}: {e}")
 
 	def _process_sheet(self, excel_file: pathlib.Path, sheet_name: str) -> Optional[tuple]:
 		"""
@@ -1363,65 +1370,49 @@ class ImpedanceExcelProcessor:
 		- Data rows starting from the second row (skiprows=1)
 		- Processes only the bottom half of the available data rows
 		"""
-		try:
-			# Read header row
-			header_df = pd.read_excel(excel_file, sheet_name=sheet_name, nrows=1, header=None)
+		# try:
+		# Read header row
+		header_df = pd.read_excel(excel_file, sheet_name=sheet_name, nrows=1, header=None)
 
-			# Validate header
-			if header_df.shape[1] < 3:
-				logger.warning(f"Sheet {sheet_name} has insufficient columns")
-				return None
-
-			# Extract and parse date
-			date_cell_value = header_df.iloc[0, 2]
-			if pd.isna(date_cell_value):
-				logger.warning(f"No date found in sheet {sheet_name}")
-				return None
-
-			parsed_date: str = self._parse_date(date_cell_value, sheet_name)
-			if not parsed_date:
-				return None
-
-			# Process data
-			df = pd.read_excel(excel_file, sheet_name=sheet_name, skiprows=1)
-			df.columns = df.columns.str.strip()
-
-			# Get bottom half
-			half_point = len(df) // 2
-			df_bottom = df.iloc[half_point:]
-
-			# Extract frequency data
-			freq_data = self._extract_frequency_data(df_bottom, parsed_date)
-
-			return parsed_date, freq_data
-
-		except Exception as e:
-			logger.warning(f"Error processing sheet {sheet_name}: {e}")
+		# Validate header
+		if header_df.shape[1] < 3:
+			logger.warning(f"Sheet {sheet_name} has insufficient columns")
 			return None
 
+		# Extract and parse date
+		date_cell_value = header_df.iloc[0, 2]
+		if pd.isna(date_cell_value):
+			logger.warning(f"No date found in sheet {sheet_name}")
+			return None
+
+		parsed_date: str = self._parse_date(date_cell_value, sheet_name)
+		if not parsed_date:
+			return None
+
+		# Process data
+		df = pd.read_excel(excel_file, sheet_name=sheet_name, skiprows=1)
+		df.columns = df.columns.str.strip()
+
+		# Get bottom half
+		half_point = len(df) // 2
+		df_bottom = df.iloc[half_point:]
+
+		# Extract frequency data
+		freq_data = self._extract_frequency_data(df_bottom, parsed_date)
+
+		return parsed_date, freq_data
+
+		# except Exception as e:
+		# 	logger.warning(f"Error processing sheet {sheet_name}: {e}")
+		# 	return None
+
 	def _parse_date(self, date_cell_value, sheet_name: str) -> Optional[str]:
-		"""
-		Parses a date value from a cell and converts it to a standardized format.
-
-		This method attempts to parse dates in various formats commonly found in spreadsheets,
-		converting them to a consistent 'MM-DD-YYYY' format for standardization across the application.
-
-		Args:
-			date_cell_value: The cell value containing a date, can be a string or a date object
-			sheet_name (str): Name of the Excel sheet containing the date (used for logging purposes)
-
-		Returns:
-			Optional[str]: The parsed date in 'MM-DD-YYYY' format if successful, None otherwise
-
-		Notes:
-			- Handles multiple date formats including YYYY-DD-MM, DD/MM/YYYY, MM/DD/YYYY, etc.
-			- Logs warning messages when date parsing fails
-			- If the input contains both date and time, only the date portion is parsed
-		"""
 		try:
 			# Convert to string and extract date part
 			date_str = str(date_cell_value)
 			date_part = date_str.split(' ')[0] if ' ' in date_str else date_str
+
+			logger.debug(f"Parsing date from sheet {sheet_name}: {date_part}")
 
 			# Try different date formats
 			date_formats = [
@@ -1437,12 +1428,12 @@ class ImpedanceExcelProcessor:
 			for date_format in date_formats:
 				try:
 					parsed_date = datetime.strptime(date_part, date_format).strftime('%m-%d-%Y')
-					logger.debug(f"Parsed date {date_part} using format {date_format}")
+					logger.debug(f"Successfully parsed date {date_part} using format {date_format} -> {parsed_date}")
 					return parsed_date
 				except ValueError:
 					continue
 
-			logger.warning(f"Could not parse date '{date_part}' in sheet {sheet_name}")
+			logger.warning(f"Could not parse date '{date_part}' in sheet {sheet_name} with any format")
 			return None
 
 		except Exception as e:
@@ -1480,9 +1471,9 @@ class ImpedanceExcelProcessor:
 			- 'index': identifier of frequency type ('lowest_freq', 'center_freq', or 'highest_freq')
 		"""
 		# Find key frequencies
-		lowest_freq  = df_bottom[self.Z_FREQ_SWEEP_FREQ].min()
-		highest_freq = df_bottom[self.Z_FREQ_SWEEP_FREQ].max()
-		center_freq  = df_bottom.loc[df_bottom[self.Z_FREQ_SWEEP_NEG_PHASE].idxmax(), self.Z_FREQ_SWEEP_FREQ]
+		lowest_freq  = df_bottom[self.CN.Z_FREQ_SWEEP_FREQ].min()
+		highest_freq = df_bottom[self.CN.Z_FREQ_SWEEP_FREQ].max()
+		center_freq  = df_bottom.loc[df_bottom[self.CN.Z_FREQ_SWEEP_NEG_PHASE].idxmax(), self.CN.Z_FREQ_SWEEP_FREQ]
 
 		# Create data for each frequency
 		freq_data = []
@@ -1490,21 +1481,19 @@ class ImpedanceExcelProcessor:
 								('center_freq',  center_freq),
 								('highest_freq', highest_freq)]:
 
-			row = df_bottom[df_bottom[self.Z_FREQ_SWEEP_FREQ] == freq].iloc[0]
+			row = df_bottom[df_bottom[self.CN.Z_FREQ_SWEEP_FREQ] == freq].iloc[0]
 
 			freq_data.append({
-				self.CN.VISIT_DATE: parsed_date,
-				'frequency'       : str(freq),
-				'Z'               : row[self.Z_FREQ_SWEEP_ABSOLUTE],
-				'Z_prime'         : row[self.Z_FREQ_SWEEP_REAL],
-				'Z_double_prime'  : row[self.Z_FREQ_SWEEP_IMAGINARY],
-				'neg. Phase / °'  : row[self.Z_FREQ_SWEEP_NEG_PHASE],
-				'index'           : freq_type
+				'visit_date_freq_sweep': parsed_date,
+				'frequency'            : str(freq),
+				'Z'                    : row[self.CN.Z_FREQ_SWEEP_ABSOLUTE],
+				'Z_prime'              : row[self.CN.Z_FREQ_SWEEP_REAL],
+				'Z_double_prime'       : row[self.CN.Z_FREQ_SWEEP_IMAGINARY],
+				'neg. Phase / °'       : row[self.CN.Z_FREQ_SWEEP_NEG_PHASE],
+				'index'                : freq_type
 			})
 
 		return freq_data
-
-
 
 
 class ImpedanceAnalyzer:
@@ -1530,7 +1519,20 @@ class ImpedanceAnalyzer:
 		Returns:
 			DataFrame with processed impedance data or None if not found/processing fails
 		"""
-		return ImpedanceAnalyzer._excel_processor.get_visit_data( impedance_freq_sweep_path=impedance_freq_sweep_path, record_id=record_id, visit_date=visit_date_being_processed )
+		logger.debug(f"Processing impedance sweep data for record {record_id}, visit date {visit_date_being_processed}")
+		logger.debug(f"Looking for Excel file in: {impedance_freq_sweep_path}")
+
+		result = ImpedanceAnalyzer._excel_processor.get_visit_data(
+					impedance_freq_sweep_path = impedance_freq_sweep_path,
+					record_id                 = record_id,
+					visit_date                = visit_date_being_processed )
+
+		if result is not None:
+			logger.debug(f"Found impedance data with {len(result)} rows")
+		else:
+			logger.debug("No impedance data found")
+
+		return result
 
 	@staticmethod
 	def calculate_visit_changes(current_visit: VisitsDataType, previous_visit: VisitsDataType) -> tuple[dict, dict]:

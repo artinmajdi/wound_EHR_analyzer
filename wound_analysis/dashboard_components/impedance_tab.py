@@ -2,6 +2,7 @@
 import traceback
 from collections import Counter
 from typing import List
+from venv import logger
 
 # Third-party imports
 import numpy as np
@@ -1158,7 +1159,8 @@ class ImpedanceTab:
 					return 'color: #FF4B4B'  # Red for increases
 				else:
 					return 'color: #00CC96'  # Green for decreases
-			except:
+			except Exception as e:
+				logger.error(f"Error in color_cells: {e}")
 				return ''
 
 		# Apply styling
@@ -1389,6 +1391,9 @@ class ImpedanceTab:
 		Returns:
 			Plotly Figure object showing impedance measurements over time
 		"""
+
+
+		# TODO: check why the freq sweep data is not shown in the streamlit dashboard
 
 		# Define measurement types and their corresponding data fields
 		MEASUREMENT_FIELDS = {
