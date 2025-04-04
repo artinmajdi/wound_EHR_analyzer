@@ -14,7 +14,7 @@ import pandas as pd
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-from wound_analysis.utils.column_schema import DColumns, DataColumns
+from wound_analysis.utils.column_schema import DColumns
 
 
 VisitsDataType: TypeAlias = Dict[ DColumns | Literal['wound_measurements', 'sensor_data'],
@@ -658,7 +658,7 @@ class WoundDataProcessor:
 		return wound_info
 
 
-	def _process_visit_data(self, visit: dict, record_id: int) -> VisitsDataType:
+	def _process_visit_data(self, visit: dict, record_id: int) -> Optional[VisitsDataType]:
 		"""
 			Process the data from a single patient visit and extract relevant information.
 
