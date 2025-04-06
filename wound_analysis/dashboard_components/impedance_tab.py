@@ -194,7 +194,7 @@ class PopulationImpedanceRenderer:
 		return working_df
 
 	def _perform_clustering(self, analysis_df: pd.DataFrame, cluster_features: List[str],
-						   n_clusters: int, clustering_method: str) -> None:
+							n_clusters: int, clustering_method: str) -> None:
 		"""
 		Perform clustering on the data using the specified method and features.
 
@@ -256,7 +256,7 @@ class PopulationImpedanceRenderer:
 			self._display_feature_importance(feature_importance)
 
 	def _apply_clustering_algorithm(self, scaled_features: np.ndarray, cluster_features: List[str],
-								   n_clusters: int, clustering_method: str) -> Tuple[np.ndarray, Dict[str, float]]:
+									n_clusters: int, clustering_method: str) -> Tuple[np.ndarray, Dict[str, float]]:
 		"""
 		Apply the specified clustering algorithm to the data.
 
