@@ -18,6 +18,8 @@ from wound_analysis.dashboard_components import (
 	OxygenationTab,
 	RiskFactorsTab,
 	TemperatureTab,
+	DashboardSettings,
+	Visualizer
 )
 from wound_analysis.utils import (
 	CorrelationAnalysis,
@@ -25,20 +27,14 @@ from wound_analysis.utils import (
 	ImpedanceAnalyzer,
 	WoundAnalysisLLM,
 	WoundDataProcessor,
+	DColumns
 )
-from wound_analysis.dashboard_components.settings import DashboardSettings
-from wound_analysis.dashboard_components.visualizer import Visualizer
-from wound_analysis.utils.column_schema import DColumns
 
-# TODO: carefully check all the renames before pushing to github
-# TODO: test the dashboard with the dataset with raw labels
 # TODO: add password for the deployed streamlit app
 # TODO: add a input_box in the dashbaord that would take a date for impedance and temperature and only do all the processing for visits after that date.
 
 
 # TODO:
-# [] rename setup_config to setup_config (make sure the renaming is effected everywhere it is called)
-# [] optimize the imports inside dashboard.py
 # [] import directly frm the dashboard_components instead of the files inside it
 
 # Try to load environment variables from different possible locations
