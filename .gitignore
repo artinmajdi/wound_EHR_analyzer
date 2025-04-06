@@ -34,9 +34,11 @@ env/
 .vscode/
 *.swp
 *.swo
+.trunk/
+.codemap/
 
 # macOS
-.DS_Store
+.DS_Store/
 .AppleDouble
 .LSOverride
 

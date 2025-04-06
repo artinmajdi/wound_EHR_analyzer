@@ -42,7 +42,7 @@ case $choice in
             source "$ROOT_DIR/.venv/bin/activate" || source "$ROOT_DIR/.venv/Scripts/activate"
         else
             echo "Warning: Virtual environment not found, using system Python."
-            echo "Consider running './scripts/activate_venv.sh' first."
+            echo "Consider running 'source ./venv/bin/activate' first."
         fi
 
         # Run Streamlit
