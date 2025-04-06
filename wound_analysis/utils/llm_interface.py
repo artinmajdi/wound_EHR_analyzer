@@ -9,7 +9,6 @@ import pathlib
 
 # Third-party imports
 import httpx
-import torch
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -106,7 +105,7 @@ class WoundAnalysisLLM:
                 logger.info(f"Successfully loaded AI Verde model {self.model_name}")
 
             elif self.platform == "huggingface":
-
+                import torch
                 device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
                 if self.model_name == "clinical-bert":
