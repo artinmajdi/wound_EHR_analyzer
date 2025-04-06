@@ -102,7 +102,7 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # 2. Install dependencies and set up environment
-pip install -r setup_config/requirements.txt
+pip install -r requirements.txt
 pip install -e .
 ./scripts/setup_env.sh
 
