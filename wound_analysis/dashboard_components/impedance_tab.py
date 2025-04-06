@@ -495,16 +495,16 @@ class PopulationImpedanceRenderer:
         Returns:
             Filtered DataFrame with outliers removed
         """
-        col1, _, col3 = st.columns([2, 3, 3])
+        cols = st.columns([2, 3])
 
-        with col1:
+        with cols[0]:
             outlier_threshold = st.number_input(
                 "Impedance Outlier Threshold (Quantile)",
-                min_value=0.0,
-                max_value=0.9,
-                value=0.0,
-                step=0.05,
-                help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
+                min_value = 0.0,
+                max_value = 0.9,
+                value     = 0.0,
+                step      = 0.05,
+                help      = "Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
             )
 
         # Get the selected features for analysis
@@ -526,12 +526,9 @@ class PopulationImpedanceRenderer:
         # Remove outliers if threshold is set
         if outlier_threshold > 0:
             for col in analysis_df.columns:
-                q_low = analysis_df[col].quantile(outlier_threshold)
-                q_high = analysis_df[col].quantile(1 - outlier_threshold)
-                analysis_df = analysis_df[
-                    (analysis_df[col] >= q_low) &
-                    (analysis_df[col] <= q_high)
-                ]
+                q_low       = analysis_df[col].quantile(outlier_threshold)
+                q_high      = analysis_df[col].quantile(1 - outlier_threshold)
+                analysis_df = analysis_df[ (analysis_df[col] >= q_low) & (analysis_df[col] <= q_high) ]
 
         if analysis_df.empty or len(analysis_df) < 2:
             st.warning("Not enough data after outlier removal for correlation analysis.")
@@ -543,25 +540,16 @@ class PopulationImpedanceRenderer:
         # Calculate p-values for correlations
         p_values = self._calculate_correlation_pvalues(analysis_df)
 
-        # Display correlation heatmap
-        # st.subheader("Feature Correlation Analysis")
-
         # Create correlation heatmap
         fig = px.imshow(
-            corr_matrix,
+            abs(corr_matrix),
             labels=dict(color="Correlation"),
-            # x=corr_matrix.columns,
-            # y=corr_matrix.columns,
             color_continuous_scale="RdBu",
             aspect="auto",
             text_auto=".2f",
             title="Correlation Matrix Heatmap"
         )
-        # fig.update_layout(
-        #     title="Correlation Matrix Heatmap",
-        #     width=800,
-        #     height=600
-        # )
+
         st.plotly_chart(fig, use_container_width=True)
 
         # Display detailed statistics
