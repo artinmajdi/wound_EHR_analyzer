@@ -137,7 +137,7 @@ The Docker configuration includes the following volume mounts:
 | Host Path | Container Path | Purpose |
 |-----------|---------------|---------|
 | `./dataset` | `/app/dataset` | Data storage |
-| `./config` | `/app/config` | Configuration files |
+| `./setup_config` | `/app/setup_config` | Configuration files |
 | `./{output_dir}` | `/app/output` | Analysis results |
 
 ### Custom Dataset Location
@@ -177,7 +177,7 @@ docker compose -f docker/docker-compose.yml -f /path/to/docker-compose.custom.ym
 
 | Issue | Solution |
 |-------|----------|
-| Permission errors | Ensure proper permissions on mounted volumes: `chmod -R 755 ./dataset ./config` |
+| Permission errors | Ensure proper permissions on mounted volumes: `chmod -R 755 ./dataset ./setup_config` |
 | Missing environment variables | Verify .env file exists and contains required variables |
 | Port conflicts | Check if port 8501 is already in use: `lsof -i :8501` |
 | Container fails to start | Check logs with `./scripts/run_docker.sh logs` |

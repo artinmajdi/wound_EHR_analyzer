@@ -1,6 +1,6 @@
 # Standard library imports
 import traceback
-from collections import Counter
+from typing import List, Dict, Any, Tuple, Optional
 
 # Third-party imports
 import numpy as np
@@ -16,122 +16,149 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # Local application imports
-from wound_analysis.dashboard_components.visualizer import Visualizer
-from wound_analysis.utils.data_processor import ImpedanceAnalyzer, WoundDataProcessor
+from wound_analysis.utils.data_processor import ImpedanceAnalyzer, WoundDataProcessor, VisitsDataType, VisitsMetadataType
+from wound_analysis.utils.column_schema import DColumns
+
 
 class ImpedanceTab:
 	"""
-		Render the impedance analysis tab in the Streamlit application.
+	Main class for rendering the impedance analysis tab in the Streamlit application.
 
-		This method creates a comprehensive data analysis and visualization tab focused on bioelectrical
-		impedance measurement data. It provides different views depending on whether the analysis is for
-		all patients combined or a specific patient.
+	This class serves as the entry point for the impedance analysis tab, delegating
+	rendering responsibilities to specialized renderer classes based on whether the
+	analysis is for all patients combined or a specific patient.
 
-		For all patients:
-		- Creates a scatter plot correlating impedance to healing rate with outlier control
-		- Displays statistical correlation coefficients
-		- Shows impedance components over time
-		- Shows average impedance by wound type
-
-		For individual patients:
-		- Provides three detailed sub-tabs:
-			1. Overview: Basic impedance measurements over time with mode selection
-			2. Clinical Analysis: Detailed per-visit assessment including tissue health index, infection risk assessment, tissue composition analysis, and changes since previous visit
-			3. Advanced Interpretation: Sophisticated analysis including healing trajectory, wound healing stage classification, tissue electrical properties, and clinical insights
-
-		Parameters:
-		----------
-		df : pd.DataFrame
-				The dataframe containing all patient data with impedance measurements
-		selected_patient : str
-				Either "All Patients" or a specific patient identifier (e.g., "Patient 43")
-
-		Returns:
-		-------
-		None
-				This method renders UI elements directly to the Streamlit app
+	Attributes:
+		wound_data_processor (WoundDataProcessor): Processor for wound data
+		patient_id (Union[str, int]): Identifier for the patient, "All Patients" or an integer
+		df (pd.DataFrame): DataFrame containing patient data
+		CN (DColumns): Column name accessor for the DataFrame
 	"""
 
-	def __init__(self, df: pd.DataFrame, selected_patient: str, data_processor: WoundDataProcessor):
-		self.data_processor = data_processor
+	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
+		"""
+		Initialize the ImpedanceTab with patient data and selection.
+
+		Args:
+			df: DataFrame containing all patient data
+			selected_patient: Either "All Patients" or a specific patient identifier
+			wound_data_processor: Processor for accessing and manipulating wound data
+		"""
+		self.wound_data_processor = wound_data_processor
 		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
 		self.df = df
+		self.CN = DColumns(df=df)
 
 	def render(self) -> None:
+		"""
+		Render the impedance analysis tab based on patient selection.
 
+		Delegates to either PopulationImpedanceRenderer or PatientImpedanceRenderer
+		based on whether all patients or a specific patient is selected.
+		"""
 		st.header("Impedance Analysis")
 
 		if self.patient_id == "All Patients":
-			ImpedanceTab._render_population(df=self.df)
+			PopulationImpedanceRenderer(df=self.df).render()
+
 		else:
-			visits = self.data_processor.get_patient_visits(record_id=self.patient_id)['visits']
-			ImpedanceTab._render_patient(visits=visits)
+			visits_meta_data: VisitsMetadataType   = self.wound_data_processor.get_patient_visits(record_id=self.patient_id)
+			visits          : List[VisitsDataType] = visits_meta_data['visits']
+			PatientImpedanceRenderer(visits=visits).render()
 
-	@staticmethod
-	def _render_population(df: pd.DataFrame) -> None:
+
+class PopulationImpedanceRenderer:
+	"""
+	Renderer for population-level impedance analysis.
+
+	This class handles the rendering of population-level impedance analysis,
+	including clustering, correlation analysis, and visualization of impedance data
+	across the entire patient population.
+
+	Attributes:
+		df (pd.DataFrame): DataFrame containing all patient data
+		CN (DColumns): Column name accessor for the DataFrame
+	"""
+
+	def __init__(self, df: pd.DataFrame):
 		"""
-		Renders the population-level impedance analysis section of the dashboard.
+		Initialize the PopulationImpedanceRenderer with patient data.
 
-		This method creates visualizations and controls for analyzing impedance data across the entire patient population. It includes
-		correlation analysis with filtering controls, a scatter plot of relationships between variables, and additional charts that provide
-		population-level insights about impedance measurements.
+		Args:
+			df: DataFrame containing all patient data
+		"""
+		self.df = df
+		self.CN = DColumns(df=df)
 
-		Parameters:
-		----------
-		df : pd.DataFrame
-			The input dataframe containing patient impedance data to be analyzed.
-			Expected to contain columns related to impedance measurements and patient information.
+	def render(self) -> None:
+		"""
+		Render the population-level impedance analysis section.
+
+		This method orchestrates the rendering of the population-level analysis,
+		including clustering, correlation analysis, and visualization.
+		"""
+		# Create a copy of the dataframe for analysis
+		analysis_df = self.df.copy()
+
+		# Render clustering options and perform clustering if requested
+		working_df = self._render_clustering_section(analysis_df)
+
+		# Add outlier threshold control and calculate correlation
+		filtered_df = self._display_correlation_controls(working_df)
+
+		# Create scatter plot if we have valid data
+		if not filtered_df.empty:
+			self._render_scatter_plot(df=filtered_df)
+		else:
+			st.warning("No valid data available for the scatter plot.")
+
+		# Create additional visualizations in a two-column layout
+		self._render_population_charts(df=working_df)
+
+	def _render_clustering_section(self, analysis_df: pd.DataFrame) -> pd.DataFrame:
+		"""
+		Render the clustering section and perform clustering if requested.
+
+		Args:
+			analysis_df: DataFrame to perform clustering on
 
 		Returns:
-		-------
-		None
-			This method directly renders components to the Streamlit dashboard and doesn't return values.
-
-		Notes:
-		-----
-		The method performs the following operations:
-		1. Creates a filtered dataset based on user-controlled outlier thresholds
-		2. Allows clustering of data based on selected features
-		3. Renders a scatter plot showing relationships between impedance variables
-		4. Displays additional charts for population-level impedance analysis
+			DataFrame to use for further analysis (either clustered or original)
 		"""
-
-		# Create a copy of the dataframe for analysis
-		analysis_df = df.copy()
-
-		# Create an expander for clustering options
 		with st.expander("Patient Data Clustering", expanded=True):
 			st.markdown("### Cluster Analysis Settings")
 
-			# Create two columns for clustering controls
+			# Create columns for clustering controls
 			col1, col2, col3 = st.columns([1, 2, 1])
 
 			with col1:
-				# Number of clusters selection
-				# n_clusters = st.slider("Number of Clusters", min_value=2, max_value=10, value=3, help="Select the number of clusters to divide patient data into")
-				n_clusters = st.number_input("Number of Clusters", min_value=2, max_value=10, value=3, help="Select the number of clusters to divide patient data into")
+				n_clusters = st.number_input(
+					"Number of Clusters",
+					min_value=2,
+					max_value=10,
+					value=3,
+					help="Select the number of clusters to divide patient data into"
+				)
 
 			with col2:
-				# Features for clustering selection
 				cluster_features = st.multiselect(
 					"Features for Clustering",
 					options=[
-						"Skin Impedance (kOhms) - Z",
-						"Calculated Wound Area",
-						"Center of Wound Temperature (Fahrenheit)",
-						"Oxygenation (%)",
-						"Hemoglobin Level",
-						"Calculated Age at Enrollment",
-						"BMI",
-						"Days_Since_First_Visit",
-						"Healing Rate (%)"
+						self.CN.HIGHEST_FREQ_Z,
+						self.CN.WOUND_AREA,
+						self.CN.CENTER_TEMP,
+						self.CN.OXYGENATION,
+						self.CN.HEMOGLOBIN,
+						self.CN.AGE,
+						self.CN.BMI,
+						self.CN.DAYS_SINCE_FIRST_VISIT,
+						self.CN.HEALING_RATE
 					],
-					default=["Skin Impedance (kOhms) - Z", "Calculated Wound Area", "Healing Rate (%)"],
+					default=[self.CN.HIGHEST_FREQ_Z, self.CN.WOUND_AREA, self.CN.HEALING_RATE],
 					help="Select features to be used for clustering patients"
 				)
 
 			with col3:
-				# Method selection
 				clustering_method = st.selectbox(
 					"Clustering Method",
 					options=["K-Means", "Hierarchical", "DBSCAN"],
@@ -139,191 +166,246 @@ class ImpedanceTab:
 					help="Select the clustering algorithm to use"
 				)
 
-				# Add button to run clustering
 				run_clustering = st.button("Run Clustering")
 
-		# Session state for clusters
-		if 'clusters' not in st.session_state:
-			st.session_state.clusters = None
-			st.session_state.cluster_df = None
-			st.session_state.selected_cluster = None
-			st.session_state.feature_importance = None
+			# Initialize session state for clusters if not already present
+			if 'clusters' not in st.session_state:
+				st.session_state.clusters = None
+				st.session_state.cluster_df = None
+				st.session_state.selected_cluster = None
+				st.session_state.feature_importance = None
 
-		# Run clustering if requested
-		if run_clustering and len(cluster_features) > 0:
-			try:
-				# Create a feature dataframe for clustering
-				clustering_df = analysis_df[cluster_features].copy()
-
-				# Handle missing values
-				clustering_df = clustering_df.fillna(clustering_df.mean())
-
-
-
-				# Drop rows with any remaining NaN values
-				clustering_df = clustering_df.dropna()
-
-				if len(clustering_df) > n_clusters:  # Ensure we have more data points than clusters
-					# Get indices of valid rows to map back to original dataframe
-					valid_indices = clustering_df.index
-
-					# Standardize the data
-					scaler = StandardScaler()
-					scaled_features = scaler.fit_transform(clustering_df)
-
-					# Perform clustering based on selected method
-					if clustering_method == "K-Means":
-						clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-						cluster_labels = clusterer.fit_predict(scaled_features)
-
-						# Calculate feature importance for K-Means
-						centers = clusterer.cluster_centers_
-						feature_importance = {}
-						for i, feature in enumerate(cluster_features):
-							# Calculate the variance of this feature across cluster centers
-							variance = np.var([center[i] for center in centers])
-							feature_importance[feature] = variance
-
-						# Normalize the feature importance
-						max_importance = max(feature_importance.values())
-						feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
-
-					elif clustering_method == "Hierarchical":
-						# Perform hierarchical clustering
-						Z = linkage(scaled_features, 'ward')
-						cluster_labels = fcluster(Z, n_clusters, criterion='maxclust') - 1  # Adjust to 0-based
-
-						# For hierarchical clustering, use silhouette coefficients for feature importance
-						feature_importance = {}
-						for i, feature in enumerate(cluster_features):
-							# Create single-feature clustering and measure its quality
-							single_feature = scaled_features[:, i:i+1]
-							if len(np.unique(single_feature)) > 1:  # Only if feature has variation
-								temp_clusters = fcluster(linkage(single_feature, 'ward'), n_clusters, criterion='maxclust')
-								try:
-									score = silhouette_score(single_feature, temp_clusters)
-									feature_importance[feature] = max(0, score)  # Ensure non-negative
-								except:
-									feature_importance[feature] = 0.01  # Fallback value
-							else:
-								feature_importance[feature] = 0.01
-
-						# Normalize the feature importance
-						if max(feature_importance.values()) > 0:
-							max_importance = max(feature_importance.values())
-							feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
-
-					else:  # DBSCAN
-						# Calculate epsilon based on data
-						neigh = NearestNeighbors(n_neighbors=3)
-						neigh.fit(scaled_features)
-						distances, _ = neigh.kneighbors(scaled_features)
-						distances = np.sort(distances[:, 2], axis=0)  # Distance to 3rd nearest neighbor
-						epsilon = np.percentile(distances, 90)  # Use 90th percentile as epsilon
-
-						clusterer = DBSCAN(eps=epsilon, min_samples=max(3, len(scaled_features)//30))
-						cluster_labels = clusterer.fit_predict(scaled_features)
-
-						# For DBSCAN, count points in each cluster as a measure of feature importance
-						counts = Counter(cluster_labels)
-
-						# Adjust n_clusters to actual number found by DBSCAN
-						n_clusters = len([k for k in counts.keys() if k >= 0])  # Exclude noise points (label -1)
-
-						# Calculate feature importance for DBSCAN using variance within clusters
-						feature_importance = {}
-						for i, feature in enumerate(cluster_features):
-							variances = []
-							for label in set(cluster_labels):
-								if label >= 0:  # Exclude noise points
-									cluster_data = scaled_features[cluster_labels == label, i]
-									if len(cluster_data) > 1:
-										variances.append(np.var(cluster_data))
-							if variances:
-								feature_importance[feature] = 1.0 - min(1.0, np.mean(variances)/np.var(scaled_features[:, i]))
-							else:
-								feature_importance[feature] = 0.01
-
-						# Normalize feature importance
-						if max(feature_importance.values()) > 0:
-							max_importance = max(feature_importance.values())
-							feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
-
-					# Create a new column in the original dataframe with cluster labels
-					cluster_mapping = pd.Series(cluster_labels, index=valid_indices)
-					analysis_df.loc[valid_indices, 'Cluster'] = cluster_mapping
-
-					# Handle any NaN in cluster column (rows that were dropped during clustering)
-					analysis_df['Cluster'] = analysis_df['Cluster'].fillna(-1).astype(int)
-
-					# Store clustering results in session state
-					st.session_state.clusters = sorted(analysis_df['Cluster'].unique())
-					st.session_state.cluster_df = analysis_df
-					st.session_state.feature_importance = feature_importance
-					st.session_state.selected_cluster = None  # Reset selected cluster
-
-					# Display success message
-					st.success(f"Successfully clustered data into {n_clusters} clusters using {clustering_method}!")
-
-					# Display cluster distribution
-					cluster_counts = analysis_df['Cluster'].value_counts().sort_index()
-
-					# Filter out noise points (label -1) for visualization
-					if -1 in cluster_counts:
-						noise_count = cluster_counts[-1]
-						cluster_counts = cluster_counts[cluster_counts.index >= 0]
-						st.info(f"Note: {noise_count} points were classified as noise (only applies to DBSCAN)")
-
-					# Create a bar chart for cluster sizes
-					fig = px.bar(
-						x=cluster_counts.index,
-						y=cluster_counts.values,
-						labels={'x': 'Cluster', 'y': 'Number of Patients/Visits'},
-						title=f"Cluster Distribution",
-						color=cluster_counts.index,
-						text=cluster_counts.values
+			# Run clustering if requested
+			if run_clustering and cluster_features:
+				try:
+					self._perform_clustering(
+						analysis_df=analysis_df,
+						cluster_features=cluster_features,
+						n_clusters=n_clusters,
+						clustering_method=clustering_method
 					)
+				except Exception as e:
+					st.error(f"Error during clustering: {str(e)}")
+					st.error(traceback.format_exc())
 
-					fig.update_traces(textposition='outside')
-					fig.update_layout(showlegend=False)
-					st.plotly_chart(fig, use_container_width=True)
+			# Render cluster selection and characteristics if clustering has been performed
+			working_df = self._render_cluster_selection(analysis_df, cluster_features)
 
-					# Create a spider/radar chart showing feature importance for clustering
-					if feature_importance:
-						# Create a radar chart for feature importance
-						categories = list(feature_importance.keys())
-						values = list(feature_importance.values())
+		return working_df
 
-						fig = go.Figure()
-						fig.add_trace(go.Scatterpolar(
-							r=values,
-							theta=categories,
-							fill='toself',
-							name='Feature Importance'
-						))
+	def _perform_clustering(self, analysis_df: pd.DataFrame, cluster_features: List[str],
+						   n_clusters: int, clustering_method: str) -> None:
+		"""
+		Perform clustering on the data using the specified method and features.
 
-						fig.update_layout(
-							title="Feature Importance in Clustering",
-							polar=dict(
-								radialaxis=dict(visible=True, range=[0, 1]),
-							),
-							showlegend=False
-						)
+		Args:
+			analysis_df: DataFrame to perform clustering on
+			cluster_features: List of features to use for clustering
+			n_clusters: Number of clusters to create
+			clustering_method: Method to use for clustering (K-Means, Hierarchical, or DBSCAN)
+		"""
+		# Create a feature dataframe for clustering
+		clustering_df = analysis_df[cluster_features].copy()
 
-						st.plotly_chart(fig, use_container_width=True)
+		# Handle missing values
+		clustering_df = clustering_df.fillna(clustering_df.mean())
+
+		# Drop rows with any remaining NaN values
+		clustering_df = clustering_df.dropna()
+
+		if len(clustering_df) <= n_clusters:
+			st.error("Not enough valid data points for clustering. Try selecting different features or reducing the number of clusters.")
+			return
+
+		# Get indices of valid rows to map back to original dataframe
+		valid_indices = clustering_df.index
+
+		# Standardize the data
+		scaler = StandardScaler()
+		scaled_features = scaler.fit_transform(clustering_df)
+
+		# Perform clustering based on selected method
+		cluster_labels, feature_importance = self._apply_clustering_algorithm(
+			scaled_features=scaled_features,
+			cluster_features=cluster_features,
+			n_clusters=n_clusters,
+			clustering_method=clustering_method
+		)
+
+		# Create a new column in the original dataframe with cluster labels
+		cluster_mapping = pd.Series(cluster_labels, index=valid_indices)
+		analysis_df.loc[valid_indices, 'Cluster'] = cluster_mapping
+
+		# Handle any NaN in cluster column (rows that were dropped during clustering)
+		analysis_df['Cluster'] = analysis_df['Cluster'].fillna(-1).astype(int)
+
+		# Store clustering results in session state
+		st.session_state.clusters = sorted(analysis_df['Cluster'].unique())
+		st.session_state.cluster_df = analysis_df
+		st.session_state.feature_importance = feature_importance
+		st.session_state.selected_cluster = None  # Reset selected cluster
+
+		# Display success message
+		st.success(f"Successfully clustered data into {n_clusters} clusters using {clustering_method}!")
+
+		# Display cluster distribution
+		self._display_cluster_distribution(analysis_df)
+
+		# Display feature importance
+		if feature_importance:
+			self._display_feature_importance(feature_importance)
+
+	def _apply_clustering_algorithm(self, scaled_features: np.ndarray, cluster_features: List[str],
+								   n_clusters: int, clustering_method: str) -> Tuple[np.ndarray, Dict[str, float]]:
+		"""
+		Apply the specified clustering algorithm to the data.
+
+		Args:
+			scaled_features: Standardized features to cluster
+			cluster_features: Names of the features being clustered
+			n_clusters: Number of clusters to create
+			clustering_method: Method to use for clustering
+
+		Returns:
+			Tuple of (cluster_labels, feature_importance)
+		"""
+		feature_importance = {}
+
+		if clustering_method == "K-Means":
+			clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+			cluster_labels = clusterer.fit_predict(scaled_features)
+
+			# Calculate feature importance for K-Means
+			centers = clusterer.cluster_centers_
+			for i, feature in enumerate(cluster_features):
+				# Calculate the variance of this feature across cluster centers
+				variance = np.var([center[i] for center in centers])
+				feature_importance[feature] = variance
+
+		elif clustering_method == "Hierarchical":
+			# Perform hierarchical clustering
+			Z = linkage(scaled_features, 'ward')
+			cluster_labels = fcluster(Z, n_clusters, criterion='maxclust') - 1  # Adjust to 0-based
+
+			# For hierarchical clustering, use silhouette coefficients for feature importance
+			for i, feature in enumerate(cluster_features):
+				# Create single-feature clustering and measure its quality
+				single_feature = scaled_features[:, i:i+1]
+				if len(np.unique(single_feature)) > 1:  # Only if feature has variation
+					temp_clusters = fcluster(linkage(single_feature, 'ward'), n_clusters, criterion='maxclust')
+					try:
+						score = silhouette_score(single_feature, temp_clusters)
+						feature_importance[feature] = max(0, score)  # Ensure non-negative
+					except Exception as e:
+						st.error(f"Error calculating silhouette score: {str(e)}")
+						feature_importance[feature] = 0.01  # Fallback value
 				else:
-					st.error("Not enough valid data points for clustering. Try selecting different features or reducing the number of clusters.")
+					feature_importance[feature] = 0.01
 
-			except Exception as e:
-				st.error(f"Error during clustering: {str(e)}")
-				st.error(traceback.format_exc())
+		else:  # DBSCAN
+			# Calculate epsilon based on data
+			neigh = NearestNeighbors(n_neighbors=3)
+			neigh.fit(scaled_features)
+			distances, _ = neigh.kneighbors(scaled_features)
+			distances = np.sort(distances[:, 2], axis=0)  # Distance to 3rd nearest neighbor
+			epsilon = np.percentile(distances, 90)  # Use 90th percentile as epsilon
 
-		# Check if clustering has been performed
+			clusterer = DBSCAN(eps=epsilon, min_samples=max(3, len(scaled_features)//30))
+			cluster_labels = clusterer.fit_predict(scaled_features)
+
+			# For DBSCAN, calculate feature importance using variance within clusters
+			for i, feature in enumerate(cluster_features):
+				variances = []
+				for label in set(cluster_labels):
+					if label >= 0:  # Exclude noise points
+						cluster_data = scaled_features[cluster_labels == label, i]
+						if len(cluster_data) > 1:
+							variances.append(np.var(cluster_data))
+				if variances:
+					feature_importance[feature] = 1.0 - min(1.0, np.mean(variances)/np.var(scaled_features[:, i]))
+				else:
+					feature_importance[feature] = 0.01
+
+		# Normalize feature importance
+		if feature_importance and max(feature_importance.values()) > 0:
+			max_importance = max(feature_importance.values())
+			feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
+
+		return cluster_labels, feature_importance
+
+	def _display_cluster_distribution(self, analysis_df: pd.DataFrame) -> None:
+		"""
+		Display the distribution of data points across clusters.
+
+		Args:
+			analysis_df: DataFrame with cluster assignments
+		"""
+		cluster_counts = analysis_df['Cluster'].value_counts().sort_index()
+
+		# Filter out noise points (label -1) for visualization
+		if -1 in cluster_counts:
+			noise_count = cluster_counts[-1]
+			cluster_counts = cluster_counts[cluster_counts.index >= 0]
+			st.info(f"Note: {noise_count} points were classified as noise (only applies to DBSCAN)")
+
+		# Create a bar chart for cluster sizes
+		fig = px.bar(
+			x=cluster_counts.index,
+			y=cluster_counts.values,
+			labels={'x': 'Cluster', 'y': 'Number of Patients/Visits'},
+			title="Cluster Distribution",
+			color=cluster_counts.index,
+			text=cluster_counts.values
+		)
+
+		fig.update_traces(textposition='outside')
+		fig.update_layout(showlegend=False)
+		st.plotly_chart(fig, use_container_width=True)
+
+	def _display_feature_importance(self, feature_importance: Dict[str, float]) -> None:
+		"""
+		Display a radar chart showing feature importance in clustering.
+
+		Args:
+			feature_importance: Dictionary mapping feature names to importance values
+		"""
+		categories = list(feature_importance.keys())
+		values = list(feature_importance.values())
+
+		fig = go.Figure()
+		fig.add_trace(go.Scatterpolar(
+			r=values,
+			theta=categories,
+			fill='toself',
+			name='Feature Importance'
+		))
+
+		fig.update_layout(
+			title="Feature Importance in Clustering",
+			polar=dict(
+				radialaxis=dict(visible=True, range=[0, 1]),
+			),
+			showlegend=False
+		)
+
+		st.plotly_chart(fig, use_container_width=True)
+
+	def _render_cluster_selection(self, analysis_df: pd.DataFrame, cluster_features: List[str]) -> pd.DataFrame:
+		"""
+		Render the cluster selection dropdown and display cluster characteristics.
+
+		Args:
+			analysis_df: Original DataFrame
+			cluster_features: Features used for clustering
+
+		Returns:
+			DataFrame to use for further analysis (either filtered by cluster or original)
+		"""
 		if st.session_state.clusters is not None and st.session_state.cluster_df is not None:
 			# Create selection for which cluster to analyze
 			st.markdown("### Cluster Selection")
 
-			cluster_options = [f"All Data"]
+			cluster_options = ["All Data"]
 			for cluster_id in sorted([c for c in st.session_state.clusters if c >= 0]):
 				cluster_count = len(st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id])
 				cluster_options.append(f"Cluster {cluster_id} (n={cluster_count})")
@@ -344,156 +426,130 @@ class ImpedanceTab:
 				working_df = st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id].copy()
 
 				# Display cluster characteristics
-				st.markdown(f"### Characteristics of Cluster {cluster_id}")
+				self._display_cluster_characteristics(cluster_id, working_df, analysis_df, cluster_features)
 
-				# Create summary statistics for this cluster vs. overall population
-				summary_stats = []
-
-				for feature in cluster_features:
-					if feature in working_df.columns:
-						try:
-							cluster_mean = working_df[feature].mean()
-							overall_mean = analysis_df[feature].mean()
-							diff_pct = ((cluster_mean - overall_mean) / overall_mean * 100) if overall_mean != 0 else 0
-
-							summary_stats.append({
-								"Feature": feature,
-								"Cluster Mean": f"{cluster_mean:.2f}",
-								"Population Mean": f"{overall_mean:.2f}",
-								"Difference": f"{diff_pct:+.1f}%",
-								"Significant": abs(diff_pct) > 15
-							})
-						except:
-							pass
-
-				if summary_stats:
-					summary_df = pd.DataFrame(summary_stats)
-
-					# Create a copy of the styling DataFrame to avoid the KeyError
-					styled_df = summary_df.copy()
-
-					# Define the highlight function that uses a custom attribute instead of accessing the DataFrame
-					def highlight_significant(row):
-						is_significant = row['Significant'] if 'Significant' in row else False
-						# Return styling for all columns except 'Significant'
-						return ['background-color: yellow' if is_significant else '' for _ in range(len(row))]
-
-					# Apply styling to all columns, then drop the 'Significant' column for display
-					styled_df = styled_df.style.apply(highlight_significant, axis=1)
-					styled_df.hide(axis="columns", names=["Significant"])
-
-					# Display the styled DataFrame
-					st.table(styled_df)
-					st.info("Highlighted rows indicate features where this cluster differs from the overall population by >15%")
+			return working_df
 		else:
-			working_df = analysis_df
+			return analysis_df
 
-		# Add outlier threshold control and calculate correlation
-		filtered_df = ImpedanceTab._display_correlation_controls(working_df)
-
-		# Create scatter plot if we have valid data
-		if not filtered_df.empty:
-			ImpedanceTab._scatter_plot(df=filtered_df)
-		else:
-			st.warning("No valid data available for the scatter plot.")
-
-		# Create additional visualizations in a two-column layout
-		ImpedanceTab._population_charts(df=working_df)
-
-	@staticmethod
-	def _display_correlation_controls(df: pd.DataFrame) -> pd.DataFrame:
+	def _display_cluster_characteristics(self, cluster_id: int, cluster_df: pd.DataFrame,
+										full_df: pd.DataFrame, features: List[str]) -> None:
 		"""
-		Displays comprehensive statistical analysis between selected features.
+		Display characteristics of the selected cluster compared to the overall population.
 
-		This method creates UI controls for configuring outlier thresholds and displays:
-		1. Correlation matrix between all selected features
-		2. Statistical significance (p-values)
-		3. Effect sizes and confidence intervals
-		4. Basic descriptive statistics for each feature
-
-		Parameters
-		----------
-		df : pd.DataFrame
-			The input dataframe containing wound data with all selected features
-
-		Returns
-		-------
-		pd.DataFrame
-			Processed dataframe with outliers removed
+		Args:
+			cluster_id: ID of the selected cluster
+			cluster_df: DataFrame filtered to the selected cluster
+			full_df: Full DataFrame with all data
+			features: Features to compare
 		"""
-		col1, _, col3 = st.columns([2, 3, 3])
+		st.markdown(f"### Characteristics of Cluster {cluster_id}")
 
-		with col1:
+		# Create summary statistics for this cluster vs. overall population
+		summary_stats = []
+
+		for feature in features:
+			if feature in cluster_df.columns:
+				try:
+					cluster_mean = cluster_df[feature].mean()
+					overall_mean = full_df[feature].mean()
+					diff_pct = ((cluster_mean - overall_mean) / overall_mean * 100) if overall_mean != 0 else 0
+
+					summary_stats.append({
+						"Feature"        : feature,
+						"Cluster Mean"   : f"{cluster_mean:.2f}",
+						"Population Mean": f"{overall_mean:.2f}",
+						"Difference"     : f"{diff_pct:+.1f}%",
+						"Significant"    : abs(diff_pct) > 15
+					})
+				except Exception as e:
+					st.error(f"Error calculating summary statistics: {str(e)}")
+
+		if summary_stats:
+			summary_df = pd.DataFrame(summary_stats)
+
+			# Create a copy of the styling DataFrame to avoid the KeyError
+			styled_df = summary_df.copy()
+
+			# Define the highlight function that uses a custom attribute instead of accessing the DataFrame
+			def highlight_significant(row):
+				is_significant = row['Significant'] if 'Significant' in row else False
+				# Return styling for all columns except 'Significant'
+				return ['background-color: yellow' if is_significant else '' for _ in range(len(row))]
+
+			# Apply styling to all columns, then drop the 'Significant' column for display
+			styled_df = styled_df.style.apply(highlight_significant, axis=1)
+			styled_df.hide(axis="columns", names=["Significant"])
+
+			# Display the styled DataFrame
+			st.table(styled_df)
+			st.info("Highlighted rows indicate features where this cluster differs from the overall population by >15%")
+
+	def _display_correlation_controls(self, df_for_cluster: pd.DataFrame) -> pd.DataFrame:
+		"""
+		Display controls for correlation analysis and perform the analysis.
+
+		Args:
+			df_for_cluster: DataFrame to analyze
+
+		Returns:
+			Filtered DataFrame with outliers removed
+		"""
+		cols = st.columns([2, 3])
+
+		with cols[0]:
 			outlier_threshold = st.number_input(
 				"Impedance Outlier Threshold (Quantile)",
-				min_value=0.0,
-				max_value=0.9,
-				value=0.0,
-				step=0.05,
-				help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
+				min_value = 0.0,
+				max_value = 0.9,
+				value     = 0.0,
+				step      = 0.05,
+				help      = "Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
 			)
 
 		# Get the selected features for analysis
 		features_to_analyze = [
-			"Skin Impedance (kOhms) - Z",
-			"Calculated Wound Area",
-			"Center of Wound Temperature (Fahrenheit)",
-			"Oxygenation (%)",
-			"Hemoglobin Level",
-			"Healing Rate (%)"
+			self.CN.HIGHEST_FREQ_Z,
+			self.CN.WOUND_AREA,
+			self.CN.CENTER_TEMP,
+			self.CN.OXYGENATION,
+			self.CN.HEMOGLOBIN,
+			self.CN.HEALING_RATE
 		]
 
 		# Filter features that exist in the dataframe
-		features_to_analyze = [f for f in features_to_analyze if f in df.columns]
+		features_to_analyze = [f for f in features_to_analyze if f in df_for_cluster.columns]
 
 		# Create a copy of the dataframe with only the features we want to analyze
-		analysis_df = df[features_to_analyze].copy()
+		analysis_df = df_for_cluster[features_to_analyze].copy().dropna()
 
 		# Remove outliers if threshold is set
 		if outlier_threshold > 0:
 			for col in analysis_df.columns:
-				q_low = analysis_df[col].quantile(outlier_threshold)
-				q_high = analysis_df[col].quantile(1 - outlier_threshold)
-				analysis_df = analysis_df[
-					(analysis_df[col] >= q_low) &
-					(analysis_df[col] <= q_high)
-				]
+				q_low       = analysis_df[col].quantile(outlier_threshold)
+				q_high      = analysis_df[col].quantile(1 - outlier_threshold)
+				analysis_df = analysis_df[ (analysis_df[col] >= q_low) & (analysis_df[col] <= q_high) ]
+
+		if analysis_df.empty or len(analysis_df) < 2:
+			st.warning("Not enough data after outlier removal for correlation analysis.")
+			return pd.DataFrame()
 
 		# Calculate correlation matrix
 		corr_matrix = analysis_df.corr()
 
 		# Calculate p-values for correlations
-		def calculate_pvalue(x, y):
-			mask = ~(np.isnan(x) | np.isnan(y))
-			if np.sum(mask) < 2:
-				return np.nan
-			return stats.pearsonr(x[mask], y[mask])[1]
-
-		p_values = pd.DataFrame(
-			[[calculate_pvalue(analysis_df[col1], analysis_df[col2])
-			  for col2 in analysis_df.columns]
-			 for col1 in analysis_df.columns],
-			columns=analysis_df.columns,
-			index=analysis_df.columns
-		)
-
-		# Display correlation heatmap
-		st.subheader("Feature Correlation Analysis")
+		p_values = self._calculate_correlation_pvalues(analysis_df)
 
 		# Create correlation heatmap
 		fig = px.imshow(
-			corr_matrix,
+			abs(corr_matrix),
 			labels=dict(color="Correlation"),
-			x=corr_matrix.columns,
-			y=corr_matrix.columns,
 			color_continuous_scale="RdBu",
-			aspect="auto"
+			aspect="auto",
+			text_auto=".2f",
+			title="Correlation Matrix Heatmap"
 		)
-		fig.update_layout(
-			title="Correlation Matrix Heatmap",
-			width=800,
-			height=600
-		)
+
 		st.plotly_chart(fig, use_container_width=True)
 
 		# Display detailed statistics
@@ -503,89 +559,139 @@ class ImpedanceTab:
 		tab1, tab2, tab3 = st.tabs(["Correlation Details", "Descriptive Stats", "Effect Sizes"])
 
 		with tab1:
-			# Display significant correlations
-			st.markdown("#### Significant Correlations (p < 0.05)")
-			significant_corrs = []
-			for i in range(len(features_to_analyze)):
-				for j in range(i+1, len(features_to_analyze)):
-					if p_values.iloc[i,j] < 0.05:
-						significant_corrs.append({
-							"Feature 1": features_to_analyze[i],
-							"Feature 2": features_to_analyze[j],
-							"Correlation": f"{corr_matrix.iloc[i,j]:.3f}",
-							"p-value": f"{p_values.iloc[i,j]:.3e}"
-						})
-
-			if significant_corrs:
-				st.table(pd.DataFrame(significant_corrs))
-			else:
-				st.info("No significant correlations found.")
+			self._display_significant_correlations(features_to_analyze, corr_matrix, p_values)
 
 		with tab2:
-			# Display descriptive statistics
-			st.markdown("#### Descriptive Statistics")
-			desc_stats = analysis_df.describe()
-			desc_stats.loc["skew"] = analysis_df.skew()
-			desc_stats.loc["kurtosis"] = analysis_df.kurtosis()
-			st.dataframe(desc_stats)
+			self._display_descriptive_statistics(analysis_df)
 
 		with tab3:
-			# Calculate and display effect sizes
-			st.markdown("#### Effect Sizes (Cohen's d) relative to Impedance")
-
-			effect_sizes = []
-			impedance_col = "Skin Impedance (kOhms) - Z"
-
-			if impedance_col in features_to_analyze:
-				for col in features_to_analyze:
-					if col != impedance_col:
-						# Calculate Cohen's d
-						d = (analysis_df[col].mean() - analysis_df[impedance_col].mean()) / \
-							np.sqrt((analysis_df[col].var() + analysis_df[impedance_col].var()) / 2)
-
-						effect_sizes.append({
-							"Feature": col,
-							"Cohen's d": f"{d:.3f}",
-							"Effect Size": "Large" if abs(d) > 0.8 else "Medium" if abs(d) > 0.5 else "Small",
-							"95% CI": f"[{d-1.96*np.sqrt(4/len(analysis_df)):.3f}, {d+1.96*np.sqrt(4/len(analysis_df)):.3f}]"
-						})
-
-				if effect_sizes:
-					st.table(pd.DataFrame(effect_sizes))
-				else:
-					st.info("No effect sizes could be calculated.")
-			else:
-				st.info("Impedance measurements not available for effect size calculation.")
+			self._display_effect_sizes(analysis_df, features_to_analyze)
 
 		return analysis_df
 
-	@staticmethod
-	def _scatter_plot(df: pd.DataFrame) -> None:
+	def _calculate_correlation_pvalues(self, df: pd.DataFrame) -> pd.DataFrame:
 		"""
-		Render scatter plot showing relationship between impedance and healing rate.
+		Calculate p-values for correlations between all columns in the DataFrame.
 
 		Args:
-			df: DataFrame containing impedance and healing rate data
+			df: DataFrame to analyze
+
+		Returns:
+			DataFrame of p-values with the same shape as the correlation matrix
+		"""
+		def calculate_pvalue(x, y):
+			mask = ~(np.isnan(x) | np.isnan(y))
+			if np.sum(mask) < 2:
+				return np.nan
+			return stats.pearsonr(x[mask], y[mask]).pvalue
+
+		return pd.DataFrame(
+			[[  stats.pearsonr(df[col1], df[col2]).pvalue # calculate_pvalue(df[col1], df[col2])
+						for col2 in df.columns]
+						for col1 in df.columns],
+				columns = df.columns,
+				index   = df.columns
+		)
+
+	def _display_significant_correlations(self, features: List[str], corr_matrix: pd.DataFrame, p_values: pd.DataFrame) -> None:
+		"""
+		Display significant correlations between features.
+
+		Args:
+			features: List of feature names
+			corr_matrix: Correlation matrix
+			p_values: Matrix of p-values
+		"""
+		st.markdown("#### Significant Correlations (p < 0.05)")
+		significant_corrs = []
+		for i in range(len(features)):
+			for j in range(i+1, len(features)):
+				if p_values.iloc[i,j] < 0.05:
+					significant_corrs.append({
+						"Feature 1": features[i],
+						"Feature 2": features[j],
+						"Correlation": f"{corr_matrix.iloc[i,j]:.3f}",
+						"p-value": f"{p_values.iloc[i,j]:.3e}"
+					})
+
+		if significant_corrs:
+			st.table(pd.DataFrame(significant_corrs))
+		else:
+			st.info("No significant correlations found.")
+
+	def _display_descriptive_statistics(self, df: pd.DataFrame) -> None:
+		"""
+		Display descriptive statistics for the DataFrame.
+
+		Args:
+			df: DataFrame to analyze
+		"""
+		st.markdown("#### Descriptive Statistics")
+		desc_stats = df.describe()
+		desc_stats.loc["skew"] = df.skew()
+		desc_stats.loc["kurtosis"] = df.kurtosis()
+		st.dataframe(desc_stats)
+
+	def _display_effect_sizes(self, df: pd.DataFrame, features: List[str]) -> None:
+		"""
+		Display effect sizes relative to impedance.
+
+		Args:
+			df: DataFrame to analyze
+			features: List of feature names
+		"""
+		st.markdown("#### Effect Sizes (Cohen's d) relative to Impedance")
+
+		effect_sizes = []
+		impedance_col = "Skin Impedance (kOhms) - Z"
+
+		if impedance_col in features:
+			for col in features:
+				if col != impedance_col:
+					# Calculate Cohen's d
+					d = (df[col].mean() - df[impedance_col].mean()) / \
+						np.sqrt((df[col].var() + df[impedance_col].var()) / 2)
+
+					effect_sizes.append({
+						"Feature": col,
+						"Cohen's d": f"{d:.3f}",
+						"Effect Size": "Large" if abs(d) > 0.8 else "Medium" if abs(d) > 0.5 else "Small",
+						"95% CI": f"[{d-1.96*np.sqrt(4/len(df)):.3f}, {d+1.96*np.sqrt(4/len(df)):.3f}]"
+					})
+
+			if effect_sizes:
+				st.table(pd.DataFrame(effect_sizes))
+			else:
+				st.info("No effect sizes could be calculated.")
+		else:
+			st.info("Impedance measurements not available for effect size calculation.")
+
+	def _render_scatter_plot(self, df: pd.DataFrame) -> None:
+		"""
+		Render a scatter plot showing the relationship between impedance and healing rate.
+
+		Args:
+			df: DataFrame to plot
 		"""
 		# Create a copy to avoid modifying the original dataframe
 		plot_df = df.copy()
 
 		# Handle missing values in Calculated Wound Area
-		if 'Calculated Wound Area' in plot_df.columns:
+		if self.CN.WOUND_AREA in plot_df.columns:
 			# Fill NaN with the mean, or 1 if all values are NaN
-			mean_area = plot_df['Calculated Wound Area'].mean()
-			plot_df['Calculated Wound Area'] = plot_df['Calculated Wound Area'].fillna(mean_area if pd.notnull(mean_area) else 1)
+			mean_area = plot_df[self.CN.WOUND_AREA].mean()
+			plot_df[self.CN.WOUND_AREA] = plot_df[self.CN.WOUND_AREA].fillna(mean_area if pd.notnull(mean_area) else 1)
 
 		# Define hover data columns we want to show if available
-		hover_columns = ['Record ID', 'Event Name', 'Wound Type']
+		hover_columns = [self.CN.RECORD_ID, self.CN.EVENT_NAME, self.CN.WOUND_TYPE]
 		available_hover = [col for col in hover_columns if col in plot_df.columns]
 
 		fig = px.scatter(
 			plot_df,
-			x='Skin Impedance (kOhms) - Z',
-			y='Healing Rate (%)',
-			color='Diabetes?' if 'Diabetes?' in plot_df.columns else None,
-			size='Calculated Wound Area' if 'Calculated Wound Area' in plot_df.columns else None,
+			x=self.CN.HIGHEST_FREQ_Z,
+			y=self.CN.HEALING_RATE,
+			color=self.CN.DIABETES if self.CN.DIABETES in plot_df.columns else None,
+			size=self.CN.WOUND_AREA if self.CN.WOUND_AREA in plot_df.columns else None,
 			size_max=30,
 			hover_data=available_hover,
 			title="Impedance vs Healing Rate Correlation"
@@ -598,28 +704,13 @@ class ImpedanceTab:
 
 		st.plotly_chart(fig, use_container_width=True)
 
-	@staticmethod
-	def _population_charts(df: pd.DataFrame) -> None:
+	def _render_population_charts(self, df: pd.DataFrame) -> None:
 		"""
-		Renders two charts showing population-level impedance statistics:
-		1. A line chart showing average impedance components (Z, Z', Z'') over time by visit number
-		2. A bar chart showing average impedance values by wound type
+		Render charts showing population-level impedance statistics.
 
-		This method uses the impedance_analyzer to calculate the relevant statistics
-		from the provided dataframe and then creates visualizations using Plotly Express.
-
-		Parameters
-		----------
-		df : pd.DataFrame
-			DataFrame containing impedance measurements and visit information
-			for multiple patients
-
-		Returns
-		-------
-		None
-			The method renders charts directly to the Streamlit UI
+		Args:
+			df: DataFrame containing impedance measurements and visit information
 		"""
-
 		# Get prepared statistics
 		avg_impedance, avg_by_type = ImpedanceAnalyzer.prepare_population_stats(df=df)
 
@@ -629,8 +720,8 @@ class ImpedanceTab:
 			st.subheader("Impedance Components Over Time")
 			fig1 = px.line(
 				avg_impedance,
-				x='Visit Number',
-				y=["Skin Impedance (kOhms) - Z", "Skin Impedance (kOhms) - Z'", "Skin Impedance (kOhms) - Z''"],
+				x=self.CN.VISIT_NUMBER,
+				y=[self.CN.HIGHEST_FREQ_Z, self.CN.HIGHEST_FREQ_Z_PRIME, self.CN.HIGHEST_FREQ_Z_DOUBLE_PRIME],
 				title="Average Impedance Components by Visit",
 				markers=True
 			)
@@ -641,38 +732,44 @@ class ImpedanceTab:
 			st.subheader("Impedance by Wound Type")
 			fig2 = px.bar(
 				avg_by_type,
-				x='Wound Type',
-				y="Skin Impedance (kOhms) - Z",
+				x=self.CN.WOUND_TYPE,
+				y=self.CN.HIGHEST_FREQ_Z,
 				title="Average Impedance by Wound Type",
-				color='Wound Type'
+				color=self.CN.WOUND_TYPE
 			)
 			fig2.update_layout(xaxis_title="Wound Type", yaxis_title="Average Impedance Z (kOhms)")
 			st.plotly_chart(fig2, use_container_width=True)
 
-	@staticmethod
-	def _render_patient(visits: list) -> None:
+
+class PatientImpedanceRenderer:
+	"""
+	Renderer for patient-level impedance analysis.
+
+	This class handles the rendering of patient-level impedance analysis,
+	including overview, clinical analysis, and advanced interpretation tabs.
+
+	Attributes:
+		visits (List[VisitsDataType]): List of visit data for the patient
+	"""
+
+	def __init__(self, visits: List[VisitsDataType]):
 		"""
-		Renders the impedance analysis section for a specific patient in the dashboard.
+		Initialize the PatientImpedanceRenderer with visit data.
 
-		This method creates a tabbed interface to display different perspectives on a patient's
-		impedance data, organized into Overview, Clinical Analysis, and Advanced Interpretation tabs.
-
-		Parameters
-		----------
-		df : pd.DataFrame
-			The dataframe containing all patient data (may be filtered)
-		patient_id : int
-			The unique identifier for the patient to analyze
-
-		Returns:
-		-------
-		None
-			This method renders UI elements directly to the Streamlit dashboard
+		Args:
+			visits: List of visit data for the patient
 		"""
+		self.visits = visits
+		self.visit_date_tag = WoundDataProcessor.get_visit_date_tag(visits)
 
-		# Get patient visits
+	def render(self) -> None:
+		"""
+		Render the patient-level impedance analysis section.
 
-
+		This method creates a tabbed interface to display different perspectives
+		on a patient's impedance data, organized into Overview, Clinical Analysis,
+		and Advanced Interpretation tabs.
+		"""
 		# Create tabs for different analysis views
 		tab1, tab2, tab3 = st.tabs([
 			"Overview",
@@ -681,36 +778,21 @@ class ImpedanceTab:
 		])
 
 		with tab1:
-			ImpedanceTab._patient_overview(visits=visits)
+			self._render_overview()
 
 		with tab2:
-			ImpedanceTab._render_patient_clinical_analysis(visits=visits)
+			self._render_clinical_analysis()
 
 		with tab3:
-			ImpedanceTab._render_patient_advanced_analysis(visits=visits)
+			self._render_advanced_analysis()
 
-	@staticmethod
-	def _patient_overview(visits: list) -> None:
+	def _render_overview(self) -> None:
 		"""
-			Renders an overview section for patient impedance measurements.
+		Render the overview section for patient impedance measurements.
 
-			This method creates a section in the Streamlit application showing impedance measurements
-			over time, allowing users to view different types of impedance data (absolute impedance,
-			resistance, or capacitance).
-
-			Parameters:
-				visits (list): A list of patient visit data containing impedance measurements
-
-			Returns:
-			-------
-			None
-					This method renders UI elements directly to the Streamlit app
-
-			Note:
-				The visualization includes a selector for different measurement modes and
-				displays an explanatory note about the measurement types and frequency effects.
+		This method creates a section showing impedance measurements over time,
+		allowing users to view different types of impedance data.
 		"""
-
 		st.subheader("Impedance Measurements Over Time")
 
 		# Add measurement mode selector
@@ -721,7 +803,7 @@ class ImpedanceTab:
 		)
 
 		# Create impedance chart with selected mode
-		fig = Visualizer.create_impedance_chart(visits, measurement_mode=measurement_mode)
+		fig = self._create_impedance_chart(measurement_mode=measurement_mode)
 		st.plotly_chart(fig, use_container_width=True)
 
 		# Logic behind analysis
@@ -738,106 +820,88 @@ class ImpedanceTab:
 		</div>
 		""", unsafe_allow_html=True)
 
-	@staticmethod
-	def _render_patient_clinical_analysis(visits: list) -> None:
+	def _render_clinical_analysis(self) -> None:
 		"""
-			Renders the bioimpedance clinical analysis section for a patient's wound data.
+		Render the bioimpedance clinical analysis section for a patient's wound data.
 
-			This method creates a tabbed interface showing clinical analysis for each visit.
-			For each visit (except the first one), it performs a comparative analysis with
-			the previous visit to track changes in wound healing metrics.
-
-			Args:
-				visits (list): A list of dictionaries containing visit data. Each dictionary
-						should have at least a 'visit_date' key and other wound measurement data.
-
-			Returns:
-			-------
-			None
-				The method updates the Streamlit UI directly
-
-			Notes:
-				- At least two visits are required for comprehensive analysis
-				- Creates a tab for each visit date
-				- Analysis is performed using the impedance_analyzer component
+		This method creates a tabbed interface showing clinical analysis for each visit.
+		For each visit (except the first one), it performs a comparative analysis with
+		the previous visit to track changes in wound healing metrics.
 		"""
-
 		st.subheader("Bioimpedance Clinical Analysis")
 
 		# Only analyze if we have at least two visits
-		if len(visits) < 2:
+		if len(self.visits) < 2:
 			st.warning("At least two visits are required for comprehensive clinical analysis")
 			return
 
 		# Create tabs for each visit
-		visit_tabs = st.tabs([f"{visit.get('visit_date', 'N/A')}" for visit in visits])
+		visit_tabs = st.tabs([f"{visit.get(self.visit_date_tag, 'N/A')}" for visit in self.visits])
 
 		for visit_idx, visit_tab in enumerate(visit_tabs):
 			with visit_tab:
 				# Get current and previous visit data
-				current_visit = visits[visit_idx]
-				previous_visit = visits[visit_idx-1] if visit_idx > 0 else None
+				current_visit = self.visits[visit_idx]
+				previous_visit = self.visits[visit_idx-1] if visit_idx > 0 else None
 
-				# Generate comprehensive clinical analysis
-				analysis = ImpedanceAnalyzer.generate_clinical_analysis(
-					current_visit=current_visit, previous_visit=previous_visit
-				)
+				try:
+					# Generate comprehensive clinical analysis
+					analysis = ImpedanceAnalyzer.generate_clinical_analysis(
+						current_visit=current_visit,
+						previous_visit=previous_visit
+					)
 
-				# Display results in a structured layout
-				ImpedanceTab._display_clinical_analysis_results(analysis=analysis, has_previous_visit=previous_visit is not None)
+					# Display results in a structured layout
+					self._display_clinical_analysis_results(
+						analysis=analysis,
+						has_previous_visit=previous_visit is not None
+					)
+				except Exception as e:
+					st.error(f"Error analyzing visit data: {str(e)}")
+					st.error(traceback.format_exc())
 
-	@staticmethod
-	def _render_patient_advanced_analysis(visits: list) -> None:
+	def _render_advanced_analysis(self) -> None:
 		"""
-			Renders the advanced bioelectrical analysis section for a patient's wound data.
+		Render the advanced bioelectrical analysis section for a patient's wound data.
 
-			This method displays comprehensive bioelectrical analysis results including healing
-			trajectory, wound healing stage classification, tissue electrical properties, and
-			clinical insights derived from the impedance data. The analysis requires at least
-			three visits to generate meaningful patterns and trends.
-
-			Parameters:
-				visits (list): A list of visit data objects containing impedance measurements and
-							other wound assessment information.
-
-			Returns:
-			-------
-			None
-				The method updates the Streamlit UI directly
-
-			Notes:
-				- Displays a warning if fewer than three visits are available
-				- Shows healing trajectory analysis with progression indicators
-				- Presents wound healing stage classification based on impedance patterns
-				- Displays Cole-Cole parameters representing tissue electrical properties if available
-				- Provides clinical insights to guide treatment decisions
-				- Includes reference information about bioimpedance interpretation
+		This method displays comprehensive bioelectrical analysis results including healing
+		trajectory, wound healing stage classification, tissue electrical properties, and
+		clinical insights derived from the impedance data.
 		"""
-
 		st.subheader("Advanced Bioelectrical Interpretation")
 
-		if len(visits) < 3:
+		if len(self.visits) < 3:
 			st.warning("At least three visits are required for advanced analysis")
 			return
 
-		# Generate advanced analysis
-		analysis = ImpedanceAnalyzer.generate_advanced_analysis(visits=visits)
+		try:
+			# Generate advanced analysis
+			analysis = ImpedanceAnalyzer.generate_advanced_analysis(visits=self.visits)
 
-		# Display healing trajectory analysis if available
-		if 'healing_trajectory' in analysis and analysis['healing_trajectory']['status'] == 'analyzed':
-			ImpedanceTab._display_high_freq_impedance_healing_trajectory_analysis(trajectory=analysis['healing_trajectory'])
+			# Display healing trajectory analysis if available
+			if 'healing_trajectory' in analysis and analysis['healing_trajectory']['status'] == 'analyzed':
+				self._display_healing_trajectory(trajectory=analysis['healing_trajectory'])
 
-		# Display wound healing stage classification
-		ImpedanceTab._display_wound_healing_stage(healing_stage=analysis['healing_stage'])
+			# Display wound healing stage classification
+			self._display_wound_healing_stage(healing_stage=analysis['healing_stage'])
 
-		# Display Cole-Cole parameters if available
-		if 'cole_parameters' in analysis and analysis['cole_parameters']:
-			ImpedanceTab._display_tissue_electrical_properties(cole_params=analysis['cole_parameters'])
+			# Display Cole-Cole parameters if available
+			if 'cole_parameters' in analysis and analysis['cole_parameters']:
+				self._display_tissue_electrical_properties(cole_params=analysis['cole_parameters'])
 
-		# Display clinical insights
-		ImpedanceTab._display_clinical_insights(insights=analysis['insights'])
+			# Display clinical insights
+			self._display_clinical_insights(insights=analysis['insights'])
 
-		# Reference information
+			# Reference information
+			self._display_advanced_analysis_info()
+		except Exception as e:
+			st.error(f"Error performing advanced analysis: {str(e)}")
+			st.error(traceback.format_exc())
+
+	def _display_advanced_analysis_info(self) -> None:
+		"""
+		Display the informational box for the advanced analysis tab.
+		"""
 		st.markdown("""
 			<div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
 			<p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
@@ -866,43 +930,25 @@ class ImpedanceTab:
 			</div>
 			""", unsafe_allow_html=True)
 
-	@staticmethod
-	def _display_clinical_analysis_results(analysis: dict, has_previous_visit: bool) -> None:
+
+	# --- Clinical Analysis Display Helpers ---
+
+	def _display_clinical_analysis_results(self, analysis: Dict[str, Any], has_previous_visit: bool) -> None:
 		"""
-			Display the clinical analysis results in the Streamlit UI using a structured layout.
+		Display the clinical analysis results in a structured layout.
 
-			This method organizes the display of analysis results into two sections, each with two columns:
-			1. Top section: Tissue health and infection risk assessments
-			2. Bottom section: Tissue composition analysis and comparison with previous visits (if available)
-
-			The method also adds an explanatory note about the color coding and significance markers used in the display.
-
-			Parameters
-			----------
-			analysis : dict
-				A dictionary containing the analysis results with the following keys:
-				- 'tissue_health': Data for tissue health assessment
-				- 'infection_risk': Data for infection risk assessment
-				- 'frequency_response': Data for tissue composition analysis
-				- 'changes': Observed changes since previous visit (if available)
-				- 'significant_changes': Boolean flags indicating clinically significant changes
-
-			has_previous_visit : bool
-				Flag indicating whether there is data from a previous visit available for comparison
-
-			Returns:
-			-------
-			None
+		Args:
+			analysis: Dictionary containing the analysis results
+			has_previous_visit: Flag indicating whether there is data from a previous visit
 		"""
-
 		# Display Tissue Health and Infection Risk in a two-column layout
 		col1, col2 = st.columns(2)
 
 		with col1:
-			ImpedanceTab._display_tissue_health_assessment(analysis['tissue_health'])
+			self._display_tissue_health_assessment(analysis['tissue_health'])
 
 		with col2:
-			ImpedanceTab._display_infection_risk_assessment(analysis['infection_risk'])
+			self._display_infection_risk_assessment(analysis['infection_risk'])
 
 		st.markdown('---')
 
@@ -910,57 +956,27 @@ class ImpedanceTab:
 		col1, col2 = st.columns(2)
 
 		with col2:
-			ImpedanceTab._display_tissue_composition_analysis(analysis['frequency_response'])
+			self._display_tissue_composition_analysis(analysis['frequency_response'])
 
 		with col1:
 			if has_previous_visit and 'changes' in analysis:
-				ImpedanceTab._display_visit_changes(
+				self._display_visit_changes(
 					analysis['changes'],
 					analysis['significant_changes']
 				)
 			else:
 				st.info("This is the first visit. No previous data available for comparison.")
 
-		st.markdown("""
-			<div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
-			<p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
-			<p>Color indicates direction of change: <span style="color:#FF4B4B">red = increase</span>, <span style="color:#00CC96">green = decrease</span>.<br>
-			Asterisk (*) marks changes exceeding clinical thresholds: Resistance >15%, Capacitance >20%, Z >15%.</p>
-			</div>
-			""", unsafe_allow_html=True)
+		self._display_clinical_analysis_info()
 
-	@staticmethod
-	def _display_tissue_health_assessment(tissue_health):
+	def _display_tissue_health_assessment(self, tissue_health: Tuple[Optional[float], str]) -> None:
 		"""
-			Displays the tissue health assessment in the Streamlit UI.
+		Display the tissue health assessment.
 
-			This method renders the tissue health assessment section including:
-			- A header with tooltip explanation of how the tissue health index is calculated
-			- The numerical health score with color-coded display (red: <40, orange: 40-60, green: >60)
-			- A textual interpretation of the health score
-			- A warning message if health score data is insufficient
-
-			Parameters
-			----------
-			tissue_health : tuple
-				A tuple containing (health_score, health_interp) where:
-				- health_score (float or None): A numerical score from 0-100 representing tissue health
-				- health_interp (str): A textual interpretation of the health score
-
-			Returns:
-			-------
-			None
-				This method updates the Streamlit UI but does not return a value
+		Args:
+			tissue_health: Tuple of (health_score, health_interp)
 		"""
-
-		st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios. The process involves: "
-										"1) Extracting impedance data from sensor readings. "
-										"2) Calculating the ratio of low to high frequency impedance (LF/HF ratio). "
-										"3) Calculating phase angle if resistance and capacitance data are available. "
-										"4) Normalizing the LF/HF ratio and phase angle to a 0-100 scale. "
-										"5) Combining these scores with weightings to produce a final health score. "
-										"6) Providing an interpretation based on the health score. "
-										"The final score ranges from 0-100, with higher scores indicating better tissue health.")
+		st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios.")
 
 		health_score, health_interp = tissue_health
 
@@ -972,44 +988,14 @@ class ImpedanceTab:
 		else:
 			st.warning("Insufficient data for tissue health calculation")
 
-	@staticmethod
-	def _display_infection_risk_assessment(infection_risk):
+	def _display_infection_risk_assessment(self, infection_risk: Dict[str, Any]) -> None:
 		"""
-			Displays the infection risk assessment information in the Streamlit app.
+		Display the infection risk assessment information.
 
-			This method presents the infection risk score, risk level, and contributing factors
-			in a formatted way with color coding based on the risk severity.
-
-			Parameters
-			----------
-			infection_risk : dict
-				Dictionary containing infection risk assessment results with the following keys:
-				- risk_score (float): A numerical score from 0-100 indicating infection risk
-				- risk_level (str): A categorical assessment of risk (e.g., "Low", "Moderate", "High")
-				- contributing_factors (list): List of factors that contribute to the infection risk
-
-			Notes
-			-----
-			Risk score is color-coded:
-			- Green: scores < 30 (low risk)
-			- Orange: scores between 30 and 60 (moderate risk)
-			- Red: scores ≥ 60 (high risk)
-
-			The method includes a help tooltip that explains the factors used in risk assessment:
-			1. Low/high frequency impedance ratio
-			2. Sudden increase in low-frequency resistance
-			3. Phase angle measurements
+		Args:
+			infection_risk: Dictionary containing infection risk assessment results
 		"""
-
-		st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on three key factors: "
-			"1. Low/high frequency impedance ratio: A ratio > 15 is associated with increased infection risk."
-			"2. Sudden increase in low-frequency resistance: A >30% increase may indicate an inflammatory response, "
-			"which could be a sign of infection. This is because inflammation causes changes in tissue"
-			"electrical properties, particularly at different frequencies."
-			"3. Phase angle: Lower phase angles (<3°) indicate less healthy or more damaged tissue,"
-			"which may be more susceptible to infection."
-			"The risk score is a weighted sum of these factors, providing a quantitative measure of infection risk."
-			"The final score ranges from 0-100, with higher scores indicating higher infection risk.")
+		st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on impedance measurements.")
 
 		risk_score = infection_risk["risk_score"]
 		risk_level = infection_risk["risk_level"]
@@ -1024,39 +1010,14 @@ class ImpedanceTab:
 		if factors:
 			st.markdown(f"**Contributing Factors:** {', '.join(factors)}")
 
-	@staticmethod
-	def _display_tissue_composition_analysis(freq_response):
+	def _display_tissue_composition_analysis(self, freq_response: Dict[str, Any]) -> None:
 		"""
-			Displays the tissue composition analysis results in the Streamlit app based on frequency response data.
+		Display the tissue composition analysis results based on frequency response data.
 
-			This method presents the bioelectrical impedance analysis (BIA) results including alpha and beta
-			dispersion values with their interpretation. It creates a section with explanatory headers and
-			displays the calculated tissue composition metrics.
-
-			Parameters
-			-----------
-			freq_response : dict
-				Dictionary containing frequency response analysis results with the following keys:
-				- 'alpha_dispersion': float, measurement of low to center frequency response
-				- 'beta_dispersion': float, measurement of center to high frequency response
-				- 'interpretation': str, clinical interpretation of the frequency response data
-
-			Returns:
-			--------
-			None
-				The method updates the Streamlit UI directly
-
-			Note:
-				- The method includes a help tooltip explaining the principles behind BIA and the significance
-				of alpha and beta dispersion values.
+		Args:
+			freq_response: Dictionary containing frequency response analysis results
 		"""
-
-		st.markdown("### Tissue Composition Analysis", help="""This analysis utilizes bioelectrical impedance analysis (BIA) principles to evaluatetissue characteristics based on the frequency-dependent response to electrical current.
-		It focuses on two key dispersion regions:
-		1. Alpha Dispersion (low to center frequency): Occurs in the kHz range, reflects extracellular fluid content and cell membrane permeability.
-		Large alpha dispersion may indicate edema or inflammation.
-		2. Beta Dispersion (center to high frequency): Beta dispersion is a critical phenomenon in bioimpedance analysis, occurring in the MHz frequency range (0.1–100 MHz) and providing insights into cellular structures. It reflects cell membrane properties (such as membrane capacitance and polarization, which govern how high-frequency currents traverse cells) and intracellular fluid content (including ionic conductivity and cytoplasmic resistance146. For example, changes in intracellular resistance (Ri) or membrane integrity directly alter the beta dispersion profile).
-		Changes in beta dispersion can indicate alterations in cell structure or function.""")
+		st.markdown("### Tissue Composition Analysis", help="This analysis utilizes bioelectrical impedance analysis principles.")
 
 		# Display tissue composition analysis from frequency response
 		st.markdown("#### Analysis Results:")
@@ -1067,17 +1028,16 @@ class ImpedanceTab:
 		# Display interpretation with more emphasis
 		st.markdown(f"**Tissue Composition Interpretation:** {freq_response['interpretation']}")
 
-	@staticmethod
-	def _display_visit_changes(changes, significant_changes):
+	def _display_visit_changes(self, changes: Dict[str, float], significant_changes: Dict[str, bool]) -> None:
 		"""
-			Display analysis of changes between visits.
+		Display analysis of changes between visits.
 
-			Args:
-				changes: Dictionary mapping parameter names to percentage changes
-				significant_changes: Dictionary mapping parameter names to boolean values
-					indicating clinically significant
+		Args:
+			changes: Dictionary mapping parameter names to percentage changes
+			significant_changes: Dictionary mapping parameter names to boolean values
+				indicating clinically significant changes
 		"""
-		st.markdown("#### Changes Since Previous Visit", help="""The changes since previous visit are based on bioelectrical impedance analysis (BIA) principles to evaluate the composition of biological tissues based on the frequency-dependent response to electrical current.""")
+		st.markdown("#### Changes Since Previous Visit", help="The changes since previous visit are based on bioelectrical impedance analysis principles.")
 
 		if not changes:
 			st.info("No comparable data from previous visit")
@@ -1145,7 +1105,7 @@ class ImpedanceTab:
 					return 'color: #FF4B4B'  # Red for increases
 				else:
 					return 'color: #00CC96'  # Green for decreases
-			except:
+			except Exception:
 				return ''
 
 		# Apply styling
@@ -1160,40 +1120,28 @@ class ImpedanceTab:
 		st.dataframe(styled_df)
 		st.write("   (*) indicates clinically significant change")
 
-	@staticmethod
-	def _display_high_freq_impedance_healing_trajectory_analysis(trajectory):
+	def _display_clinical_analysis_info(self) -> None:
 		"""
-			Display the healing trajectory analysis with charts and statistics.
-
-			This method visualizes the wound healing trajectory over time, including:
-			- A line chart showing impedance values across visits
-			- A trend line indicating the overall direction of change
-			- Statistical analysis results (slope, p-value, R² value)
-			- Interpretation of the healing trajectory
-
-			Parameters
-			----------
-			trajectory : dict
-				Dictionary containing healing trajectory data with the following keys:
-				- dates : list of str
-					Dates of the measurements
-				- values : list of float
-					Impedance values corresponding to each date
-				- slope : float
-					Slope of the trend line
-				- p_value : float
-					Statistical significance of the trend
-				- r_squared : float
-					R-squared value indicating goodness of fit
-				- interpretation : str
-					Text interpretation of the healing trajectory
-
-			Returns:
-			-------
-			None
-				This method displays its output directly in the Streamlit UI
+		Display the informational box for the clinical analysis tab.
 		"""
+		st.markdown("""
+			<div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
+			<p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
+			<p>Color indicates direction of change: <span style="color:#FF4B4B">red = increase</span>, <span style="color:#00CC96">green = decrease</span>.<br>
+			Asterisk (*) marks changes exceeding clinical thresholds: Resistance >15%, Capacitance >20%, Z >15%.</p>
+			</div>
+			""", unsafe_allow_html=True)
 
+
+	# --- Advanced Analysis Display Helpers ---
+
+	def _display_healing_trajectory(self, trajectory: Dict[str, Any]) -> None:
+		"""
+		Display the healing trajectory analysis with charts and statistics.
+
+		Args:
+			trajectory: Dictionary containing healing trajectory data
+		"""
 		st.markdown("### Healing Trajectory Analysis")
 
 		# Get trajectory data
@@ -1244,31 +1192,19 @@ class ImpedanceTab:
 
 		st.markdown("----")
 
-	@staticmethod
-	def _display_wound_healing_stage(healing_stage: dict) -> None:
+	def _display_wound_healing_stage(self, healing_stage: Dict[str, Any]) -> None:
 		"""
-			Display wound healing stage classification in the Streamlit interface.
+		Display wound healing stage classification.
 
-			This method renders the wound healing stage information with color-coded stages
-			(red for Inflammatory, orange for Proliferative, green for Remodeling) and
-			displays the confidence level and characteristics associated with the stage.
-
-				healing_stage (dict): Dictionary containing wound healing stage analysis with keys:
-					- 'stage': String indicating the wound healing stage (Inflammatory, Proliferative, or Remodeling)
-					- 'confidence': Numeric or string value indicating confidence in the classification
-					- 'characteristics': List of strings describing characteristics of the current healing stage
-
-			Returns:
-			-------
-			None
-				This method renders content to the Streamlit UI but does not return any value.
+		Args:
+			healing_stage: Dictionary containing wound healing stage analysis
 		"""
 		st.markdown("### Wound Healing Stage Classification")
 
 		stage_colors = {
-			"Inflammatory": "red",
+			"Inflammatory" : "red",
 			"Proliferative": "orange",
-			"Remodeling": "green"
+			"Remodeling"   : "green"
 		}
 
 		stage_color = stage_colors.get(healing_stage['stage'], "blue")
@@ -1279,27 +1215,14 @@ class ImpedanceTab:
 			for char in healing_stage['characteristics']:
 				st.markdown(f"- {char}")
 
-	@staticmethod
-	def _display_tissue_electrical_properties(cole_params: dict) -> None:
+
+	def _display_tissue_electrical_properties(self, cole_params: Dict[str, Any]) -> None:
 		"""
-		Displays the tissue electrical properties derived from Cole parameters in the Streamlit interface.
+		Display the tissue electrical properties derived from Cole parameters.
 
-		This method creates a section in the UI that shows the key electrical properties of tissue,
-		including extracellular resistance (R₀), total resistance (R∞), membrane capacitance (Cm),
-		and tissue heterogeneity (α). Values are formatted with appropriate precision and units.
-
-		Parameters
-		----------
-		cole_params : dict
-			Dictionary containing the Cole-Cole parameters and related tissue properties.
-			Expected keys include 'R0', 'Rinf', 'Cm', 'Alpha', and optionally 'tissue_homogeneity'.
-
-		Returns:
-		-------
-		None
-			The function directly updates the Streamlit UI and does not return a value.
+		Args:
+			cole_params: Dictionary containing the Cole-Cole parameters
 		"""
-
 		st.markdown("### Tissue Electrical Properties")
 
 		col1, col2 = st.columns(2)
@@ -1317,31 +1240,13 @@ class ImpedanceTab:
 				st.markdown(f"**Tissue Heterogeneity (α):** {cole_params['Alpha']:.2f}")
 				st.info(cole_params.get('tissue_homogeneity', ''))
 
-	@staticmethod
-	def _display_clinical_insights(insights: list) -> None:
+	def _display_clinical_insights(self, insights: List[Dict[str, Any]]) -> None:
 		"""
-		Displays clinical insights in an organized expandable format using Streamlit components.
+		Display clinical insights in an organized expandable format.
 
-		This method renders clinical insights with their associated confidence levels, recommendations,
-		supporting factors, and clinical interpretations. If no insights are available, it displays
-		an informational message.
-
-		Parameters
-		----------
-		insights : list
-			A list of dictionaries, where each dictionary contains insight information with keys:
-			- 'insight': str, the main insight text
-			- 'confidence': str, confidence level of the insight
-			- 'recommendation': str, optional, suggested actions based on the insight
-			- 'supporting_factors': list, optional, factors supporting the insight
-			- 'clinical_meaning': str, optional, clinical interpretation of the insight
-
-		Returns:
-		-------
-		None
-			This method renders UI components directly to the Streamlit UI but does not return any value.
+		Args:
+			insights: List of dictionaries containing insight information
 		"""
-
 		st.markdown("### Clinical Insights")
 
 		if not insights:
@@ -1365,3 +1270,86 @@ class ImpedanceTab:
 					st.markdown(f"**Clinical Interpretation:** {insight['clinical_meaning']}")
 
 
+	# --- Chart Creation ---
+
+	def _create_impedance_chart(self, measurement_mode: str = "Absolute Impedance (|Z|)") -> go.Figure:
+		"""
+		Create an interactive chart displaying impedance measurements over time.
+
+		Args:
+			measurement_mode: Type of measurement to display (|Z|, Resistance, Capacitance)
+
+		Returns:
+			Plotly Figure object showing impedance measurements over time
+		"""
+		# Define measurement types and their corresponding data fields
+		measurement_fields = {
+			"Absolute Impedance (|Z|)": "Z",
+			"Resistance"              : "resistance",
+			"Capacitance"             : "capacitance"
+		}
+
+		# Frequency labels
+		frequency_labels = {
+			"high_frequency"  : "Highest Freq",
+			"center_frequency": "Center Freq (Max Phase Angle)",
+			"low_frequency"   : "Lowest Freq"
+		}
+
+		# Line styles for different frequencies
+		line_styles = {
+			"high_frequency"  : None,
+			"center_frequency": dict(dash='dot'),
+			"low_frequency"   : dict(dash='dash')
+		}
+
+		# Initialize data containers
+		dates = []
+		measurements = {freq: {field: [] for field in measurement_fields.values()}
+						for freq in frequency_labels}
+
+		# Process each visit
+		for visit in self.visits:
+			dates.append(visit[self.visit_date_tag])
+
+			sensor_data = visit.get('sensor_data', {})
+			impedance_data = sensor_data.get('impedance', {})
+
+			# Process each frequency
+			for freq in frequency_labels:
+				freq_data = impedance_data.get(freq, {})
+				for field in measurement_fields.values():
+					try:
+						val = float(freq_data.get(field)) if freq_data.get(field) not in (None, '') else None
+					except (ValueError, TypeError):
+						val = None
+					measurements[freq][field].append(val)
+
+		# Create figure
+		fig = go.Figure()
+		field = measurement_fields[measurement_mode]
+
+		# Add traces for each frequency
+		for freq in frequency_labels:
+			values = measurements[freq][field]
+			if any(v is not None for v in values):
+				fig.add_trace(go.Scatter(
+					x=dates,
+					y=values,
+					name=f'{measurement_mode.split()[0]} ({frequency_labels[freq]})',
+					mode='lines+markers',
+					line=line_styles[freq]
+				))
+
+		# Configure layout
+		fig.update_layout(
+			title='Impedance Measurements Over Time',
+			xaxis_title=self.visit_date_tag,
+			yaxis_title=f'{measurement_mode.split()[0]} Values',
+			hovermode='x unified',
+			showlegend=True,
+			height=600,
+			yaxis=dict(type='log' if measurement_mode == "Capacitance" else 'linear')
+		)
+
+		return fig

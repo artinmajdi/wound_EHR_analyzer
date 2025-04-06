@@ -5,7 +5,7 @@ import streamlit as st
 from wound_analysis.dashboard_components.visualizer import Visualizer
 from wound_analysis.utils.data_processor import WoundDataProcessor
 from wound_analysis.utils.statistical_analysis import CorrelationAnalysis
-
+from wound_analysis.utils.column_schema import DColumns
 
 class TemperatureTab:
 	"""
@@ -16,10 +16,11 @@ class TemperatureTab:
 	interpretations.
 	"""
 
-	def __init__(self, df: pd.DataFrame, selected_patient: str, data_processor: WoundDataProcessor):
-		self.data_processor = data_processor
+	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
+		self.wound_data_processor = wound_data_processor
 		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
 		self.df = df
+		self.CN = DColumns(df=df)
 
 	def render(self) -> None:
 		"""
@@ -59,8 +60,8 @@ class TemperatureTab:
 		if self.patient_id == "All Patients":
 			self._render_population()
 		else:
-			visits     = self.data_processor.get_patient_visits(record_id=self.patient_id)['visits']
-			df_patient = self.data_processor.get_patient_dataframe(record_id=self.patient_id)
+			visits     = self.wound_data_processor.get_patient_visits(record_id=self.patient_id)['visits']
+			df_patient = self.wound_data_processor.get_patient_dataframe(record_id=self.patient_id)
 			self._render_patient(df_patient=df_patient, visits=visits, patient_id=self.patient_id)
 
 
@@ -78,24 +79,24 @@ class TemperatureTab:
 		# Create a temperature gradient dataframe
 		temp_df = self.df.copy()
 
-		temp_df['Visit date'] = pd.to_datetime(temp_df['Visit date']).dt.strftime('%m-%d-%Y')
+		temp_df[self.CN.VISIT_DATE] = pd.to_datetime(temp_df[self.CN.VISIT_DATE]).dt.strftime('%m-%d-%Y')
 
 		# Remove skipped visits
-		# temp_df = temp_df[temp_df['Skipped Visit?'] != 'Yes']
+		# temp_df = temp_df[temp_df[self.CN.SKIPPED_VISIT] != 'Yes']
 
 		# Define temperature column names
-		temp_cols = [	'Center of Wound Temperature (Fahrenheit)',
-						'Edge of Wound Temperature (Fahrenheit)',
-						'Peri-wound Temperature (Fahrenheit)']
+		temp_cols = [	self.CN.CENTER_TEMP,
+						self.CN.EDGE_TEMP,
+						self.CN.PERI_TEMP]
 
 		# Drop rows with missing temperature data
 		temp_df = temp_df.dropna(subset=temp_cols)
 
 		# Calculate temperature gradients if all required columns exist
 		if all(col in temp_df.columns for col in temp_cols):
-			temp_df['Center-Edge Gradient'] = temp_df[temp_cols[0]] - temp_df[temp_cols[1]]
-			temp_df['Edge-Peri Gradient']   = temp_df[temp_cols[1]] - temp_df[temp_cols[2]]
-			temp_df['Total Gradient']       = temp_df[temp_cols[0]] - temp_df[temp_cols[2]]
+			temp_df[self.CN.CENTER_EDGE_GRADIENT] = temp_df[temp_cols[0]] - temp_df[temp_cols[1]]
+			temp_df[self.CN.EDGE_PERI_GRADIENT]   = temp_df[temp_cols[1]] - temp_df[temp_cols[2]]
+			temp_df[self.CN.TOTAL_GRADIENT]       = temp_df[temp_cols[0]] - temp_df[temp_cols[2]]
 
 
 		# Add outlier threshold control
@@ -104,15 +105,15 @@ class TemperatureTab:
 		with col1:
 			outlier_threshold = st.number_input(
 				"Temperature Outlier Threshold",
-				min_value=0.0,
-				max_value=0.9,
-				value=0.2,
-				step=0.05,
-				help="Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
+				min_value = 0.0,
+				max_value = 0.9,
+				value     = 0.2,
+				step      = 0.05,
+				help      = "Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
 			)
 
 		# Calculate correlation with outlier handling
-		stats_analyzer = CorrelationAnalysis(data=temp_df, x_col='Center of Wound Temperature (Fahrenheit)', y_col='Healing Rate (%)', outlier_threshold=outlier_threshold)
+		stats_analyzer = CorrelationAnalysis(data=temp_df, x_col=self.CN.CENTER_TEMP, y_col=self.CN.HEALING_RATE, outlier_threshold=outlier_threshold)
 		temp_df, r, p = stats_analyzer.calculate_correlation()
 
 		# Display correlation statistics
@@ -120,10 +121,10 @@ class TemperatureTab:
 			st.info(stats_analyzer.get_correlation_text())
 
 		# Create boxplot of temperature gradients by wound type
-		gradient_cols = ['Center-Edge Gradient', 'Edge-Peri Gradient', 'Total Gradient']
+		gradient_cols = [self.CN.CENTER_EDGE_GRADIENT, self.CN.EDGE_PERI_GRADIENT, self.CN.TOTAL_GRADIENT]
 		fig = px.box(
 			temp_df,
-			x='Wound Type',
+			x=self.CN.WOUND_TYPE,
 			y=gradient_cols,
 			title="Temperature Gradients by Wound Type",
 			points="all"
@@ -138,17 +139,17 @@ class TemperatureTab:
 
 		# Scatter plot of total gradient vs healing rate
 		# temp_df = temp_df.copy() # [df['Healing Rate (%)'] < 0].copy()
-		temp_df['Healing Rate (%)'] = temp_df['Healing Rate (%)'].clip(-100, 100)
-		temp_df['Calculated Wound Area'] = temp_df['Calculated Wound Area'].fillna(temp_df['Calculated Wound Area'].mean())
+		temp_df[self.CN.HEALING_RATE] = temp_df[self.CN.HEALING_RATE].clip(-100, 100)
+		temp_df[self.CN.WOUND_AREA] = temp_df[self.CN.WOUND_AREA].fillna(temp_df[self.CN.WOUND_AREA].mean())
 
 		fig = px.scatter(
 			temp_df,#[temp_df['Healing Rate (%)'] > 0],  # Exclude first visits
-			x='Total Gradient',
-			y='Healing Rate (%)',
-			color='Wound Type',
-			size='Calculated Wound Area',#'Hemoglobin Level', #
+			x=self.CN.TOTAL_GRADIENT,
+			y=self.CN.HEALING_RATE,
+			color=self.CN.WOUND_TYPE,
+			size=self.CN.WOUND_AREA, #'Hemoglobin Level', #
 			size_max=30,
-			hover_data=['Record ID', 'Event Name'],
+			hover_data=[self.CN.RECORD_ID, self.CN.EVENT_NAME],
 			title="Temperature Gradient vs. Healing Rate"
 		)
 		fig.update_layout(xaxis_title="Temperature Gradient (Center to Peri-wound, °F)", yaxis_title="Healing Rate (% reduction per visit)")
@@ -169,9 +170,10 @@ class TemperatureTab:
 		data_processor : object
 			An object that processes data to retrieve patient visits.
 		"""
+		CN = DColumns(df=df_patient)
 
 		df_temp = df_patient.copy()
-		df_temp['Visit date'] = pd.to_datetime(df_temp['Visit date']).dt.strftime('%m-%d-%Y')
+		df_temp[CN.VISIT_DATE] = pd.to_datetime(df_temp[CN.VISIT_DATE]).dt.strftime('%m-%d-%Y')
 		st.header(f"Temperature Gradient Analysis for Patient {str(patient_id)}")
 
 		# Create tabs
@@ -189,10 +191,10 @@ class TemperatureTab:
 			# Add statistical analysis
 			temp_data = pd.DataFrame([
 				{
-					'date': visit['visit_date'],
+					'date'  : visit[CN.VISIT_DATE],
 					'center': visit['sensor_data']['temperature']['center'],
-					'edge': visit['sensor_data']['temperature']['edge'],
-					'peri': visit['sensor_data']['temperature']['peri']
+					'edge'  : visit['sensor_data']['temperature']['edge'],
+					'peri'  : visit['sensor_data']['temperature']['peri']
 				}
 				for visit in visits
 			])
@@ -214,7 +216,7 @@ class TemperatureTab:
 			st.markdown("### Visit-by-Visit Temperature Analysis")
 
 			# Create tabs for each visit
-			visit_tabs = st.tabs([visit.get('visit_date', 'N/A') for visit in visits])
+			visit_tabs = st.tabs([visit.get(CN.VISIT_DATE, 'N/A') for visit in visits])
 
 			for tab, visit in zip(visit_tabs, visits):
 				with tab:
@@ -237,8 +239,8 @@ class TemperatureTab:
 
 						gradients = {
 							'center-edge': temp_data['center'] - temp_data['edge'],
-							'edge-peri': temp_data['edge'] - temp_data['peri'],
-							'Total': temp_data['center'] - temp_data['peri']
+							'edge-peri'  : temp_data['edge']   - temp_data['peri'],
+							'Total'      : temp_data['center'] - temp_data['peri']
 						}
 
 						col1, col2, col3 = st.columns(3)

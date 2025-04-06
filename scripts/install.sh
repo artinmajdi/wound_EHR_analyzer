@@ -20,10 +20,18 @@ command_exists() {
 
 # Function to determine which Python command to use
 get_python_command() {
-    if command_exists python; then
-        echo "python"
-    elif command_exists python3; then
+    # First try Python 3.12 specifically
+    if command -v python3.12 >/dev/null 2>&1; then
+        echo "python3.12"
+    # Then try Homebrew Python 3.12
+    elif [ -f "/opt/homebrew/opt/python@3.12/bin/python3.12" ]; then
+        echo "/opt/homebrew/opt/python@3.12/bin/python3.12"
+    # Then try regular python3
+    elif command -v python3 >/dev/null 2>&1; then
         echo "python3"
+    # Finally try python
+    elif command -v python >/dev/null 2>&1; then
+        echo "python"
     else
         echo ""
     fi
@@ -32,7 +40,7 @@ get_python_command() {
 # Check if Python is installed
 PYTHON_CMD=$(get_python_command)
 if [ -z "$PYTHON_CMD" ]; then
-    echo -e "${RED}Error: Neither 'python' nor 'python3' commands were found.${NC}"
+    echo -e "${RED}Error: Neither 'python3' nor 'python' commands were found.${NC}"
     echo -e "${YELLOW}Please install Python 3.10 or higher before continuing.${NC}"
     echo -e "${YELLOW}Visit https://www.python.org/downloads/ for installation instructions.${NC}"
     exit 1
@@ -144,7 +152,7 @@ install_with_conda() {
                 echo -e "${YELLOW}Removing existing conda environment...${NC}"
                 conda env remove -n wound_analysis
                 echo -e "${YELLOW}Creating new conda environment from environment.yml...${NC}"
-                mamba env update --file config/environment.yml
+                mamba env update --file setup_config/environment.yml
             else
                 echo -e "${YELLOW}Installation aborted.${NC}"
                 exit 1
@@ -152,7 +160,7 @@ install_with_conda() {
         fi
     else
         echo -e "${YELLOW}Creating conda environment from environment.yml...${NC}"
-        mamba env update --file config/environment.yml
+        mamba env update --file setup_config/environment.yml
     fi
 
     # Activate the conda environment
@@ -214,29 +222,29 @@ else
 fi
 
 if [ "$INSTALL_TYPE" == "venv" ]; then
-    echo '#!/bin/bash' > config/activate_env.sh
+    echo '#!/bin/bash' > setup_config/activate_env.sh
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
-        echo 'source .venv/Scripts/activate' >> config/activate_env.sh
+        echo 'source .venv/Scripts/activate' >> setup_config/activate_env.sh
     else
-        echo 'source .venv/bin/activate' >> config/activate_env.sh
+        echo 'source .venv/bin/activate' >> setup_config/activate_env.sh
     fi
-    chmod +x config/activate_env.sh
+    chmod +x setup_config/activate_env.sh
 
     echo -e "${GREEN}Installation complete!${NC}"
     echo -e "${BLUE}To activate the environment, run:${NC}"
-    echo -e "${BLUE}source ./config/activate_env.sh${NC}"
+    echo -e "${BLUE}source ./setup_config/activate_env.sh${NC}"
     echo -e "${BLUE}Then you can run:${NC}"
     echo -e "${BLUE}wound-dashboard${NC} - to launch the Streamlit dashboard"
     echo -e "${BLUE}wound-analysis${NC} - to run the command-line tool"
 else
     # Create activation script for conda
-    echo '#!/bin/bash' > config/activate_env.sh
-    echo 'conda activate wound_analysis' >> config/activate_env.sh
-    chmod +x config/activate_env.sh
+    echo '#!/bin/bash' > setup_config/activate_env.sh
+    echo 'conda activate wound_analysis' >> setup_config/activate_env.sh
+    chmod +x setup_config/activate_env.sh
 
     echo -e "${GREEN}Installation complete!${NC}"
     echo -e "${BLUE}To activate the environment, run:${NC}"
-    echo -e "${BLUE}source ./config/activate_env.sh${NC}"
+    echo -e "${BLUE}source ./setup_config/activate_env.sh${NC}"
     echo -e "${BLUE}Then you can run:${NC}"
     echo -e "${BLUE}wound-dashboard${NC} - to launch the Streamlit dashboard"
     echo -e "${BLUE}wound-analysis${NC} - to run the command-line tool"

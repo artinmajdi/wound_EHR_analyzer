@@ -181,3 +181,5 @@ class DashboardSettings:
 
         if 'report_path' not in st.session_state:
             st.session_state.report_path = None
+
+

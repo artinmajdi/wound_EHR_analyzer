@@ -15,7 +15,7 @@ The project includes a dedicated script that handles all environment configurati
 ```
 
 **What this script does:**
-- Creates a `.env` file at the project root based on `config/.env.example`
+- Creates a `.env` file at the project root based on `setup_config/.env.example`
 - Guides you through configuring required API keys
 - Sets up optional custom endpoints
 - Validates configuration values
@@ -44,7 +44,7 @@ For development environments, use the provided Conda setup script:
 
 **What this script does:**
 - Creates a Conda environment named `wound_analysis`
-- Installs all required dependencies from `config/environment.yml`
+- Installs all required dependencies from `setup_config/environment.yml`
 - Automatically calls `setup_env.sh` if `.env` doesn't exist
 - Provides activation instructions
 
@@ -54,7 +54,7 @@ For advanced users who need custom Conda configurations:
 
 1. Create the environment from specification:
    ```bash
-   conda env create -f config/environment.yml
+   conda env create -f setup_config/environment.yml
    ```
 
 2. Activate the environment:
