@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from wound_analysis.dashboard_components import (
 	ExudateTab,
 	ImpedanceTab,
+	ImpedanceTabOriginal,
 	LLMAnalysisTab,
 	OverviewTab,
 	OxygenationTab,
@@ -31,11 +32,6 @@ from wound_analysis.utils import (
 )
 
 # TODO: add password for the deployed streamlit app
-# TODO: add a input_box in the dashbaord that would take a date for impedance and temperature and only do all the processing for visits after that date.
-
-
-# TODO:
-# [] import directly frm the dashboard_components instead of the files inside it
 
 # Try to load environment variables from different possible locations
 env_paths = [
@@ -115,6 +111,7 @@ class Dashboard:
 		self.impedance_freq_sweep_path: Optional[pathlib.Path] = None
 		self.CN: Optional[DColumns] = None
 
+
 	def setup(self) -> None:
 		"""
 		Set up the dashboard configuration.
@@ -129,8 +126,7 @@ class Dashboard:
 		DashboardSettings.initialize()
 		self._create_left_sidebar()
 
-	# @staticmethod
-	# @st.cache_data
+
 	def load_data(self, uploaded_file) -> Optional[pd.DataFrame]:
 		"""
 		Loads data from an uploaded file into a pandas DataFrame.
@@ -152,6 +148,7 @@ class Dashboard:
 			self.CN = DColumns(df=df)
 
 		return df
+
 
 	def run(self) -> None:
 		"""
@@ -184,14 +181,26 @@ class Dashboard:
 		# Header
 		st.title(self.DashboardSettings.PAGE_TITLE)
 
-		# Patient selection
-		# Access columns directly with uppercase attributes
-		patient_ids = sorted(df[self.CN.RECORD_ID].unique())
-		patient_options = ["All Patients"] + [f"Patient {id:d}" for id in patient_ids]
-		selected_patient = st.selectbox("Select Patient", patient_options)
+		# add two columns
+		cols = st.columns((1,2,1))
+
+		with cols[0]:
+			# Patient selection
+			patient_ids      = sorted(df[self.CN.RECORD_ID].unique())
+			patient_options  = ["All Patients"] + [f"Patient {id:d}" for id in patient_ids]
+			selected_patient = st.selectbox("Select Patient", patient_options)
+
+		with cols[2]:
+			min_date = df[self.CN.VISIT_DATE].min()
+			max_date = df[self.CN.VISIT_DATE].max()
+			filteration_date = pd.to_datetime(st.date_input("Filter by Date", value=min_date, min_value=min_date, max_value=max_date))
+			filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) >= filteration_date]
 
 		# Create tabs
-		self._create_dashboard_tabs(df, selected_patient)
+		self._create_dashboard_tabs(filtered_df, selected_patient)
+
+
+
 
 	def _create_dashboard_tabs(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""
@@ -240,6 +249,7 @@ class Dashboard:
 			OverviewTab(**argsv).render()
 		with tabs[1]:
 			ImpedanceTab(**argsv).render()
+			# ImpedanceTabOriginal(**argsv).render()
 		with tabs[2]:
 			TemperatureTab(**argsv).render()
 		with tabs[3]:
@@ -250,6 +260,7 @@ class Dashboard:
 			RiskFactorsTab(**argsv).render()
 		with tabs[6]:
 			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model, csv_dataset_path=self.csv_dataset_path).render()
+
 
 	def _get_input_user_data(self) -> None:
 		"""
@@ -304,6 +315,7 @@ class Dashboard:
 						st.warning(f"No XLSX files found in {self.dataset_path}")
 			except Exception as e:
 				st.error(f"Error checking path: {e}")
+
 
 	def _create_left_sidebar(self) -> None:
 		"""
