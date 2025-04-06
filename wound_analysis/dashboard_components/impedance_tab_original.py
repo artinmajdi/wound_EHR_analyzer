@@ -1391,9 +1391,6 @@ class ImpedanceTab:
 			Plotly Figure object showing impedance measurements over time
 		"""
 
-
-		# TODO: check why the freq sweep data is not shown in the streamlit dashboard
-
 		# Define measurement types and their corresponding data fields
 		MEASUREMENT_FIELDS = {
 			"Absolute Impedance (|Z|)": "Z",
