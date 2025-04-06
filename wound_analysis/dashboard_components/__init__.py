@@ -15,4 +15,12 @@ from .oxygenation_tab import OxygenationTab
 from .temperature_tab import TemperatureTab
 from .overview_tab import OverviewTab
 
-__all__ = ['DashboardSettings', 'Visualizer', 'ExudateTab', 'ImpedanceTab', 'LLMAnalysisTab', 'RiskFactorsTab', 'OxygenationTab', 'TemperatureTab', 'OverviewTab']
+__all__ = [ 'DashboardSettings',
+            'Visualizer',
+            'ExudateTab',
+            'ImpedanceTab',
+            'LLMAnalysisTab',
+            'RiskFactorsTab',
+            'OxygenationTab',
+            'TemperatureTab',
+            'OverviewTab']

@@ -6,7 +6,7 @@ import pathlib
 project_root = pathlib.Path(__file__).parent.absolute()
 
 # Read requirements from requirements.txt
-with open(os.path.join(project_root, 'config', 'requirements.txt')) as f:
+with open(os.path.join(project_root, 'setup_config', 'requirements.txt')) as f:
     requirements = f.read().splitlines()
 
 # Read long description from README.md

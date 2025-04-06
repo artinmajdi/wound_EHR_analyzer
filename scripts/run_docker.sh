@@ -85,7 +85,7 @@ ROOT_DIR=$(pwd)
 # Check if the specified .env file exists
 if [ ! -f "$ROOT_DIR/$ENV_FILE" ]; then
   echo "Error: $ENV_FILE file not found."
-  echo "Please create one based on config/.env.example in the config directory."
+  echo "Please create one based on setup_config/.env.example in the setup_config directory."
   echo "You can run './scripts/setup_env.sh' to set up your environment."
   exit 1
 fi

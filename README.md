@@ -102,7 +102,7 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # 2. Install dependencies and set up environment
-pip install -r config/requirements.txt
+pip install -r setup_config/requirements.txt
 pip install -e .
 ./scripts/setup_env.sh
 
@@ -124,7 +124,7 @@ streamlit run wound_analysis/dashboard.py
 ```
 wound_management_interpreter_LLM/
 ├── setup.py                  # Package configuration
-├── config/                   # Configuration files
+├── setup_config/                   # Configuration files
 │   ├── .env.example          # Template for environment variables
 │   ├── environment.yml       # Conda environment specification
 │   ├── MANIFEST.in           # Package manifest file
