@@ -1,11 +1,18 @@
 [server]
-enableCORS = false
-enableXsrfProtection = false
+# Enable CORS for production deployment
+enableCORS = true
+# Enable XSRF protection for security
+enableXsrfProtection = true
 # Set the base path for imports
 scriptPath = "."
+# Increase timeout for long-running operations
+connectionTimeout = 300
+# Port to run on (will use default 8501 if not specified)
+port = 8501
 
 [browser]
 gatherUsageStats = false
+serverAddress = "localhost"
 
 [theme]
 primaryColor = "#0466c8"
@@ -21,4 +28,12 @@ moduleImportPath = "."
 [pythonPath]
 # Add the project root to the Python path
 path = "."
+
+[server.headless]
+# Headless mode for deployment
+headless = true
+
+[cache]
+# Cache settings for better performance
+enabled = true
 
