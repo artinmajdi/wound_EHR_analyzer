@@ -85,7 +85,7 @@ See [documentation/INSTALL.md](documentation/INSTALL.md) for detailed pip instal
 
 ```bash
 # 1. Create and configure the conda environment
-./scripts/setup_conda.sh
+./scripts/install.sh
 
 # 2. Activate the environment
 conda activate wound_analysis
@@ -145,7 +145,7 @@ wound_management_interpreter_LLM/
 │   └── .dockerignore         # Build exclusions
 ├── scripts/                  # Utility scripts
 │   ├── run_docker.sh         # Docker management script
-│   ├── setup_conda.sh        # Conda environment setup
+│   ├── install.sh        # Conda environment setup
 │   └── setup_env.sh          # Environment configuration
 ├── tests/                    # Test suite
 ├── wound_analysis/           # Core application code

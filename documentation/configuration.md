@@ -39,7 +39,7 @@ The following environment variables are managed by the setup script:
 For development environments, use the provided Conda setup script:
 
 ```bash
-./scripts/setup_conda.sh
+./scripts/install.sh
 ```
 
 **What this script does:**

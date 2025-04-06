@@ -21,1335 +21,1335 @@ from wound_analysis.utils.column_schema import DColumns
 
 
 class ImpedanceTab:
-    """
-    Main class for rendering the impedance analysis tab in the Streamlit application.
+	"""
+	Main class for rendering the impedance analysis tab in the Streamlit application.
 
-    This class serves as the entry point for the impedance analysis tab, delegating
-    rendering responsibilities to specialized renderer classes based on whether the
-    analysis is for all patients combined or a specific patient.
+	This class serves as the entry point for the impedance analysis tab, delegating
+	rendering responsibilities to specialized renderer classes based on whether the
+	analysis is for all patients combined or a specific patient.
 
-    Attributes:
-        wound_data_processor (WoundDataProcessor): Processor for wound data
-        patient_id (Union[str, int]): Identifier for the patient, "All Patients" or an integer
-        df (pd.DataFrame): DataFrame containing patient data
-        CN (DColumns): Column name accessor for the DataFrame
-    """
+	Attributes:
+		wound_data_processor (WoundDataProcessor): Processor for wound data
+		patient_id (Union[str, int]): Identifier for the patient, "All Patients" or an integer
+		df (pd.DataFrame): DataFrame containing patient data
+		CN (DColumns): Column name accessor for the DataFrame
+	"""
 
-    def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
-        """
-        Initialize the ImpedanceTab with patient data and selection.
+	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
+		"""
+		Initialize the ImpedanceTab with patient data and selection.
 
-        Args:
-            df: DataFrame containing all patient data
-            selected_patient: Either "All Patients" or a specific patient identifier
-            wound_data_processor: Processor for accessing and manipulating wound data
-        """
-        self.wound_data_processor = wound_data_processor
-        self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
-        self.df = df
-        self.CN = DColumns(df=df)
+		Args:
+			df: DataFrame containing all patient data
+			selected_patient: Either "All Patients" or a specific patient identifier
+			wound_data_processor: Processor for accessing and manipulating wound data
+		"""
+		self.wound_data_processor = wound_data_processor
+		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
+		self.df = df
+		self.CN = DColumns(df=df)
 
-    def render(self) -> None:
-        """
-        Render the impedance analysis tab based on patient selection.
+	def render(self) -> None:
+		"""
+		Render the impedance analysis tab based on patient selection.
 
-        Delegates to either PopulationImpedanceRenderer or PatientImpedanceRenderer
-        based on whether all patients or a specific patient is selected.
-        """
-        st.header("Impedance Analysis")
+		Delegates to either PopulationImpedanceRenderer or PatientImpedanceRenderer
+		based on whether all patients or a specific patient is selected.
+		"""
+		st.header("Impedance Analysis")
 
-        if self.patient_id == "All Patients":
-            PopulationImpedanceRenderer(df=self.df).render()
+		if self.patient_id == "All Patients":
+			PopulationImpedanceRenderer(df=self.df).render()
 
-        else:
-            visits_meta_data: VisitsMetadataType   = self.wound_data_processor.get_patient_visits(record_id=self.patient_id)
-            visits          : List[VisitsDataType] = visits_meta_data['visits']
-            PatientImpedanceRenderer(visits=visits).render()
+		else:
+			visits_meta_data: VisitsMetadataType   = self.wound_data_processor.get_patient_visits(record_id=self.patient_id)
+			visits          : List[VisitsDataType] = visits_meta_data['visits']
+			PatientImpedanceRenderer(visits=visits).render()
 
 
 class PopulationImpedanceRenderer:
-    """
-    Renderer for population-level impedance analysis.
-
-    This class handles the rendering of population-level impedance analysis,
-    including clustering, correlation analysis, and visualization of impedance data
-    across the entire patient population.
-
-    Attributes:
-        df (pd.DataFrame): DataFrame containing all patient data
-        CN (DColumns): Column name accessor for the DataFrame
-    """
-
-    def __init__(self, df: pd.DataFrame):
-        """
-        Initialize the PopulationImpedanceRenderer with patient data.
-
-        Args:
-            df: DataFrame containing all patient data
-        """
-        self.df = df
-        self.CN = DColumns(df=df)
-
-    def render(self) -> None:
-        """
-        Render the population-level impedance analysis section.
-
-        This method orchestrates the rendering of the population-level analysis,
-        including clustering, correlation analysis, and visualization.
-        """
-        # Create a copy of the dataframe for analysis
-        analysis_df = self.df.copy()
-
-        # Render clustering options and perform clustering if requested
-        working_df = self._render_clustering_section(analysis_df)
-
-        # Add outlier threshold control and calculate correlation
-        filtered_df = self._display_correlation_controls(working_df)
-
-        # Create scatter plot if we have valid data
-        if not filtered_df.empty:
-            self._render_scatter_plot(df=filtered_df)
-        else:
-            st.warning("No valid data available for the scatter plot.")
-
-        # Create additional visualizations in a two-column layout
-        self._render_population_charts(df=working_df)
-
-    def _render_clustering_section(self, analysis_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Render the clustering section and perform clustering if requested.
-
-        Args:
-            analysis_df: DataFrame to perform clustering on
-
-        Returns:
-            DataFrame to use for further analysis (either clustered or original)
-        """
-        with st.expander("Patient Data Clustering", expanded=True):
-            st.markdown("### Cluster Analysis Settings")
-
-            # Create columns for clustering controls
-            col1, col2, col3 = st.columns([1, 2, 1])
-
-            with col1:
-                n_clusters = st.number_input(
-                    "Number of Clusters",
-                    min_value=2,
-                    max_value=10,
-                    value=3,
-                    help="Select the number of clusters to divide patient data into"
-                )
-
-            with col2:
-                cluster_features = st.multiselect(
-                    "Features for Clustering",
-                    options=[
-                        self.CN.HIGHEST_FREQ_Z,
-                        self.CN.WOUND_AREA,
-                        self.CN.CENTER_TEMP,
-                        self.CN.OXYGENATION,
-                        self.CN.HEMOGLOBIN,
-                        self.CN.AGE,
-                        self.CN.BMI,
-                        self.CN.DAYS_SINCE_FIRST_VISIT,
-                        self.CN.HEALING_RATE
-                    ],
-                    default=[self.CN.HIGHEST_FREQ_Z, self.CN.WOUND_AREA, self.CN.HEALING_RATE],
-                    help="Select features to be used for clustering patients"
-                )
-
-            with col3:
-                clustering_method = st.selectbox(
-                    "Clustering Method",
-                    options=["K-Means", "Hierarchical", "DBSCAN"],
-                    index=0,
-                    help="Select the clustering algorithm to use"
-                )
-
-                run_clustering = st.button("Run Clustering")
-
-            # Initialize session state for clusters if not already present
-            if 'clusters' not in st.session_state:
-                st.session_state.clusters = None
-                st.session_state.cluster_df = None
-                st.session_state.selected_cluster = None
-                st.session_state.feature_importance = None
-
-            # Run clustering if requested
-            if run_clustering and cluster_features:
-                try:
-                    self._perform_clustering(
-                        analysis_df=analysis_df,
-                        cluster_features=cluster_features,
-                        n_clusters=n_clusters,
-                        clustering_method=clustering_method
-                    )
-                except Exception as e:
-                    st.error(f"Error during clustering: {str(e)}")
-                    st.error(traceback.format_exc())
-
-            # Render cluster selection and characteristics if clustering has been performed
-            working_df = self._render_cluster_selection(analysis_df, cluster_features)
-
-        return working_df
-
-    def _perform_clustering(self, analysis_df: pd.DataFrame, cluster_features: List[str],
-                           n_clusters: int, clustering_method: str) -> None:
-        """
-        Perform clustering on the data using the specified method and features.
-
-        Args:
-            analysis_df: DataFrame to perform clustering on
-            cluster_features: List of features to use for clustering
-            n_clusters: Number of clusters to create
-            clustering_method: Method to use for clustering (K-Means, Hierarchical, or DBSCAN)
-        """
-        # Create a feature dataframe for clustering
-        clustering_df = analysis_df[cluster_features].copy()
-
-        # Handle missing values
-        clustering_df = clustering_df.fillna(clustering_df.mean())
-
-        # Drop rows with any remaining NaN values
-        clustering_df = clustering_df.dropna()
-
-        if len(clustering_df) <= n_clusters:
-            st.error("Not enough valid data points for clustering. Try selecting different features or reducing the number of clusters.")
-            return
-
-        # Get indices of valid rows to map back to original dataframe
-        valid_indices = clustering_df.index
-
-        # Standardize the data
-        scaler = StandardScaler()
-        scaled_features = scaler.fit_transform(clustering_df)
-
-        # Perform clustering based on selected method
-        cluster_labels, feature_importance = self._apply_clustering_algorithm(
-            scaled_features=scaled_features,
-            cluster_features=cluster_features,
-            n_clusters=n_clusters,
-            clustering_method=clustering_method
-        )
-
-        # Create a new column in the original dataframe with cluster labels
-        cluster_mapping = pd.Series(cluster_labels, index=valid_indices)
-        analysis_df.loc[valid_indices, 'Cluster'] = cluster_mapping
-
-        # Handle any NaN in cluster column (rows that were dropped during clustering)
-        analysis_df['Cluster'] = analysis_df['Cluster'].fillna(-1).astype(int)
-
-        # Store clustering results in session state
-        st.session_state.clusters = sorted(analysis_df['Cluster'].unique())
-        st.session_state.cluster_df = analysis_df
-        st.session_state.feature_importance = feature_importance
-        st.session_state.selected_cluster = None  # Reset selected cluster
-
-        # Display success message
-        st.success(f"Successfully clustered data into {n_clusters} clusters using {clustering_method}!")
-
-        # Display cluster distribution
-        self._display_cluster_distribution(analysis_df)
-
-        # Display feature importance
-        if feature_importance:
-            self._display_feature_importance(feature_importance)
-
-    def _apply_clustering_algorithm(self, scaled_features: np.ndarray, cluster_features: List[str],
-                                   n_clusters: int, clustering_method: str) -> Tuple[np.ndarray, Dict[str, float]]:
-        """
-        Apply the specified clustering algorithm to the data.
-
-        Args:
-            scaled_features: Standardized features to cluster
-            cluster_features: Names of the features being clustered
-            n_clusters: Number of clusters to create
-            clustering_method: Method to use for clustering
-
-        Returns:
-            Tuple of (cluster_labels, feature_importance)
-        """
-        feature_importance = {}
-
-        if clustering_method == "K-Means":
-            clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            cluster_labels = clusterer.fit_predict(scaled_features)
-
-            # Calculate feature importance for K-Means
-            centers = clusterer.cluster_centers_
-            for i, feature in enumerate(cluster_features):
-                # Calculate the variance of this feature across cluster centers
-                variance = np.var([center[i] for center in centers])
-                feature_importance[feature] = variance
-
-        elif clustering_method == "Hierarchical":
-            # Perform hierarchical clustering
-            Z = linkage(scaled_features, 'ward')
-            cluster_labels = fcluster(Z, n_clusters, criterion='maxclust') - 1  # Adjust to 0-based
-
-            # For hierarchical clustering, use silhouette coefficients for feature importance
-            for i, feature in enumerate(cluster_features):
-                # Create single-feature clustering and measure its quality
-                single_feature = scaled_features[:, i:i+1]
-                if len(np.unique(single_feature)) > 1:  # Only if feature has variation
-                    temp_clusters = fcluster(linkage(single_feature, 'ward'), n_clusters, criterion='maxclust')
-                    try:
-                        score = silhouette_score(single_feature, temp_clusters)
-                        feature_importance[feature] = max(0, score)  # Ensure non-negative
-                    except Exception as e:
-                        st.error(f"Error calculating silhouette score: {str(e)}")
-                        feature_importance[feature] = 0.01  # Fallback value
-                else:
-                    feature_importance[feature] = 0.01
-
-        else:  # DBSCAN
-            # Calculate epsilon based on data
-            neigh = NearestNeighbors(n_neighbors=3)
-            neigh.fit(scaled_features)
-            distances, _ = neigh.kneighbors(scaled_features)
-            distances = np.sort(distances[:, 2], axis=0)  # Distance to 3rd nearest neighbor
-            epsilon = np.percentile(distances, 90)  # Use 90th percentile as epsilon
-
-            clusterer = DBSCAN(eps=epsilon, min_samples=max(3, len(scaled_features)//30))
-            cluster_labels = clusterer.fit_predict(scaled_features)
-
-            # For DBSCAN, calculate feature importance using variance within clusters
-            for i, feature in enumerate(cluster_features):
-                variances = []
-                for label in set(cluster_labels):
-                    if label >= 0:  # Exclude noise points
-                        cluster_data = scaled_features[cluster_labels == label, i]
-                        if len(cluster_data) > 1:
-                            variances.append(np.var(cluster_data))
-                if variances:
-                    feature_importance[feature] = 1.0 - min(1.0, np.mean(variances)/np.var(scaled_features[:, i]))
-                else:
-                    feature_importance[feature] = 0.01
-
-        # Normalize feature importance
-        if feature_importance and max(feature_importance.values()) > 0:
-            max_importance = max(feature_importance.values())
-            feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
-
-        return cluster_labels, feature_importance
-
-    def _display_cluster_distribution(self, analysis_df: pd.DataFrame) -> None:
-        """
-        Display the distribution of data points across clusters.
-
-        Args:
-            analysis_df: DataFrame with cluster assignments
-        """
-        cluster_counts = analysis_df['Cluster'].value_counts().sort_index()
-
-        # Filter out noise points (label -1) for visualization
-        if -1 in cluster_counts:
-            noise_count = cluster_counts[-1]
-            cluster_counts = cluster_counts[cluster_counts.index >= 0]
-            st.info(f"Note: {noise_count} points were classified as noise (only applies to DBSCAN)")
-
-        # Create a bar chart for cluster sizes
-        fig = px.bar(
-            x=cluster_counts.index,
-            y=cluster_counts.values,
-            labels={'x': 'Cluster', 'y': 'Number of Patients/Visits'},
-            title="Cluster Distribution",
-            color=cluster_counts.index,
-            text=cluster_counts.values
-        )
-
-        fig.update_traces(textposition='outside')
-        fig.update_layout(showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
-
-    def _display_feature_importance(self, feature_importance: Dict[str, float]) -> None:
-        """
-        Display a radar chart showing feature importance in clustering.
-
-        Args:
-            feature_importance: Dictionary mapping feature names to importance values
-        """
-        categories = list(feature_importance.keys())
-        values = list(feature_importance.values())
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatterpolar(
-            r=values,
-            theta=categories,
-            fill='toself',
-            name='Feature Importance'
-        ))
-
-        fig.update_layout(
-            title="Feature Importance in Clustering",
-            polar=dict(
-                radialaxis=dict(visible=True, range=[0, 1]),
-            ),
-            showlegend=False
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-    def _render_cluster_selection(self, analysis_df: pd.DataFrame, cluster_features: List[str]) -> pd.DataFrame:
-        """
-        Render the cluster selection dropdown and display cluster characteristics.
-
-        Args:
-            analysis_df: Original DataFrame
-            cluster_features: Features used for clustering
-
-        Returns:
-            DataFrame to use for further analysis (either filtered by cluster or original)
-        """
-        if st.session_state.clusters is not None and st.session_state.cluster_df is not None:
-            # Create selection for which cluster to analyze
-            st.markdown("### Cluster Selection")
-
-            cluster_options = ["All Data"]
-            for cluster_id in sorted([c for c in st.session_state.clusters if c >= 0]):
-                cluster_count = len(st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id])
-                cluster_options.append(f"Cluster {cluster_id} (n={cluster_count})")
-
-            selected_option = st.selectbox(
-                "Select cluster to analyze:",
-                options=cluster_options,
-                index=0
-            )
-
-            # Update the selected cluster in session state
-            if selected_option == "All Data":
-                st.session_state.selected_cluster = None
-                working_df = analysis_df
-            else:
-                cluster_id = int(selected_option.split(" ")[1].split("(")[0])
-                st.session_state.selected_cluster = cluster_id
-                working_df = st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id].copy()
-
-                # Display cluster characteristics
-                self._display_cluster_characteristics(cluster_id, working_df, analysis_df, cluster_features)
-
-            return working_df
-        else:
-            return analysis_df
-
-    def _display_cluster_characteristics(self, cluster_id: int, cluster_df: pd.DataFrame,
-                                        full_df: pd.DataFrame, features: List[str]) -> None:
-        """
-        Display characteristics of the selected cluster compared to the overall population.
-
-        Args:
-            cluster_id: ID of the selected cluster
-            cluster_df: DataFrame filtered to the selected cluster
-            full_df: Full DataFrame with all data
-            features: Features to compare
-        """
-        st.markdown(f"### Characteristics of Cluster {cluster_id}")
-
-        # Create summary statistics for this cluster vs. overall population
-        summary_stats = []
-
-        for feature in features:
-            if feature in cluster_df.columns:
-                try:
-                    cluster_mean = cluster_df[feature].mean()
-                    overall_mean = full_df[feature].mean()
-                    diff_pct = ((cluster_mean - overall_mean) / overall_mean * 100) if overall_mean != 0 else 0
-
-                    summary_stats.append({
-                        "Feature"        : feature,
-                        "Cluster Mean"   : f"{cluster_mean:.2f}",
-                        "Population Mean": f"{overall_mean:.2f}",
-                        "Difference"     : f"{diff_pct:+.1f}%",
-                        "Significant"    : abs(diff_pct) > 15
-                    })
-                except Exception as e:
-                    st.error(f"Error calculating summary statistics: {str(e)}")
-
-        if summary_stats:
-            summary_df = pd.DataFrame(summary_stats)
-
-            # Create a copy of the styling DataFrame to avoid the KeyError
-            styled_df = summary_df.copy()
-
-            # Define the highlight function that uses a custom attribute instead of accessing the DataFrame
-            def highlight_significant(row):
-                is_significant = row['Significant'] if 'Significant' in row else False
-                # Return styling for all columns except 'Significant'
-                return ['background-color: yellow' if is_significant else '' for _ in range(len(row))]
-
-            # Apply styling to all columns, then drop the 'Significant' column for display
-            styled_df = styled_df.style.apply(highlight_significant, axis=1)
-            styled_df.hide(axis="columns", names=["Significant"])
-
-            # Display the styled DataFrame
-            st.table(styled_df)
-            st.info("Highlighted rows indicate features where this cluster differs from the overall population by >15%")
-
-    def _display_correlation_controls(self, df_for_cluster: pd.DataFrame) -> pd.DataFrame:
-        """
-        Display controls for correlation analysis and perform the analysis.
-
-        Args:
-            df_for_cluster: DataFrame to analyze
-
-        Returns:
-            Filtered DataFrame with outliers removed
-        """
-        cols = st.columns([2, 3])
-
-        with cols[0]:
-            outlier_threshold = st.number_input(
-                "Impedance Outlier Threshold (Quantile)",
-                min_value = 0.0,
-                max_value = 0.9,
-                value     = 0.0,
-                step      = 0.05,
-                help      = "Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
-            )
-
-        # Get the selected features for analysis
-        features_to_analyze = [
-            self.CN.HIGHEST_FREQ_Z,
-            self.CN.WOUND_AREA,
-            self.CN.CENTER_TEMP,
-            self.CN.OXYGENATION,
-            self.CN.HEMOGLOBIN,
-            self.CN.HEALING_RATE
-        ]
-
-        # Filter features that exist in the dataframe
-        features_to_analyze = [f for f in features_to_analyze if f in df_for_cluster.columns]
-
-        # Create a copy of the dataframe with only the features we want to analyze
-        analysis_df = df_for_cluster[features_to_analyze].copy().dropna()
-
-        # Remove outliers if threshold is set
-        if outlier_threshold > 0:
-            for col in analysis_df.columns:
-                q_low       = analysis_df[col].quantile(outlier_threshold)
-                q_high      = analysis_df[col].quantile(1 - outlier_threshold)
-                analysis_df = analysis_df[ (analysis_df[col] >= q_low) & (analysis_df[col] <= q_high) ]
-
-        if analysis_df.empty or len(analysis_df) < 2:
-            st.warning("Not enough data after outlier removal for correlation analysis.")
-            return pd.DataFrame()
-
-        # Calculate correlation matrix
-        corr_matrix = analysis_df.corr()
-
-        # Calculate p-values for correlations
-        p_values = self._calculate_correlation_pvalues(analysis_df)
-
-        # Create correlation heatmap
-        fig = px.imshow(
-            abs(corr_matrix),
-            labels=dict(color="Correlation"),
-            color_continuous_scale="RdBu",
-            aspect="auto",
-            text_auto=".2f",
-            title="Correlation Matrix Heatmap"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Display detailed statistics
-        st.subheader("Statistical Summary")
-
-        # Create tabs for different statistical views
-        tab1, tab2, tab3 = st.tabs(["Correlation Details", "Descriptive Stats", "Effect Sizes"])
-
-        with tab1:
-            self._display_significant_correlations(features_to_analyze, corr_matrix, p_values)
-
-        with tab2:
-            self._display_descriptive_statistics(analysis_df)
-
-        with tab3:
-            self._display_effect_sizes(analysis_df, features_to_analyze)
-
-        return analysis_df
-
-    def _calculate_correlation_pvalues(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Calculate p-values for correlations between all columns in the DataFrame.
-
-        Args:
-            df: DataFrame to analyze
-
-        Returns:
-            DataFrame of p-values with the same shape as the correlation matrix
-        """
-        def calculate_pvalue(x, y):
-            mask = ~(np.isnan(x) | np.isnan(y))
-            if np.sum(mask) < 2:
-                return np.nan
-            return stats.pearsonr(x[mask], y[mask]).pvalue
-
-        return pd.DataFrame(
-            [[  stats.pearsonr(df[col1], df[col2]).pvalue # calculate_pvalue(df[col1], df[col2])
-                        for col2 in df.columns]
-                        for col1 in df.columns],
-                columns = df.columns,
-                index   = df.columns
-        )
-
-    def _display_significant_correlations(self, features: List[str], corr_matrix: pd.DataFrame, p_values: pd.DataFrame) -> None:
-        """
-        Display significant correlations between features.
-
-        Args:
-            features: List of feature names
-            corr_matrix: Correlation matrix
-            p_values: Matrix of p-values
-        """
-        st.markdown("#### Significant Correlations (p < 0.05)")
-        significant_corrs = []
-        for i in range(len(features)):
-            for j in range(i+1, len(features)):
-                if p_values.iloc[i,j] < 0.05:
-                    significant_corrs.append({
-                        "Feature 1": features[i],
-                        "Feature 2": features[j],
-                        "Correlation": f"{corr_matrix.iloc[i,j]:.3f}",
-                        "p-value": f"{p_values.iloc[i,j]:.3e}"
-                    })
-
-        if significant_corrs:
-            st.table(pd.DataFrame(significant_corrs))
-        else:
-            st.info("No significant correlations found.")
-
-    def _display_descriptive_statistics(self, df: pd.DataFrame) -> None:
-        """
-        Display descriptive statistics for the DataFrame.
-
-        Args:
-            df: DataFrame to analyze
-        """
-        st.markdown("#### Descriptive Statistics")
-        desc_stats = df.describe()
-        desc_stats.loc["skew"] = df.skew()
-        desc_stats.loc["kurtosis"] = df.kurtosis()
-        st.dataframe(desc_stats)
-
-    def _display_effect_sizes(self, df: pd.DataFrame, features: List[str]) -> None:
-        """
-        Display effect sizes relative to impedance.
-
-        Args:
-            df: DataFrame to analyze
-            features: List of feature names
-        """
-        st.markdown("#### Effect Sizes (Cohen's d) relative to Impedance")
-
-        effect_sizes = []
-        impedance_col = "Skin Impedance (kOhms) - Z"
-
-        if impedance_col in features:
-            for col in features:
-                if col != impedance_col:
-                    # Calculate Cohen's d
-                    d = (df[col].mean() - df[impedance_col].mean()) / \
-                        np.sqrt((df[col].var() + df[impedance_col].var()) / 2)
-
-                    effect_sizes.append({
-                        "Feature": col,
-                        "Cohen's d": f"{d:.3f}",
-                        "Effect Size": "Large" if abs(d) > 0.8 else "Medium" if abs(d) > 0.5 else "Small",
-                        "95% CI": f"[{d-1.96*np.sqrt(4/len(df)):.3f}, {d+1.96*np.sqrt(4/len(df)):.3f}]"
-                    })
-
-            if effect_sizes:
-                st.table(pd.DataFrame(effect_sizes))
-            else:
-                st.info("No effect sizes could be calculated.")
-        else:
-            st.info("Impedance measurements not available for effect size calculation.")
-
-    def _render_scatter_plot(self, df: pd.DataFrame) -> None:
-        """
-        Render a scatter plot showing the relationship between impedance and healing rate.
-
-        Args:
-            df: DataFrame to plot
-        """
-        # Create a copy to avoid modifying the original dataframe
-        plot_df = df.copy()
-
-        # Handle missing values in Calculated Wound Area
-        if self.CN.WOUND_AREA in plot_df.columns:
-            # Fill NaN with the mean, or 1 if all values are NaN
-            mean_area = plot_df[self.CN.WOUND_AREA].mean()
-            plot_df[self.CN.WOUND_AREA] = plot_df[self.CN.WOUND_AREA].fillna(mean_area if pd.notnull(mean_area) else 1)
-
-        # Define hover data columns we want to show if available
-        hover_columns = [self.CN.RECORD_ID, self.CN.EVENT_NAME, self.CN.WOUND_TYPE]
-        available_hover = [col for col in hover_columns if col in plot_df.columns]
-
-        fig = px.scatter(
-            plot_df,
-            x=self.CN.HIGHEST_FREQ_Z,
-            y=self.CN.HEALING_RATE,
-            color=self.CN.DIABETES if self.CN.DIABETES in plot_df.columns else None,
-            size=self.CN.WOUND_AREA if self.CN.WOUND_AREA in plot_df.columns else None,
-            size_max=30,
-            hover_data=available_hover,
-            title="Impedance vs Healing Rate Correlation"
-        )
-
-        fig.update_layout(
-            xaxis_title="Impedance Z (kOhms)",
-            yaxis_title="Healing Rate (% reduction per visit)"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-    def _render_population_charts(self, df: pd.DataFrame) -> None:
-        """
-        Render charts showing population-level impedance statistics.
-
-        Args:
-            df: DataFrame containing impedance measurements and visit information
-        """
-        # Get prepared statistics
-        avg_impedance, avg_by_type = ImpedanceAnalyzer.prepare_population_stats(df=df)
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.subheader("Impedance Components Over Time")
-            fig1 = px.line(
-                avg_impedance,
-                x=self.CN.VISIT_NUMBER,
-                y=[self.CN.HIGHEST_FREQ_Z, self.CN.HIGHEST_FREQ_Z_PRIME, self.CN.HIGHEST_FREQ_Z_DOUBLE_PRIME],
-                title="Average Impedance Components by Visit",
-                markers=True
-            )
-            fig1.update_layout(xaxis_title="Visit Number", yaxis_title="Impedance (kOhms)")
-            st.plotly_chart(fig1, use_container_width=True)
-
-        with col2:
-            st.subheader("Impedance by Wound Type")
-            fig2 = px.bar(
-                avg_by_type,
-                x=self.CN.WOUND_TYPE,
-                y=self.CN.HIGHEST_FREQ_Z,
-                title="Average Impedance by Wound Type",
-                color=self.CN.WOUND_TYPE
-            )
-            fig2.update_layout(xaxis_title="Wound Type", yaxis_title="Average Impedance Z (kOhms)")
-            st.plotly_chart(fig2, use_container_width=True)
+	"""
+	Renderer for population-level impedance analysis.
+
+	This class handles the rendering of population-level impedance analysis,
+	including clustering, correlation analysis, and visualization of impedance data
+	across the entire patient population.
+
+	Attributes:
+		df (pd.DataFrame): DataFrame containing all patient data
+		CN (DColumns): Column name accessor for the DataFrame
+	"""
+
+	def __init__(self, df: pd.DataFrame):
+		"""
+		Initialize the PopulationImpedanceRenderer with patient data.
+
+		Args:
+			df: DataFrame containing all patient data
+		"""
+		self.df = df
+		self.CN = DColumns(df=df)
+
+	def render(self) -> None:
+		"""
+		Render the population-level impedance analysis section.
+
+		This method orchestrates the rendering of the population-level analysis,
+		including clustering, correlation analysis, and visualization.
+		"""
+		# Create a copy of the dataframe for analysis
+		analysis_df = self.df.copy()
+
+		# Render clustering options and perform clustering if requested
+		working_df = self._render_clustering_section(analysis_df)
+
+		# Add outlier threshold control and calculate correlation
+		filtered_df = self._display_correlation_controls(working_df)
+
+		# Create scatter plot if we have valid data
+		if not filtered_df.empty:
+			self._render_scatter_plot(df=filtered_df)
+		else:
+			st.warning("No valid data available for the scatter plot.")
+
+		# Create additional visualizations in a two-column layout
+		self._render_population_charts(df=working_df)
+
+	def _render_clustering_section(self, analysis_df: pd.DataFrame) -> pd.DataFrame:
+		"""
+		Render the clustering section and perform clustering if requested.
+
+		Args:
+			analysis_df: DataFrame to perform clustering on
+
+		Returns:
+			DataFrame to use for further analysis (either clustered or original)
+		"""
+		with st.expander("Patient Data Clustering", expanded=True):
+			st.markdown("### Cluster Analysis Settings")
+
+			# Create columns for clustering controls
+			col1, col2, col3 = st.columns([1, 2, 1])
+
+			with col1:
+				n_clusters = st.number_input(
+					"Number of Clusters",
+					min_value=2,
+					max_value=10,
+					value=3,
+					help="Select the number of clusters to divide patient data into"
+				)
+
+			with col2:
+				cluster_features = st.multiselect(
+					"Features for Clustering",
+					options=[
+						self.CN.HIGHEST_FREQ_Z,
+						self.CN.WOUND_AREA,
+						self.CN.CENTER_TEMP,
+						self.CN.OXYGENATION,
+						self.CN.HEMOGLOBIN,
+						self.CN.AGE,
+						self.CN.BMI,
+						self.CN.DAYS_SINCE_FIRST_VISIT,
+						self.CN.HEALING_RATE
+					],
+					default=[self.CN.HIGHEST_FREQ_Z, self.CN.WOUND_AREA, self.CN.HEALING_RATE],
+					help="Select features to be used for clustering patients"
+				)
+
+			with col3:
+				clustering_method = st.selectbox(
+					"Clustering Method",
+					options=["K-Means", "Hierarchical", "DBSCAN"],
+					index=0,
+					help="Select the clustering algorithm to use"
+				)
+
+				run_clustering = st.button("Run Clustering")
+
+			# Initialize session state for clusters if not already present
+			if 'clusters' not in st.session_state:
+				st.session_state.clusters = None
+				st.session_state.cluster_df = None
+				st.session_state.selected_cluster = None
+				st.session_state.feature_importance = None
+
+			# Run clustering if requested
+			if run_clustering and cluster_features:
+				try:
+					self._perform_clustering(
+						analysis_df=analysis_df,
+						cluster_features=cluster_features,
+						n_clusters=n_clusters,
+						clustering_method=clustering_method
+					)
+				except Exception as e:
+					st.error(f"Error during clustering: {str(e)}")
+					st.error(traceback.format_exc())
+
+			# Render cluster selection and characteristics if clustering has been performed
+			working_df = self._render_cluster_selection(analysis_df, cluster_features)
+
+		return working_df
+
+	def _perform_clustering(self, analysis_df: pd.DataFrame, cluster_features: List[str],
+							n_clusters: int, clustering_method: str) -> None:
+		"""
+		Perform clustering on the data using the specified method and features.
+
+		Args:
+			analysis_df: DataFrame to perform clustering on
+			cluster_features: List of features to use for clustering
+			n_clusters: Number of clusters to create
+			clustering_method: Method to use for clustering (K-Means, Hierarchical, or DBSCAN)
+		"""
+		# Create a feature dataframe for clustering
+		clustering_df = analysis_df[cluster_features].copy()
+
+		# Handle missing values
+		clustering_df = clustering_df.fillna(clustering_df.mean())
+
+		# Drop rows with any remaining NaN values
+		clustering_df = clustering_df.dropna()
+
+		if len(clustering_df) <= n_clusters:
+			st.error("Not enough valid data points for clustering. Try selecting different features or reducing the number of clusters.")
+			return
+
+		# Get indices of valid rows to map back to original dataframe
+		valid_indices = clustering_df.index
+
+		# Standardize the data
+		scaler = StandardScaler()
+		scaled_features = scaler.fit_transform(clustering_df)
+
+		# Perform clustering based on selected method
+		cluster_labels, feature_importance = self._apply_clustering_algorithm(
+			scaled_features=scaled_features,
+			cluster_features=cluster_features,
+			n_clusters=n_clusters,
+			clustering_method=clustering_method
+		)
+
+		# Create a new column in the original dataframe with cluster labels
+		cluster_mapping = pd.Series(cluster_labels, index=valid_indices)
+		analysis_df.loc[valid_indices, 'Cluster'] = cluster_mapping
+
+		# Handle any NaN in cluster column (rows that were dropped during clustering)
+		analysis_df['Cluster'] = analysis_df['Cluster'].fillna(-1).astype(int)
+
+		# Store clustering results in session state
+		st.session_state.clusters = sorted(analysis_df['Cluster'].unique())
+		st.session_state.cluster_df = analysis_df
+		st.session_state.feature_importance = feature_importance
+		st.session_state.selected_cluster = None  # Reset selected cluster
+
+		# Display success message
+		st.success(f"Successfully clustered data into {n_clusters} clusters using {clustering_method}!")
+
+		# Display cluster distribution
+		self._display_cluster_distribution(analysis_df)
+
+		# Display feature importance
+		if feature_importance:
+			self._display_feature_importance(feature_importance)
+
+	def _apply_clustering_algorithm(self, scaled_features: np.ndarray, cluster_features: List[str],
+									n_clusters: int, clustering_method: str) -> Tuple[np.ndarray, Dict[str, float]]:
+		"""
+		Apply the specified clustering algorithm to the data.
+
+		Args:
+			scaled_features: Standardized features to cluster
+			cluster_features: Names of the features being clustered
+			n_clusters: Number of clusters to create
+			clustering_method: Method to use for clustering
+
+		Returns:
+			Tuple of (cluster_labels, feature_importance)
+		"""
+		feature_importance = {}
+
+		if clustering_method == "K-Means":
+			clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+			cluster_labels = clusterer.fit_predict(scaled_features)
+
+			# Calculate feature importance for K-Means
+			centers = clusterer.cluster_centers_
+			for i, feature in enumerate(cluster_features):
+				# Calculate the variance of this feature across cluster centers
+				variance = np.var([center[i] for center in centers])
+				feature_importance[feature] = variance
+
+		elif clustering_method == "Hierarchical":
+			# Perform hierarchical clustering
+			Z = linkage(scaled_features, 'ward')
+			cluster_labels = fcluster(Z, n_clusters, criterion='maxclust') - 1  # Adjust to 0-based
+
+			# For hierarchical clustering, use silhouette coefficients for feature importance
+			for i, feature in enumerate(cluster_features):
+				# Create single-feature clustering and measure its quality
+				single_feature = scaled_features[:, i:i+1]
+				if len(np.unique(single_feature)) > 1:  # Only if feature has variation
+					temp_clusters = fcluster(linkage(single_feature, 'ward'), n_clusters, criterion='maxclust')
+					try:
+						score = silhouette_score(single_feature, temp_clusters)
+						feature_importance[feature] = max(0, score)  # Ensure non-negative
+					except Exception as e:
+						st.error(f"Error calculating silhouette score: {str(e)}")
+						feature_importance[feature] = 0.01  # Fallback value
+				else:
+					feature_importance[feature] = 0.01
+
+		else:  # DBSCAN
+			# Calculate epsilon based on data
+			neigh = NearestNeighbors(n_neighbors=3)
+			neigh.fit(scaled_features)
+			distances, _ = neigh.kneighbors(scaled_features)
+			distances = np.sort(distances[:, 2], axis=0)  # Distance to 3rd nearest neighbor
+			epsilon = np.percentile(distances, 90)  # Use 90th percentile as epsilon
+
+			clusterer = DBSCAN(eps=epsilon, min_samples=max(3, len(scaled_features)//30))
+			cluster_labels = clusterer.fit_predict(scaled_features)
+
+			# For DBSCAN, calculate feature importance using variance within clusters
+			for i, feature in enumerate(cluster_features):
+				variances = []
+				for label in set(cluster_labels):
+					if label >= 0:  # Exclude noise points
+						cluster_data = scaled_features[cluster_labels == label, i]
+						if len(cluster_data) > 1:
+							variances.append(np.var(cluster_data))
+				if variances:
+					feature_importance[feature] = 1.0 - min(1.0, np.mean(variances)/np.var(scaled_features[:, i]))
+				else:
+					feature_importance[feature] = 0.01
+
+		# Normalize feature importance
+		if feature_importance and max(feature_importance.values()) > 0:
+			max_importance = max(feature_importance.values())
+			feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
+
+		return cluster_labels, feature_importance
+
+	def _display_cluster_distribution(self, analysis_df: pd.DataFrame) -> None:
+		"""
+		Display the distribution of data points across clusters.
+
+		Args:
+			analysis_df: DataFrame with cluster assignments
+		"""
+		cluster_counts = analysis_df['Cluster'].value_counts().sort_index()
+
+		# Filter out noise points (label -1) for visualization
+		if -1 in cluster_counts:
+			noise_count = cluster_counts[-1]
+			cluster_counts = cluster_counts[cluster_counts.index >= 0]
+			st.info(f"Note: {noise_count} points were classified as noise (only applies to DBSCAN)")
+
+		# Create a bar chart for cluster sizes
+		fig = px.bar(
+			x=cluster_counts.index,
+			y=cluster_counts.values,
+			labels={'x': 'Cluster', 'y': 'Number of Patients/Visits'},
+			title="Cluster Distribution",
+			color=cluster_counts.index,
+			text=cluster_counts.values
+		)
+
+		fig.update_traces(textposition='outside')
+		fig.update_layout(showlegend=False)
+		st.plotly_chart(fig, use_container_width=True)
+
+	def _display_feature_importance(self, feature_importance: Dict[str, float]) -> None:
+		"""
+		Display a radar chart showing feature importance in clustering.
+
+		Args:
+			feature_importance: Dictionary mapping feature names to importance values
+		"""
+		categories = list(feature_importance.keys())
+		values = list(feature_importance.values())
+
+		fig = go.Figure()
+		fig.add_trace(go.Scatterpolar(
+			r=values,
+			theta=categories,
+			fill='toself',
+			name='Feature Importance'
+		))
+
+		fig.update_layout(
+			title="Feature Importance in Clustering",
+			polar=dict(
+				radialaxis=dict(visible=True, range=[0, 1]),
+			),
+			showlegend=False
+		)
+
+		st.plotly_chart(fig, use_container_width=True)
+
+	def _render_cluster_selection(self, analysis_df: pd.DataFrame, cluster_features: List[str]) -> pd.DataFrame:
+		"""
+		Render the cluster selection dropdown and display cluster characteristics.
+
+		Args:
+			analysis_df: Original DataFrame
+			cluster_features: Features used for clustering
+
+		Returns:
+			DataFrame to use for further analysis (either filtered by cluster or original)
+		"""
+		if st.session_state.clusters is not None and st.session_state.cluster_df is not None:
+			# Create selection for which cluster to analyze
+			st.markdown("### Cluster Selection")
+
+			cluster_options = ["All Data"]
+			for cluster_id in sorted([c for c in st.session_state.clusters if c >= 0]):
+				cluster_count = len(st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id])
+				cluster_options.append(f"Cluster {cluster_id} (n={cluster_count})")
+
+			selected_option = st.selectbox(
+				"Select cluster to analyze:",
+				options=cluster_options,
+				index=0
+			)
+
+			# Update the selected cluster in session state
+			if selected_option == "All Data":
+				st.session_state.selected_cluster = None
+				working_df = analysis_df
+			else:
+				cluster_id = int(selected_option.split(" ")[1].split("(")[0])
+				st.session_state.selected_cluster = cluster_id
+				working_df = st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id].copy()
+
+				# Display cluster characteristics
+				self._display_cluster_characteristics(cluster_id, working_df, analysis_df, cluster_features)
+
+			return working_df
+		else:
+			return analysis_df
+
+	def _display_cluster_characteristics(self, cluster_id: int, cluster_df: pd.DataFrame,
+										full_df: pd.DataFrame, features: List[str]) -> None:
+		"""
+		Display characteristics of the selected cluster compared to the overall population.
+
+		Args:
+			cluster_id: ID of the selected cluster
+			cluster_df: DataFrame filtered to the selected cluster
+			full_df: Full DataFrame with all data
+			features: Features to compare
+		"""
+		st.markdown(f"### Characteristics of Cluster {cluster_id}")
+
+		# Create summary statistics for this cluster vs. overall population
+		summary_stats = []
+
+		for feature in features:
+			if feature in cluster_df.columns:
+				try:
+					cluster_mean = cluster_df[feature].mean()
+					overall_mean = full_df[feature].mean()
+					diff_pct = ((cluster_mean - overall_mean) / overall_mean * 100) if overall_mean != 0 else 0
+
+					summary_stats.append({
+						"Feature"        : feature,
+						"Cluster Mean"   : f"{cluster_mean:.2f}",
+						"Population Mean": f"{overall_mean:.2f}",
+						"Difference"     : f"{diff_pct:+.1f}%",
+						"Significant"    : abs(diff_pct) > 15
+					})
+				except Exception as e:
+					st.error(f"Error calculating summary statistics: {str(e)}")
+
+		if summary_stats:
+			summary_df = pd.DataFrame(summary_stats)
+
+			# Create a copy of the styling DataFrame to avoid the KeyError
+			styled_df = summary_df.copy()
+
+			# Define the highlight function that uses a custom attribute instead of accessing the DataFrame
+			def highlight_significant(row):
+				is_significant = row['Significant'] if 'Significant' in row else False
+				# Return styling for all columns except 'Significant'
+				return ['background-color: yellow' if is_significant else '' for _ in range(len(row))]
+
+			# Apply styling to all columns, then drop the 'Significant' column for display
+			styled_df = styled_df.style.apply(highlight_significant, axis=1)
+			styled_df.hide(axis="columns", names=["Significant"])
+
+			# Display the styled DataFrame
+			st.table(styled_df)
+			st.info("Highlighted rows indicate features where this cluster differs from the overall population by >15%")
+
+	def _display_correlation_controls(self, df_for_cluster: pd.DataFrame) -> pd.DataFrame:
+		"""
+		Display controls for correlation analysis and perform the analysis.
+
+		Args:
+			df_for_cluster: DataFrame to analyze
+
+		Returns:
+			Filtered DataFrame with outliers removed
+		"""
+		cols = st.columns([2, 3])
+
+		with cols[0]:
+			outlier_threshold = st.number_input(
+				"Impedance Outlier Threshold (Quantile)",
+				min_value = 0.0,
+				max_value = 0.9,
+				value     = 0.0,
+				step      = 0.05,
+				help      = "Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
+			)
+
+		# Get the selected features for analysis
+		features_to_analyze = [
+			self.CN.HIGHEST_FREQ_Z,
+			self.CN.WOUND_AREA,
+			self.CN.CENTER_TEMP,
+			self.CN.OXYGENATION,
+			self.CN.HEMOGLOBIN,
+			self.CN.HEALING_RATE
+		]
+
+		# Filter features that exist in the dataframe
+		features_to_analyze = [f for f in features_to_analyze if f in df_for_cluster.columns]
+
+		# Create a copy of the dataframe with only the features we want to analyze
+		analysis_df = df_for_cluster[features_to_analyze].copy().dropna()
+
+		# Remove outliers if threshold is set
+		if outlier_threshold > 0:
+			for col in analysis_df.columns:
+				q_low       = analysis_df[col].quantile(outlier_threshold)
+				q_high      = analysis_df[col].quantile(1 - outlier_threshold)
+				analysis_df = analysis_df[ (analysis_df[col] >= q_low) & (analysis_df[col] <= q_high) ]
+
+		if analysis_df.empty or len(analysis_df) < 2:
+			st.warning("Not enough data after outlier removal for correlation analysis.")
+			return pd.DataFrame()
+
+		# Calculate correlation matrix
+		corr_matrix = analysis_df.corr()
+
+		# Calculate p-values for correlations
+		p_values = self._calculate_correlation_pvalues(analysis_df)
+
+		# Create correlation heatmap
+		fig = px.imshow(
+			abs(corr_matrix),
+			labels=dict(color="Correlation"),
+			color_continuous_scale="RdBu",
+			aspect="auto",
+			text_auto=".2f",
+			title="Correlation Matrix Heatmap"
+		)
+
+		st.plotly_chart(fig, use_container_width=True)
+
+		# Display detailed statistics
+		st.subheader("Statistical Summary")
+
+		# Create tabs for different statistical views
+		tab1, tab2, tab3 = st.tabs(["Correlation Details", "Descriptive Stats", "Effect Sizes"])
+
+		with tab1:
+			self._display_significant_correlations(features_to_analyze, corr_matrix, p_values)
+
+		with tab2:
+			self._display_descriptive_statistics(analysis_df)
+
+		with tab3:
+			self._display_effect_sizes(analysis_df, features_to_analyze)
+
+		return analysis_df
+
+	def _calculate_correlation_pvalues(self, df: pd.DataFrame) -> pd.DataFrame:
+		"""
+		Calculate p-values for correlations between all columns in the DataFrame.
+
+		Args:
+			df: DataFrame to analyze
+
+		Returns:
+			DataFrame of p-values with the same shape as the correlation matrix
+		"""
+		def calculate_pvalue(x, y):
+			mask = ~(np.isnan(x) | np.isnan(y))
+			if np.sum(mask) < 2:
+				return np.nan
+			return stats.pearsonr(x[mask], y[mask]).pvalue
+
+		return pd.DataFrame(
+			[[  stats.pearsonr(df[col1], df[col2]).pvalue # calculate_pvalue(df[col1], df[col2])
+						for col2 in df.columns]
+						for col1 in df.columns],
+				columns = df.columns,
+				index   = df.columns
+		)
+
+	def _display_significant_correlations(self, features: List[str], corr_matrix: pd.DataFrame, p_values: pd.DataFrame) -> None:
+		"""
+		Display significant correlations between features.
+
+		Args:
+			features: List of feature names
+			corr_matrix: Correlation matrix
+			p_values: Matrix of p-values
+		"""
+		st.markdown("#### Significant Correlations (p < 0.05)")
+		significant_corrs = []
+		for i in range(len(features)):
+			for j in range(i+1, len(features)):
+				if p_values.iloc[i,j] < 0.05:
+					significant_corrs.append({
+						"Feature 1": features[i],
+						"Feature 2": features[j],
+						"Correlation": f"{corr_matrix.iloc[i,j]:.3f}",
+						"p-value": f"{p_values.iloc[i,j]:.3e}"
+					})
+
+		if significant_corrs:
+			st.table(pd.DataFrame(significant_corrs))
+		else:
+			st.info("No significant correlations found.")
+
+	def _display_descriptive_statistics(self, df: pd.DataFrame) -> None:
+		"""
+		Display descriptive statistics for the DataFrame.
+
+		Args:
+			df: DataFrame to analyze
+		"""
+		st.markdown("#### Descriptive Statistics")
+		desc_stats = df.describe()
+		desc_stats.loc["skew"] = df.skew()
+		desc_stats.loc["kurtosis"] = df.kurtosis()
+		st.dataframe(desc_stats)
+
+	def _display_effect_sizes(self, df: pd.DataFrame, features: List[str]) -> None:
+		"""
+		Display effect sizes relative to impedance.
+
+		Args:
+			df: DataFrame to analyze
+			features: List of feature names
+		"""
+		st.markdown("#### Effect Sizes (Cohen's d) relative to Impedance")
+
+		effect_sizes = []
+		impedance_col = "Skin Impedance (kOhms) - Z"
+
+		if impedance_col in features:
+			for col in features:
+				if col != impedance_col:
+					# Calculate Cohen's d
+					d = (df[col].mean() - df[impedance_col].mean()) / \
+						np.sqrt((df[col].var() + df[impedance_col].var()) / 2)
+
+					effect_sizes.append({
+						"Feature": col,
+						"Cohen's d": f"{d:.3f}",
+						"Effect Size": "Large" if abs(d) > 0.8 else "Medium" if abs(d) > 0.5 else "Small",
+						"95% CI": f"[{d-1.96*np.sqrt(4/len(df)):.3f}, {d+1.96*np.sqrt(4/len(df)):.3f}]"
+					})
+
+			if effect_sizes:
+				st.table(pd.DataFrame(effect_sizes))
+			else:
+				st.info("No effect sizes could be calculated.")
+		else:
+			st.info("Impedance measurements not available for effect size calculation.")
+
+	def _render_scatter_plot(self, df: pd.DataFrame) -> None:
+		"""
+		Render a scatter plot showing the relationship between impedance and healing rate.
+
+		Args:
+			df: DataFrame to plot
+		"""
+		# Create a copy to avoid modifying the original dataframe
+		plot_df = df.copy()
+
+		# Handle missing values in Calculated Wound Area
+		if self.CN.WOUND_AREA in plot_df.columns:
+			# Fill NaN with the mean, or 1 if all values are NaN
+			mean_area = plot_df[self.CN.WOUND_AREA].mean()
+			plot_df[self.CN.WOUND_AREA] = plot_df[self.CN.WOUND_AREA].fillna(mean_area if pd.notnull(mean_area) else 1)
+
+		# Define hover data columns we want to show if available
+		hover_columns = [self.CN.RECORD_ID, self.CN.EVENT_NAME, self.CN.WOUND_TYPE]
+		available_hover = [col for col in hover_columns if col in plot_df.columns]
+
+		fig = px.scatter(
+			plot_df,
+			x=self.CN.HIGHEST_FREQ_Z,
+			y=self.CN.HEALING_RATE,
+			color=self.CN.DIABETES if self.CN.DIABETES in plot_df.columns else None,
+			size=self.CN.WOUND_AREA if self.CN.WOUND_AREA in plot_df.columns else None,
+			size_max=30,
+			hover_data=available_hover,
+			title="Impedance vs Healing Rate Correlation"
+		)
+
+		fig.update_layout(
+			xaxis_title="Impedance Z (kOhms)",
+			yaxis_title="Healing Rate (% reduction per visit)"
+		)
+
+		st.plotly_chart(fig, use_container_width=True)
+
+	def _render_population_charts(self, df: pd.DataFrame) -> None:
+		"""
+		Render charts showing population-level impedance statistics.
+
+		Args:
+			df: DataFrame containing impedance measurements and visit information
+		"""
+		# Get prepared statistics
+		avg_impedance, avg_by_type = ImpedanceAnalyzer.prepare_population_stats(df=df)
+
+		col1, col2 = st.columns(2)
+
+		with col1:
+			st.subheader("Impedance Components Over Time")
+			fig1 = px.line(
+				avg_impedance,
+				x=self.CN.VISIT_NUMBER,
+				y=[self.CN.HIGHEST_FREQ_Z, self.CN.HIGHEST_FREQ_Z_PRIME, self.CN.HIGHEST_FREQ_Z_DOUBLE_PRIME],
+				title="Average Impedance Components by Visit",
+				markers=True
+			)
+			fig1.update_layout(xaxis_title="Visit Number", yaxis_title="Impedance (kOhms)")
+			st.plotly_chart(fig1, use_container_width=True)
+
+		with col2:
+			st.subheader("Impedance by Wound Type")
+			fig2 = px.bar(
+				avg_by_type,
+				x=self.CN.WOUND_TYPE,
+				y=self.CN.HIGHEST_FREQ_Z,
+				title="Average Impedance by Wound Type",
+				color=self.CN.WOUND_TYPE
+			)
+			fig2.update_layout(xaxis_title="Wound Type", yaxis_title="Average Impedance Z (kOhms)")
+			st.plotly_chart(fig2, use_container_width=True)
 
 
 class PatientImpedanceRenderer:
-    """
-    Renderer for patient-level impedance analysis.
+	"""
+	Renderer for patient-level impedance analysis.
 
-    This class handles the rendering of patient-level impedance analysis,
-    including overview, clinical analysis, and advanced interpretation tabs.
+	This class handles the rendering of patient-level impedance analysis,
+	including overview, clinical analysis, and advanced interpretation tabs.
 
-    Attributes:
-        visits (List[VisitsDataType]): List of visit data for the patient
-    """
+	Attributes:
+		visits (List[VisitsDataType]): List of visit data for the patient
+	"""
 
-    def __init__(self, visits: List[VisitsDataType]):
-        """
-        Initialize the PatientImpedanceRenderer with visit data.
+	def __init__(self, visits: List[VisitsDataType]):
+		"""
+		Initialize the PatientImpedanceRenderer with visit data.
 
-        Args:
-            visits: List of visit data for the patient
-        """
-        self.visits = visits
-        self.visit_date_tag = WoundDataProcessor.get_visit_date_tag(visits)
+		Args:
+			visits: List of visit data for the patient
+		"""
+		self.visits = visits
+		self.visit_date_tag = WoundDataProcessor.get_visit_date_tag(visits)
 
-    def render(self) -> None:
-        """
-        Render the patient-level impedance analysis section.
+	def render(self) -> None:
+		"""
+		Render the patient-level impedance analysis section.
 
-        This method creates a tabbed interface to display different perspectives
-        on a patient's impedance data, organized into Overview, Clinical Analysis,
-        and Advanced Interpretation tabs.
-        """
-        # Create tabs for different analysis views
-        tab1, tab2, tab3 = st.tabs([
-            "Overview",
-            "Clinical Analysis",
-            "Advanced Interpretation"
-        ])
+		This method creates a tabbed interface to display different perspectives
+		on a patient's impedance data, organized into Overview, Clinical Analysis,
+		and Advanced Interpretation tabs.
+		"""
+		# Create tabs for different analysis views
+		tab1, tab2, tab3 = st.tabs([
+			"Overview",
+			"Clinical Analysis",
+			"Advanced Interpretation"
+		])
 
-        with tab1:
-            self._render_overview()
+		with tab1:
+			self._render_overview()
 
-        with tab2:
-            self._render_clinical_analysis()
+		with tab2:
+			self._render_clinical_analysis()
 
-        with tab3:
-            self._render_advanced_analysis()
+		with tab3:
+			self._render_advanced_analysis()
 
-    def _render_overview(self) -> None:
-        """
-        Render the overview section for patient impedance measurements.
+	def _render_overview(self) -> None:
+		"""
+		Render the overview section for patient impedance measurements.
 
-        This method creates a section showing impedance measurements over time,
-        allowing users to view different types of impedance data.
-        """
-        st.subheader("Impedance Measurements Over Time")
+		This method creates a section showing impedance measurements over time,
+		allowing users to view different types of impedance data.
+		"""
+		st.subheader("Impedance Measurements Over Time")
 
-        # Add measurement mode selector
-        measurement_mode = st.selectbox(
-            "Select Measurement Mode:",
-            ["Absolute Impedance (|Z|)", "Resistance", "Capacitance"],
-            key="impedance_mode_selector"
-        )
+		# Add measurement mode selector
+		measurement_mode = st.selectbox(
+			"Select Measurement Mode:",
+			["Absolute Impedance (|Z|)", "Resistance", "Capacitance"],
+			key="impedance_mode_selector"
+		)
 
-        # Create impedance chart with selected mode
-        fig = self._create_impedance_chart(measurement_mode=measurement_mode)
-        st.plotly_chart(fig, use_container_width=True)
+		# Create impedance chart with selected mode
+		fig = self._create_impedance_chart(measurement_mode=measurement_mode)
+		st.plotly_chart(fig, use_container_width=True)
 
-        # Logic behind analysis
-        st.markdown("""
-        <div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
-        <p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
-        <strong>Measurement Types:</strong><br>
-        • <strong>|Z|</strong>: Total opposition to current flow<br>
-        • <strong>Resistance</strong>: Opposition from ionic content<br>
-        • <strong>Capacitance</strong>: Opposition from cell membranes<br><br>
-        <strong>Frequency Effects:</strong><br>
-        • <strong>Low (100Hz)</strong>: Measures extracellular fluid<br>
-        • <strong>High (80000Hz)</strong>: Measures both intra/extracellular properties
-        </div>
-        """, unsafe_allow_html=True)
+		# Logic behind analysis
+		st.markdown("""
+		<div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
+		<p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
+		<strong>Measurement Types:</strong><br>
+		• <strong>|Z|</strong>: Total opposition to current flow<br>
+		• <strong>Resistance</strong>: Opposition from ionic content<br>
+		• <strong>Capacitance</strong>: Opposition from cell membranes<br><br>
+		<strong>Frequency Effects:</strong><br>
+		• <strong>Low (100Hz)</strong>: Measures extracellular fluid<br>
+		• <strong>High (80000Hz)</strong>: Measures both intra/extracellular properties
+		</div>
+		""", unsafe_allow_html=True)
 
-    def _render_clinical_analysis(self) -> None:
-        """
-        Render the bioimpedance clinical analysis section for a patient's wound data.
+	def _render_clinical_analysis(self) -> None:
+		"""
+		Render the bioimpedance clinical analysis section for a patient's wound data.
 
-        This method creates a tabbed interface showing clinical analysis for each visit.
-        For each visit (except the first one), it performs a comparative analysis with
-        the previous visit to track changes in wound healing metrics.
-        """
-        st.subheader("Bioimpedance Clinical Analysis")
+		This method creates a tabbed interface showing clinical analysis for each visit.
+		For each visit (except the first one), it performs a comparative analysis with
+		the previous visit to track changes in wound healing metrics.
+		"""
+		st.subheader("Bioimpedance Clinical Analysis")
 
-        # Only analyze if we have at least two visits
-        if len(self.visits) < 2:
-            st.warning("At least two visits are required for comprehensive clinical analysis")
-            return
+		# Only analyze if we have at least two visits
+		if len(self.visits) < 2:
+			st.warning("At least two visits are required for comprehensive clinical analysis")
+			return
 
-        # Create tabs for each visit
-        visit_tabs = st.tabs([f"{visit.get(self.visit_date_tag, 'N/A')}" for visit in self.visits])
+		# Create tabs for each visit
+		visit_tabs = st.tabs([f"{visit.get(self.visit_date_tag, 'N/A')}" for visit in self.visits])
 
-        for visit_idx, visit_tab in enumerate(visit_tabs):
-            with visit_tab:
-                # Get current and previous visit data
-                current_visit = self.visits[visit_idx]
-                previous_visit = self.visits[visit_idx-1] if visit_idx > 0 else None
+		for visit_idx, visit_tab in enumerate(visit_tabs):
+			with visit_tab:
+				# Get current and previous visit data
+				current_visit = self.visits[visit_idx]
+				previous_visit = self.visits[visit_idx-1] if visit_idx > 0 else None
 
-                try:
-                    # Generate comprehensive clinical analysis
-                    analysis = ImpedanceAnalyzer.generate_clinical_analysis(
-                        current_visit=current_visit,
-                        previous_visit=previous_visit
-                    )
+				try:
+					# Generate comprehensive clinical analysis
+					analysis = ImpedanceAnalyzer.generate_clinical_analysis(
+						current_visit=current_visit,
+						previous_visit=previous_visit
+					)
 
-                    # Display results in a structured layout
-                    self._display_clinical_analysis_results(
-                        analysis=analysis,
-                        has_previous_visit=previous_visit is not None
-                    )
-                except Exception as e:
-                    st.error(f"Error analyzing visit data: {str(e)}")
-                    st.error(traceback.format_exc())
+					# Display results in a structured layout
+					self._display_clinical_analysis_results(
+						analysis=analysis,
+						has_previous_visit=previous_visit is not None
+					)
+				except Exception as e:
+					st.error(f"Error analyzing visit data: {str(e)}")
+					st.error(traceback.format_exc())
 
-    def _render_advanced_analysis(self) -> None:
-        """
-        Render the advanced bioelectrical analysis section for a patient's wound data.
+	def _render_advanced_analysis(self) -> None:
+		"""
+		Render the advanced bioelectrical analysis section for a patient's wound data.
 
-        This method displays comprehensive bioelectrical analysis results including healing
-        trajectory, wound healing stage classification, tissue electrical properties, and
-        clinical insights derived from the impedance data.
-        """
-        st.subheader("Advanced Bioelectrical Interpretation")
+		This method displays comprehensive bioelectrical analysis results including healing
+		trajectory, wound healing stage classification, tissue electrical properties, and
+		clinical insights derived from the impedance data.
+		"""
+		st.subheader("Advanced Bioelectrical Interpretation")
 
-        if len(self.visits) < 3:
-            st.warning("At least three visits are required for advanced analysis")
-            return
+		if len(self.visits) < 3:
+			st.warning("At least three visits are required for advanced analysis")
+			return
 
-        try:
-            # Generate advanced analysis
-            analysis = ImpedanceAnalyzer.generate_advanced_analysis(visits=self.visits)
+		try:
+			# Generate advanced analysis
+			analysis = ImpedanceAnalyzer.generate_advanced_analysis(visits=self.visits)
 
-            # Display healing trajectory analysis if available
-            if 'healing_trajectory' in analysis and analysis['healing_trajectory']['status'] == 'analyzed':
-                self._display_healing_trajectory(trajectory=analysis['healing_trajectory'])
+			# Display healing trajectory analysis if available
+			if 'healing_trajectory' in analysis and analysis['healing_trajectory']['status'] == 'analyzed':
+				self._display_healing_trajectory(trajectory=analysis['healing_trajectory'])
 
-            # Display wound healing stage classification
-            self._display_wound_healing_stage(healing_stage=analysis['healing_stage'])
+			# Display wound healing stage classification
+			self._display_wound_healing_stage(healing_stage=analysis['healing_stage'])
 
-            # Display Cole-Cole parameters if available
-            if 'cole_parameters' in analysis and analysis['cole_parameters']:
-                self._display_tissue_electrical_properties(cole_params=analysis['cole_parameters'])
+			# Display Cole-Cole parameters if available
+			if 'cole_parameters' in analysis and analysis['cole_parameters']:
+				self._display_tissue_electrical_properties(cole_params=analysis['cole_parameters'])
 
-            # Display clinical insights
-            self._display_clinical_insights(insights=analysis['insights'])
+			# Display clinical insights
+			self._display_clinical_insights(insights=analysis['insights'])
 
-            # Reference information
-            self._display_advanced_analysis_info()
-        except Exception as e:
-            st.error(f"Error performing advanced analysis: {str(e)}")
-            st.error(traceback.format_exc())
+			# Reference information
+			self._display_advanced_analysis_info()
+		except Exception as e:
+			st.error(f"Error performing advanced analysis: {str(e)}")
+			st.error(traceback.format_exc())
 
-    def _display_advanced_analysis_info(self) -> None:
-        """
-        Display the informational box for the advanced analysis tab.
-        """
-        st.markdown("""
-            <div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
-            <p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
+	def _display_advanced_analysis_info(self) -> None:
+		"""
+		Display the informational box for the advanced analysis tab.
+		"""
+		st.markdown("""
+			<div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
+			<p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
 
-            <p style="font-weight:bold; margin-bottom:5px;">Frequency Significance:</p>
-            <ul style="margin-top:0; padding-left:20px;">
-            <li><strong>Low Frequency (100Hz):</strong> Primarily reflects extracellular fluid and tissue properties</li>
-            <li><strong>Center Frequency:</strong> Reflects the maximum reactance point, varies based on tissue composition</li>
-            <li><strong>High Frequency (80000Hz):</strong> Penetrates cell membranes, reflects total tissue properties</li>
-            </ul>
+			<p style="font-weight:bold; margin-bottom:5px;">Frequency Significance:</p>
+			<ul style="margin-top:0; padding-left:20px;">
+			<li><strong>Low Frequency (100Hz):</strong> Primarily reflects extracellular fluid and tissue properties</li>
+			<li><strong>Center Frequency:</strong> Reflects the maximum reactance point, varies based on tissue composition</li>
+			<li><strong>High Frequency (80000Hz):</strong> Penetrates cell membranes, reflects total tissue properties</li>
+			</ul>
 
-            <p style="font-weight:bold; margin-bottom:5px;">Clinical Correlations:</p>
-            <ul style="margin-top:0; padding-left:20px;">
-            <li><strong>Decreasing High-Frequency Impedance:</strong> Often associated with improved healing</li>
-            <li><strong>Increasing Low-to-High Frequency Ratio:</strong> May indicate inflammation or infection</li>
-            <li><strong>Decreasing Phase Angle:</strong> May indicate deterioration in cellular health</li>
-            <li><strong>Increasing Alpha Parameter:</strong> Often indicates increasing tissue heterogeneity</li>
-            </ul>
+			<p style="font-weight:bold; margin-bottom:5px;">Clinical Correlations:</p>
+			<ul style="margin-top:0; padding-left:20px;">
+			<li><strong>Decreasing High-Frequency Impedance:</strong> Often associated with improved healing</li>
+			<li><strong>Increasing Low-to-High Frequency Ratio:</strong> May indicate inflammation or infection</li>
+			<li><strong>Decreasing Phase Angle:</strong> May indicate deterioration in cellular health</li>
+			<li><strong>Increasing Alpha Parameter:</strong> Often indicates increasing tissue heterogeneity</li>
+			</ul>
 
-            <p style="font-weight:bold; margin-bottom:5px;">Reference Ranges:</p>
-            <ul style="margin-top:0; padding-left:20px;">
-            <li><strong>Healthy Tissue Low/High Ratio:</strong> 5-12</li>
-            <li><strong>Optimal Phase Angle:</strong> 5-7 degrees</li>
-            <li><strong>Typical Alpha Range:</strong> 0.6-0.8</li>
-            </ul>
-            </div>
-            """, unsafe_allow_html=True)
+			<p style="font-weight:bold; margin-bottom:5px;">Reference Ranges:</p>
+			<ul style="margin-top:0; padding-left:20px;">
+			<li><strong>Healthy Tissue Low/High Ratio:</strong> 5-12</li>
+			<li><strong>Optimal Phase Angle:</strong> 5-7 degrees</li>
+			<li><strong>Typical Alpha Range:</strong> 0.6-0.8</li>
+			</ul>
+			</div>
+			""", unsafe_allow_html=True)
 
 
 	# --- Clinical Analysis Display Helpers ---
 
-    def _display_clinical_analysis_results(self, analysis: Dict[str, Any], has_previous_visit: bool) -> None:
-        """
-        Display the clinical analysis results in a structured layout.
+	def _display_clinical_analysis_results(self, analysis: Dict[str, Any], has_previous_visit: bool) -> None:
+		"""
+		Display the clinical analysis results in a structured layout.
 
-        Args:
-            analysis: Dictionary containing the analysis results
-            has_previous_visit: Flag indicating whether there is data from a previous visit
-        """
-        # Display Tissue Health and Infection Risk in a two-column layout
-        col1, col2 = st.columns(2)
+		Args:
+			analysis: Dictionary containing the analysis results
+			has_previous_visit: Flag indicating whether there is data from a previous visit
+		"""
+		# Display Tissue Health and Infection Risk in a two-column layout
+		col1, col2 = st.columns(2)
 
-        with col1:
-            self._display_tissue_health_assessment(analysis['tissue_health'])
+		with col1:
+			self._display_tissue_health_assessment(analysis['tissue_health'])
 
-        with col2:
-            self._display_infection_risk_assessment(analysis['infection_risk'])
+		with col2:
+			self._display_infection_risk_assessment(analysis['infection_risk'])
 
-        st.markdown('---')
+		st.markdown('---')
 
-        # Display Tissue Composition and Changes in a two-column layout
-        col1, col2 = st.columns(2)
+		# Display Tissue Composition and Changes in a two-column layout
+		col1, col2 = st.columns(2)
 
-        with col2:
-            self._display_tissue_composition_analysis(analysis['frequency_response'])
+		with col2:
+			self._display_tissue_composition_analysis(analysis['frequency_response'])
 
-        with col1:
-            if has_previous_visit and 'changes' in analysis:
-                self._display_visit_changes(
-                    analysis['changes'],
-                    analysis['significant_changes']
-                )
-            else:
-                st.info("This is the first visit. No previous data available for comparison.")
+		with col1:
+			if has_previous_visit and 'changes' in analysis:
+				self._display_visit_changes(
+					analysis['changes'],
+					analysis['significant_changes']
+				)
+			else:
+				st.info("This is the first visit. No previous data available for comparison.")
 
-        self._display_clinical_analysis_info()
+		self._display_clinical_analysis_info()
 
-    def _display_tissue_health_assessment(self, tissue_health: Tuple[Optional[float], str]) -> None:
-        """
-        Display the tissue health assessment.
+	def _display_tissue_health_assessment(self, tissue_health: Tuple[Optional[float], str]) -> None:
+		"""
+		Display the tissue health assessment.
 
-        Args:
-            tissue_health: Tuple of (health_score, health_interp)
-        """
-        st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios.")
+		Args:
+			tissue_health: Tuple of (health_score, health_interp)
+		"""
+		st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios.")
 
-        health_score, health_interp = tissue_health
+		health_score, health_interp = tissue_health
 
-        if health_score is not None:
-            # Create a color scale for the health score
-            color = "red" if health_score < 40 else "orange" if health_score < 60 else "green"
-            st.markdown(f"**Tissue Health Index:** <span style='color:{color};font-weight:bold'>{health_score:.1f}/100</span>", unsafe_allow_html=True)
-            st.markdown(f"**Interpretation:** {health_interp}")
-        else:
-            st.warning("Insufficient data for tissue health calculation")
+		if health_score is not None:
+			# Create a color scale for the health score
+			color = "red" if health_score < 40 else "orange" if health_score < 60 else "green"
+			st.markdown(f"**Tissue Health Index:** <span style='color:{color};font-weight:bold'>{health_score:.1f}/100</span>", unsafe_allow_html=True)
+			st.markdown(f"**Interpretation:** {health_interp}")
+		else:
+			st.warning("Insufficient data for tissue health calculation")
 
-    def _display_infection_risk_assessment(self, infection_risk: Dict[str, Any]) -> None:
-        """
-        Display the infection risk assessment information.
+	def _display_infection_risk_assessment(self, infection_risk: Dict[str, Any]) -> None:
+		"""
+		Display the infection risk assessment information.
 
-        Args:
-            infection_risk: Dictionary containing infection risk assessment results
-        """
-        st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on impedance measurements.")
+		Args:
+			infection_risk: Dictionary containing infection risk assessment results
+		"""
+		st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on impedance measurements.")
 
-        risk_score = infection_risk["risk_score"]
-        risk_level = infection_risk["risk_level"]
+		risk_score = infection_risk["risk_score"]
+		risk_level = infection_risk["risk_level"]
 
-        # Create a color scale for the risk score
-        risk_color = "green" if risk_score < 30 else "orange" if risk_score < 60 else "red"
-        st.markdown(f"**Infection Risk Score:** <span style='color:{risk_color};font-weight:bold'>{risk_score:.1f}/100</span>", unsafe_allow_html=True)
-        st.markdown(f"**Risk Level:** {risk_level}")
+		# Create a color scale for the risk score
+		risk_color = "green" if risk_score < 30 else "orange" if risk_score < 60 else "red"
+		st.markdown(f"**Infection Risk Score:** <span style='color:{risk_color};font-weight:bold'>{risk_score:.1f}/100</span>", unsafe_allow_html=True)
+		st.markdown(f"**Risk Level:** {risk_level}")
 
-        # Display contributing factors if any
-        factors = infection_risk["contributing_factors"]
-        if factors:
-            st.markdown(f"**Contributing Factors:** {', '.join(factors)}")
+		# Display contributing factors if any
+		factors = infection_risk["contributing_factors"]
+		if factors:
+			st.markdown(f"**Contributing Factors:** {', '.join(factors)}")
 
-    def _display_tissue_composition_analysis(self, freq_response: Dict[str, Any]) -> None:
-        """
-        Display the tissue composition analysis results based on frequency response data.
+	def _display_tissue_composition_analysis(self, freq_response: Dict[str, Any]) -> None:
+		"""
+		Display the tissue composition analysis results based on frequency response data.
 
-        Args:
-            freq_response: Dictionary containing frequency response analysis results
-        """
-        st.markdown("### Tissue Composition Analysis", help="This analysis utilizes bioelectrical impedance analysis principles.")
+		Args:
+			freq_response: Dictionary containing frequency response analysis results
+		"""
+		st.markdown("### Tissue Composition Analysis", help="This analysis utilizes bioelectrical impedance analysis principles.")
 
-        # Display tissue composition analysis from frequency response
-        st.markdown("#### Analysis Results:")
-        if 'alpha_dispersion' in freq_response and 'beta_dispersion' in freq_response:
-            st.markdown(f"**Alpha Dispersion:** {freq_response['alpha_dispersion']:.3f}")
-            st.markdown(f"**Beta Dispersion:** {freq_response['beta_dispersion']:.3f}")
+		# Display tissue composition analysis from frequency response
+		st.markdown("#### Analysis Results:")
+		if 'alpha_dispersion' in freq_response and 'beta_dispersion' in freq_response:
+			st.markdown(f"**Alpha Dispersion:** {freq_response['alpha_dispersion']:.3f}")
+			st.markdown(f"**Beta Dispersion:** {freq_response['beta_dispersion']:.3f}")
 
-        # Display interpretation with more emphasis
-        st.markdown(f"**Tissue Composition Interpretation:** {freq_response['interpretation']}")
+		# Display interpretation with more emphasis
+		st.markdown(f"**Tissue Composition Interpretation:** {freq_response['interpretation']}")
 
-    def _display_visit_changes(self, changes: Dict[str, float], significant_changes: Dict[str, bool]) -> None:
-        """
-        Display analysis of changes between visits.
+	def _display_visit_changes(self, changes: Dict[str, float], significant_changes: Dict[str, bool]) -> None:
+		"""
+		Display analysis of changes between visits.
 
-        Args:
-            changes: Dictionary mapping parameter names to percentage changes
-            significant_changes: Dictionary mapping parameter names to boolean values
-                indicating clinically significant changes
-        """
-        st.markdown("#### Changes Since Previous Visit", help="The changes since previous visit are based on bioelectrical impedance analysis principles.")
+		Args:
+			changes: Dictionary mapping parameter names to percentage changes
+			significant_changes: Dictionary mapping parameter names to boolean values
+				indicating clinically significant changes
+		"""
+		st.markdown("#### Changes Since Previous Visit", help="The changes since previous visit are based on bioelectrical impedance analysis principles.")
 
-        if not changes:
-            st.info("No comparable data from previous visit")
-            return
+		if not changes:
+			st.info("No comparable data from previous visit")
+			return
 
-        # Create a structured data dictionary to organize by frequency and parameter
-        data_by_freq = {
-            "Low Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
-            "Mid Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
-            "High Freq": {"Z": None, "Resistance": None, "Capacitance": None},
-        }
+		# Create a structured data dictionary to organize by frequency and parameter
+		data_by_freq = {
+			"Low Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
+			"Mid Freq" : {"Z": None, "Resistance": None, "Capacitance": None},
+			"High Freq": {"Z": None, "Resistance": None, "Capacitance": None},
+		}
 
-        # Fill in the data from changes
-        for key, change in changes.items():
-            param_parts = key.split('_')
-            param_name = param_parts[0].capitalize()
-            freq_type = ' '.join(param_parts[1:]).replace('_', ' ')
+		# Fill in the data from changes
+		for key, change in changes.items():
+			param_parts = key.split('_')
+			param_name = param_parts[0].capitalize()
+			freq_type = ' '.join(param_parts[1:]).replace('_', ' ')
 
-            # Map to our standardized names
-            if 'low frequency' in freq_type:
-                freq_name = "Low Freq"
-            elif 'center frequency' in freq_type:
-                freq_name = "Mid Freq"
-            elif 'high frequency' in freq_type:
-                freq_name = "High Freq"
-            else:
-                continue
+			# Map to our standardized names
+			if 'low frequency' in freq_type:
+				freq_name = "Low Freq"
+			elif 'center frequency' in freq_type:
+				freq_name = "Mid Freq"
+			elif 'high frequency' in freq_type:
+				freq_name = "High Freq"
+			else:
+				continue
 
-            # Check if this change is significant
-            is_significant = significant_changes.get(key, False)
+			# Check if this change is significant
+			is_significant = significant_changes.get(key, False)
 
-            # Format as percentage with appropriate sign and add asterisk if significant
-            if change is not None:
-                formatted_change = f"{change*100:+.1f}%"
-                if is_significant:
-                    formatted_change = f"{formatted_change}*"
-            else:
-                formatted_change = "N/A"
+			# Format as percentage with appropriate sign and add asterisk if significant
+			if change is not None:
+				formatted_change = f"{change*100:+.1f}%"
+				if is_significant:
+					formatted_change = f"{formatted_change}*"
+			else:
+				formatted_change = "N/A"
 
-            # Store in our data structure
-            if param_name in ["Z", "Resistance", "Capacitance"]:
-                data_by_freq[freq_name][param_name] = formatted_change
+			# Store in our data structure
+			if param_name in ["Z", "Resistance", "Capacitance"]:
+				data_by_freq[freq_name][param_name] = formatted_change
 
-        # Convert to DataFrame for display
-        change_df = pd.DataFrame(data_by_freq).T  # Transpose to get frequencies as rows
+		# Convert to DataFrame for display
+		change_df = pd.DataFrame(data_by_freq).T  # Transpose to get frequencies as rows
 
-        # Reorder columns if needed
-        if all(col in change_df.columns for col in ["Z", "Resistance", "Capacitance"]):
-            change_df = change_df[["Z", "Resistance", "Capacitance"]]
+		# Reorder columns if needed
+		if all(col in change_df.columns for col in ["Z", "Resistance", "Capacitance"]):
+			change_df = change_df[["Z", "Resistance", "Capacitance"]]
 
-        # Add styling
-        def color_cells(val):
-            try:
-                if val is None or val == "N/A":
-                    return ''
+		# Add styling
+		def color_cells(val):
+			try:
+				if val is None or val == "N/A":
+					return ''
 
-                # Check if there's an asterisk and remove it for color calculation
-                num_str = val.replace('*', '').replace('%', '')
+				# Check if there's an asterisk and remove it for color calculation
+				num_str = val.replace('*', '').replace('%', '')
 
-                # Get numeric value by stripping % and sign
-                num_val = float(num_str)
+				# Get numeric value by stripping % and sign
+				num_val = float(num_str)
 
-                # Determine colors based on value
-                if num_val > 0:
-                    return 'color: #FF4B4B'  # Red for increases
-                else:
-                    return 'color: #00CC96'  # Green for decreases
-            except Exception:
-                return ''
+				# Determine colors based on value
+				if num_val > 0:
+					return 'color: #FF4B4B'  # Red for increases
+				else:
+					return 'color: #00CC96'  # Green for decreases
+			except Exception:
+				return ''
 
-        # Apply styling
-        styled_df = change_df.style.map(color_cells).set_properties(**{
-            'text-align': 'center',
-            'font-size': '14px',
-            'border': '1px solid #EEEEEE'
-        })
+		# Apply styling
+		styled_df = change_df.style.map(color_cells).set_properties(**{
+			'text-align': 'center',
+			'font-size': '14px',
+			'border': '1px solid #EEEEEE'
+		})
 
-        # Display as a styled table with a caption
-        st.write("**Percentage Change by Parameter and Frequency:**")
-        st.dataframe(styled_df)
-        st.write("   (*) indicates clinically significant change")
+		# Display as a styled table with a caption
+		st.write("**Percentage Change by Parameter and Frequency:**")
+		st.dataframe(styled_df)
+		st.write("   (*) indicates clinically significant change")
 
-    def _display_clinical_analysis_info(self) -> None:
-        """
-        Display the informational box for the clinical analysis tab.
-        """
-        st.markdown("""
-            <div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
-            <p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
-            <p>Color indicates direction of change: <span style="color:#FF4B4B">red = increase</span>, <span style="color:#00CC96">green = decrease</span>.<br>
-            Asterisk (*) marks changes exceeding clinical thresholds: Resistance >15%, Capacitance >20%, Z >15%.</p>
-            </div>
-            """, unsafe_allow_html=True)
+	def _display_clinical_analysis_info(self) -> None:
+		"""
+		Display the informational box for the clinical analysis tab.
+		"""
+		st.markdown("""
+			<div style="margin-top:10px; padding:15px; background-color:#f8f9fa; border-left:4px solid #6c757d; font-size:0.9em;">
+			<p style="margin-top:0; color:#666; font-weight:bold;">ABOUT THIS ANALYSIS:</p>
+			<p>Color indicates direction of change: <span style="color:#FF4B4B">red = increase</span>, <span style="color:#00CC96">green = decrease</span>.<br>
+			Asterisk (*) marks changes exceeding clinical thresholds: Resistance >15%, Capacitance >20%, Z >15%.</p>
+			</div>
+			""", unsafe_allow_html=True)
 
 
 	# --- Advanced Analysis Display Helpers ---
 
-    def _display_healing_trajectory(self, trajectory: Dict[str, Any]) -> None:
-        """
-        Display the healing trajectory analysis with charts and statistics.
+	def _display_healing_trajectory(self, trajectory: Dict[str, Any]) -> None:
+		"""
+		Display the healing trajectory analysis with charts and statistics.
 
-        Args:
-            trajectory: Dictionary containing healing trajectory data
-        """
-        st.markdown("### Healing Trajectory Analysis")
+		Args:
+			trajectory: Dictionary containing healing trajectory data
+		"""
+		st.markdown("### Healing Trajectory Analysis")
 
-        # Get trajectory data
-        dates = trajectory['dates']
-        values = trajectory['values']
+		# Get trajectory data
+		dates = trajectory['dates']
+		values = trajectory['values']
 
-        # Create trajectory chart
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=list(range(len(dates))),
-            y=values,
-            mode='lines+markers',
-            name='Impedance',
-            line=dict(color='blue'),
-            hovertemplate='%{y:.1f} kOhms'
-        ))
+		# Create trajectory chart
+		fig = go.Figure()
+		fig.add_trace(go.Scatter(
+			x=list(range(len(dates))),
+			y=values,
+			mode='lines+markers',
+			name='Impedance',
+			line=dict(color='blue'),
+			hovertemplate='%{y:.1f} kOhms'
+		))
 
-        # Add trend line
-        x = np.array(range(len(values)))
-        y = trajectory['slope'] * x + np.mean(values)
-        fig.add_trace(go.Scatter(
-            x=x,
-            y=y,
-            mode='lines',
-            name='Trend',
-            line=dict(color='red', dash='dash')
-        ))
+		# Add trend line
+		x = np.array(range(len(values)))
+		y = trajectory['slope'] * x + np.mean(values)
+		fig.add_trace(go.Scatter(
+			x=x,
+			y=y,
+			mode='lines',
+			name='Trend',
+			line=dict(color='red', dash='dash')
+		))
 
-        fig.update_layout(
-            title="Impedance Trend Over Time",
-            xaxis_title="Visit Number",
-            yaxis_title="High-Frequency Impedance (kOhms)",
-            hovermode="x unified"
-        )
+		fig.update_layout(
+			title="Impedance Trend Over Time",
+			xaxis_title="Visit Number",
+			yaxis_title="High-Frequency Impedance (kOhms)",
+			hovermode="x unified"
+		)
 
-        st.plotly_chart(fig, use_container_width=True)
+		st.plotly_chart(fig, use_container_width=True)
 
-        # Display statistical results
-        col1, col2 = st.columns(2)
-        with col1:
-            slope_color = "green" if trajectory['slope'] < 0 else "red"
-            st.markdown(f"**Trend Slope:** <span style='color:{slope_color}'>{trajectory['slope']:.4f}</span>", unsafe_allow_html=True)
-            st.markdown(f"**Statistical Significance:** p = {trajectory['p_value']:.4f}")
+		# Display statistical results
+		col1, col2 = st.columns(2)
+		with col1:
+			slope_color = "green" if trajectory['slope'] < 0 else "red"
+			st.markdown(f"**Trend Slope:** <span style='color:{slope_color}'>{trajectory['slope']:.4f}</span>", unsafe_allow_html=True)
+			st.markdown(f"**Statistical Significance:** p = {trajectory['p_value']:.4f}")
 
-        with col2:
-            st.markdown(f"**R² Value:** {trajectory['r_squared']:.4f}")
-            st.info(trajectory['interpretation'])
+		with col2:
+			st.markdown(f"**R² Value:** {trajectory['r_squared']:.4f}")
+			st.info(trajectory['interpretation'])
 
-        st.markdown("----")
+		st.markdown("----")
 
-    def _display_wound_healing_stage(self, healing_stage: Dict[str, Any]) -> None:
-        """
-        Display wound healing stage classification.
+	def _display_wound_healing_stage(self, healing_stage: Dict[str, Any]) -> None:
+		"""
+		Display wound healing stage classification.
 
-        Args:
-            healing_stage: Dictionary containing wound healing stage analysis
-        """
-        st.markdown("### Wound Healing Stage Classification")
+		Args:
+			healing_stage: Dictionary containing wound healing stage analysis
+		"""
+		st.markdown("### Wound Healing Stage Classification")
 
-        stage_colors = {
-            "Inflammatory" : "red",
-            "Proliferative": "orange",
-            "Remodeling"   : "green"
-        }
+		stage_colors = {
+			"Inflammatory" : "red",
+			"Proliferative": "orange",
+			"Remodeling"   : "green"
+		}
 
-        stage_color = stage_colors.get(healing_stage['stage'], "blue")
-        st.markdown(f"**Current Stage:** <span style='color:{stage_color};font-weight:bold'>{healing_stage['stage']}</span> (Confidence: {healing_stage['confidence']})", unsafe_allow_html=True)
+		stage_color = stage_colors.get(healing_stage['stage'], "blue")
+		st.markdown(f"**Current Stage:** <span style='color:{stage_color};font-weight:bold'>{healing_stage['stage']}</span> (Confidence: {healing_stage['confidence']})", unsafe_allow_html=True)
 
-        if healing_stage['characteristics']:
-            st.markdown("**Characteristics:**")
-            for char in healing_stage['characteristics']:
-                st.markdown(f"- {char}")
+		if healing_stage['characteristics']:
+			st.markdown("**Characteristics:**")
+			for char in healing_stage['characteristics']:
+				st.markdown(f"- {char}")
 
 
-    def _display_tissue_electrical_properties(self, cole_params: Dict[str, Any]) -> None:
-        """
-        Display the tissue electrical properties derived from Cole parameters.
+	def _display_tissue_electrical_properties(self, cole_params: Dict[str, Any]) -> None:
+		"""
+		Display the tissue electrical properties derived from Cole parameters.
 
-        Args:
-            cole_params: Dictionary containing the Cole-Cole parameters
-        """
-        st.markdown("### Tissue Electrical Properties")
+		Args:
+			cole_params: Dictionary containing the Cole-Cole parameters
+		"""
+		st.markdown("### Tissue Electrical Properties")
 
-        col1, col2 = st.columns(2)
+		col1, col2 = st.columns(2)
 
-        with col1:
-            if 'R0' in cole_params:
-                st.markdown(f"**Extracellular Resistance (R₀):** {cole_params['R0']:.2f} Ω")
-            if 'Rinf' in cole_params:
-                st.markdown(f"**Total Resistance (R∞):** {cole_params['Rinf']:.2f} Ω")
+		with col1:
+			if 'R0' in cole_params:
+				st.markdown(f"**Extracellular Resistance (R₀):** {cole_params['R0']:.2f} Ω")
+			if 'Rinf' in cole_params:
+				st.markdown(f"**Total Resistance (R∞):** {cole_params['Rinf']:.2f} Ω")
 
-        with col2:
-            if 'Cm' in cole_params:
-                st.markdown(f"**Membrane Capacitance:** {cole_params['Cm']:.2e} F")
-            if 'Alpha' in cole_params:
-                st.markdown(f"**Tissue Heterogeneity (α):** {cole_params['Alpha']:.2f}")
-                st.info(cole_params.get('tissue_homogeneity', ''))
+		with col2:
+			if 'Cm' in cole_params:
+				st.markdown(f"**Membrane Capacitance:** {cole_params['Cm']:.2e} F")
+			if 'Alpha' in cole_params:
+				st.markdown(f"**Tissue Heterogeneity (α):** {cole_params['Alpha']:.2f}")
+				st.info(cole_params.get('tissue_homogeneity', ''))
 
-    def _display_clinical_insights(self, insights: List[Dict[str, Any]]) -> None:
-        """
-        Display clinical insights in an organized expandable format.
+	def _display_clinical_insights(self, insights: List[Dict[str, Any]]) -> None:
+		"""
+		Display clinical insights in an organized expandable format.
 
-        Args:
-            insights: List of dictionaries containing insight information
-        """
-        st.markdown("### Clinical Insights")
+		Args:
+			insights: List of dictionaries containing insight information
+		"""
+		st.markdown("### Clinical Insights")
 
-        if not insights:
-            st.info("No significant clinical insights generated from current data.")
-            return
+		if not insights:
+			st.info("No significant clinical insights generated from current data.")
+			return
 
-        for i, insight in enumerate(insights):
-            with st.expander(f"Clinical Insight {i+1}: {insight['insight'][:50]}...", expanded=i==0):
-                st.markdown(f"**Insight:** {insight['insight']}")
-                st.markdown(f"**Confidence:** {insight['confidence']}")
+		for i, insight in enumerate(insights):
+			with st.expander(f"Clinical Insight {i+1}: {insight['insight'][:50]}...", expanded=i==0):
+				st.markdown(f"**Insight:** {insight['insight']}")
+				st.markdown(f"**Confidence:** {insight['confidence']}")
 
-                if 'recommendation' in insight:
-                    st.markdown(f"**Recommendation:** {insight['recommendation']}")
+				if 'recommendation' in insight:
+					st.markdown(f"**Recommendation:** {insight['recommendation']}")
 
-                if 'supporting_factors' in insight and insight['supporting_factors']:
-                    st.markdown("**Supporting Factors:**")
-                    for factor in insight['supporting_factors']:
-                        st.markdown(f"- {factor}")
+				if 'supporting_factors' in insight and insight['supporting_factors']:
+					st.markdown("**Supporting Factors:**")
+					for factor in insight['supporting_factors']:
+						st.markdown(f"- {factor}")
 
-                if 'clinical_meaning' in insight:
-                    st.markdown(f"**Clinical Interpretation:** {insight['clinical_meaning']}")
+				if 'clinical_meaning' in insight:
+					st.markdown(f"**Clinical Interpretation:** {insight['clinical_meaning']}")
 
 
 	# --- Chart Creation ---
 
-    def _create_impedance_chart(self, measurement_mode: str = "Absolute Impedance (|Z|)") -> go.Figure:
-        """
-        Create an interactive chart displaying impedance measurements over time.
+	def _create_impedance_chart(self, measurement_mode: str = "Absolute Impedance (|Z|)") -> go.Figure:
+		"""
+		Create an interactive chart displaying impedance measurements over time.
 
-        Args:
-            measurement_mode: Type of measurement to display (|Z|, Resistance, Capacitance)
+		Args:
+			measurement_mode: Type of measurement to display (|Z|, Resistance, Capacitance)
 
-        Returns:
-            Plotly Figure object showing impedance measurements over time
-        """
-        # Define measurement types and their corresponding data fields
-        measurement_fields = {
-            "Absolute Impedance (|Z|)": "Z",
-            "Resistance"              : "resistance",
-            "Capacitance"             : "capacitance"
-        }
+		Returns:
+			Plotly Figure object showing impedance measurements over time
+		"""
+		# Define measurement types and their corresponding data fields
+		measurement_fields = {
+			"Absolute Impedance (|Z|)": "Z",
+			"Resistance"              : "resistance",
+			"Capacitance"             : "capacitance"
+		}
 
-        # Frequency labels
-        frequency_labels = {
-            "high_frequency"  : "Highest Freq",
-            "center_frequency": "Center Freq (Max Phase Angle)",
-            "low_frequency"   : "Lowest Freq"
-        }
+		# Frequency labels
+		frequency_labels = {
+			"high_frequency"  : "Highest Freq",
+			"center_frequency": "Center Freq (Max Phase Angle)",
+			"low_frequency"   : "Lowest Freq"
+		}
 
-        # Line styles for different frequencies
-        line_styles = {
-            "high_frequency"  : None,
-            "center_frequency": dict(dash='dot'),
-            "low_frequency"   : dict(dash='dash')
-        }
+		# Line styles for different frequencies
+		line_styles = {
+			"high_frequency"  : None,
+			"center_frequency": dict(dash='dot'),
+			"low_frequency"   : dict(dash='dash')
+		}
 
-        # Initialize data containers
-        dates = []
-        measurements = {freq: {field: [] for field in measurement_fields.values()}
-                        for freq in frequency_labels}
+		# Initialize data containers
+		dates = []
+		measurements = {freq: {field: [] for field in measurement_fields.values()}
+						for freq in frequency_labels}
 
-        # Process each visit
-        for visit in self.visits:
-            dates.append(visit[self.visit_date_tag])
+		# Process each visit
+		for visit in self.visits:
+			dates.append(visit[self.visit_date_tag])
 
-            sensor_data = visit.get('sensor_data', {})
-            impedance_data = sensor_data.get('impedance', {})
+			sensor_data = visit.get('sensor_data', {})
+			impedance_data = sensor_data.get('impedance', {})
 
-            # Process each frequency
-            for freq in frequency_labels:
-                freq_data = impedance_data.get(freq, {})
-                for field in measurement_fields.values():
-                    try:
-                        val = float(freq_data.get(field)) if freq_data.get(field) not in (None, '') else None
-                    except (ValueError, TypeError):
-                        val = None
-                    measurements[freq][field].append(val)
+			# Process each frequency
+			for freq in frequency_labels:
+				freq_data = impedance_data.get(freq, {})
+				for field in measurement_fields.values():
+					try:
+						val = float(freq_data.get(field)) if freq_data.get(field) not in (None, '') else None
+					except (ValueError, TypeError):
+						val = None
+					measurements[freq][field].append(val)
 
-        # Create figure
-        fig = go.Figure()
-        field = measurement_fields[measurement_mode]
+		# Create figure
+		fig = go.Figure()
+		field = measurement_fields[measurement_mode]
 
-        # Add traces for each frequency
-        for freq in frequency_labels:
-            values = measurements[freq][field]
-            if any(v is not None for v in values):
-                fig.add_trace(go.Scatter(
-                    x=dates,
-                    y=values,
-                    name=f'{measurement_mode.split()[0]} ({frequency_labels[freq]})',
-                    mode='lines+markers',
-                    line=line_styles[freq]
-                ))
+		# Add traces for each frequency
+		for freq in frequency_labels:
+			values = measurements[freq][field]
+			if any(v is not None for v in values):
+				fig.add_trace(go.Scatter(
+					x=dates,
+					y=values,
+					name=f'{measurement_mode.split()[0]} ({frequency_labels[freq]})',
+					mode='lines+markers',
+					line=line_styles[freq]
+				))
 
-        # Configure layout
-        fig.update_layout(
-            title='Impedance Measurements Over Time',
-            xaxis_title=self.visit_date_tag,
-            yaxis_title=f'{measurement_mode.split()[0]} Values',
-            hovermode='x unified',
-            showlegend=True,
-            height=600,
-            yaxis=dict(type='log' if measurement_mode == "Capacitance" else 'linear')
-        )
+		# Configure layout
+		fig.update_layout(
+			title='Impedance Measurements Over Time',
+			xaxis_title=self.visit_date_tag,
+			yaxis_title=f'{measurement_mode.split()[0]} Values',
+			hovermode='x unified',
+			showlegend=True,
+			height=600,
+			yaxis=dict(type='log' if measurement_mode == "Capacitance" else 'linear')
+		)
 
-        return fig
+		return fig
