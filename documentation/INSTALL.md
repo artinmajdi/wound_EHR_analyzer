@@ -49,7 +49,7 @@ wound-dashboard
 
 ## Dependencies
 
-The package automatically installs all required dependencies listed in `config/requirements.txt`.
+The package automatically installs all required dependencies listed in `setup_config/requirements.txt`.
 
 ## Configuration
 

@@ -3,14 +3,12 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wound_analysis"
-version = "1.0.0"
+name        = "wound_analysis"
+version     = "1.0.0"
 description = "Wound Care Analysis System using LLMs and sensor data"
-readme = "README.md"
-authors = [
-    {name = "Artin Majdi", email = "artinmajdi@example.com"}
-]
-license = {text = "CC BY-NC 4.0"}
+readme      = "README.md"
+authors     = [ {name = "Artin Majdi", email = "artinmajdi@example.com"} ]
+license     = {text = "CC BY-NC 4.0"}
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Healthcare Industry",
@@ -45,13 +43,13 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/artinmajdi/Wound_management_interpreter_LLM"
+Homepage      = "https://github.com/artinmajdi/Wound_management_interpreter_LLM"
 Documentation = "https://github.com/artinmajdi/Wound_management_interpreter_LLM/docs"
-Repository = "https://github.com/artinmajdi/Wound_management_interpreter_LLM.git"
-Issues = "https://github.com/artinmajdi/Wound_management_interpreter_LLM/issues"
+Repository    = "https://github.com/artinmajdi/Wound_management_interpreter_LLM.git"
+Issues        = "https://github.com/artinmajdi/Wound_management_interpreter_LLM/issues"
 
 [project.scripts]
-wound-analysis = "wound_analysis.main:main"
+wound-analysis  = "wound_analysis.main:main"
 wound-dashboard = "wound_analysis.cli:run_dashboard"
 
 [tool.setuptools]
