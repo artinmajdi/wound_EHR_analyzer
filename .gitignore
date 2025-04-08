@@ -58,3 +58,7 @@ env/
 !.env.example
 
 .DS_Store
+
+
+.stubs-venv/
+install
