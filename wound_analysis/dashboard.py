@@ -190,7 +190,7 @@ class Dashboard:
 		# TODO: check why the date isn't being applied to per patient data.
 
 		# add two columns
-		cols = st.columns((1,2,1))
+		cols = st.columns((1,2,1,1))
 
 		with cols[0]:
 			# Patient selection
@@ -198,11 +198,18 @@ class Dashboard:
 			patient_options  = ["All Patients"] + [f"Patient {id:d}" for id in patient_ids]
 			selected_patient = st.selectbox("Select Patient", patient_options)
 
-		with cols[2]:
+		with cols[-2]:
+			filter_mode = st.radio("Filter Mode", ["Before", "After"], key="filter_mode")
+
+		with cols[-1]:
 			min_date         = df[self.CN.VISIT_DATE].min()
 			max_date         = df[self.CN.VISIT_DATE].max()
 			filteration_date = pd.to_datetime(st.date_input("Filter by Date", value=min_date, min_value=min_date, max_value=max_date))
-			self.filtered_df      = df[pd.to_datetime(df[self.CN.VISIT_DATE]) >= filteration_date]
+
+			if filter_mode == "Before":
+				self.filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) <= filteration_date]
+			else:
+				self.filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) >= filteration_date]
 
 		# Initialize data processor with filtered data and reuse the impedance_analyzer
 		if self.impedance_analyzer is not None:
