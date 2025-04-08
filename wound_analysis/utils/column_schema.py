@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict
 import pandas as pd
 from pydantic import BaseModel, Field
-
+from enum import Enum
 
 class PatientIdentifiers(BaseModel):
     record_id : str = Field('Record ID')
@@ -71,26 +71,21 @@ class TemperatureMeasurements(BaseModel):
 
 class ImpedanceMeasurements(BaseModel):
     # High frequency impedance measurements (corresponding to CSV data)
-    highest_freq_z             : str = Field('Skin Impedance (kOhms) - Z')
-    highest_freq_z_prime       : str = Field("Skin Impedance (kOhms) - Z'")
-    highest_freq_z_double_prime: str = Field("Skin Impedance (kOhms) - Z''")
+    highest_freq_absolute  : str = Field('Skin Impedance (kOhms) - Z')
+    highest_freq_real      : str = Field("Skin Impedance (kOhms) - Z'")
+    highest_freq_imaginary : str = Field("Skin Impedance (kOhms) - Z''")
 
     # Center frequency impedance measurements
-    center_freq_z             : str = Field('Center Frequency Impedance (kOhms) - Z')
-    center_freq_z_prime       : str = Field("Center Frequency Impedance (kOhms) - Z'")
-    center_freq_z_double_prime: str = Field("Center Frequency Impedance (kOhms) - Z''")
+    center_freq_absolute  : str = Field('Center Frequency Impedance (kOhms) - Z')
+    center_freq_real      : str = Field("Center Frequency Impedance (kOhms) - Z'")
+    center_freq_imaginary : str = Field("Center Frequency Impedance (kOhms) - Z''")
 
     # Low frequency impedance measurements
-    lowest_freq_z             : str = Field('Low Frequency Impedance (kOhms) - Z')
-    lowest_freq_z_prime       : str = Field("Low Frequency Impedance (kOhms) - Z'")
-    lowest_freq_z_double_prime: str = Field("Low Frequency Impedance (kOhms) - Z''")
+    lowest_freq_absolute  : str = Field('Low Frequency Impedance (kOhms) - Z')
+    lowest_freq_real      : str = Field("Low Frequency Impedance (kOhms) - Z'")
+    lowest_freq_imaginary : str = Field("Low Frequency Impedance (kOhms) - Z''")
 
-    # Frequency Sweep field names
-    z_freq_sweep_absolute  : str = Field("Z / Ohm")
-    z_freq_sweep_real      : str = Field("Z' / Ohm")
-    z_freq_sweep_imaginary : str = Field("-Z'' / Ohm")
-    z_freq_sweep_neg_phase : str = Field("neg. Phase / °")
-    z_freq_sweep_freq      : str = Field('freq / Hz')
+
 
 class WoundCharacteristics(BaseModel):
     wound_onset_date    : str = Field('Target wound onset date')
@@ -335,31 +330,33 @@ class DataColumns(BaseModel):
         return None
 
 
+class ExcelSheetColumns(Enum):
+    FREQ      = 'freq / Hz'
+    ABSOLUTE  = "Z / Ohm"
+    REAL      = "Z' / Ohm"
+    IMAGINARY = "-Z'' / Ohm"
+    NEG_PHASE = "neg. Phase / °"
+    VISIT_DATE_FREQ_SWEEP = 'visit_date_freq_sweep'
+
 
 class DColumns:
-    def __init__(self, df: pd.DataFrame=None):
+    def __init__(self, df: pd.DataFrame = None):
         """Creates a class-level dictionary of all column names from a dataframe"""
 
-        DC = DataColumns()
+        # Initialize DataColumns and update with dataframe if provided
+        dc = DataColumns()
         if df is not None:
-            DC.update(df=df)
+            dc.update(df=df)
 
-        # Create shortcuts to each category
-        self.pi  = DC.patient_identifiers
-        self.dem = DC.demographics
-        self.lf  = DC.lifestyle
-        self.mh  = DC.medical_history
-        self.vs  = DC.visit_info
-        self.om  = DC.oxygenation_measurements
-        self.tm  = DC.temperature_measurements
-        self.im  = DC.impedance_measurements
-        self.wc  = DC.wound_characteristics
-        self.ca  = DC.clinical_assessment
-        self.hm  = DC.healing_metrics
+        # Add class annotations for type checking
+        if not hasattr(self.__class__, '__annotations__'):
+            self.__class__.__annotations__ = {}
 
-        # Map all fields from each category to class attributes
-        for category in DC.__dict__.values():
+        # Map all fields from each category to uppercase class attributes
+        for category in vars(dc).values():
             if isinstance(category, BaseModel):
-                for field_name, field_value in category.__dict__.items():
+                for field_name, field_value in vars(category).items():
                     if not field_name.startswith('_'):
-                        setattr(self, field_name.upper(), field_value)
+                        upper_name = field_name.upper()
+                        setattr(self, upper_name, field_value)
+                        self.__class__.__annotations__[upper_name] = str

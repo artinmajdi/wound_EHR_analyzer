@@ -7,6 +7,7 @@ from typing import Tuple
 
 from wound_analysis.utils.data_processor import WoundDataProcessor
 from wound_analysis.utils.llm_interface import WoundAnalysisLLM
+from wound_analysis.dashboard import Dashboard
 
 def setup_logging(log_dir: pathlib.Path) -> Tuple[pathlib.Path, pathlib.Path]:
     """Set up logging configuration and return log file paths."""
@@ -31,9 +32,9 @@ def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Analyze wound care data using LLMs')
     parser.add_argument('--record-id', type=int, default=41, help='Patient record ID to analyze')
-    parser.add_argument('--csv-dataset-path', type=pathlib.Path, default=pathlib.Path(__file__).parent.parent / 'dataset' / 'csv_files/SmartBandage-2025-03-26_raw.csv', help='Path to the CSV dataset file')
-    parser.add_argument('--impedance-freq-sweep-path', type=pathlib.Path, default=pathlib.Path(__file__).parent.parent / 'dataset' / 'impedance_frequency_sweep', help='Path to the impedance frequency sweep directory')
-    parser.add_argument('--output-dir', type=pathlib.Path, default=pathlib.Path(__file__).parent.parent / 'wound_analysis/utils/logs', help='Directory to save output files')
+    parser.add_argument('--csv-dataset-path', type=pathlib.Path, default='/Users/artinmajdi/Documents/GitHubs/postdoc/wound_EHR_analyzer_private/dataset/csv_files/SmartBandage-2025-03-26_labels.csv', help='Path to the CSV dataset file')
+    parser.add_argument('--impedance-freq-sweep-path', type=pathlib.Path, default='/Users/artinmajdi/Documents/GitHubs/postdoc/wound_EHR_analyzer_private/dataset/impedance_frequency_sweep', help='Path to the impedance frequency sweep directory')
+    parser.add_argument('--output-dir', type=pathlib.Path, default='/Users/artinmajdi/Documents/GitHubs/postdoc/wound_EHR_analyzer_private/wound_analysis/utils/logs', help='Directory to save output files')
     parser.add_argument('--platform', type=str, default='ai-verde', choices=WoundAnalysisLLM.get_available_platforms(), help='LLM platform to use')
     parser.add_argument('--api-key', type=str, help='API key for the LLM platform')
     parser.add_argument('--model-name', type=str, default='llama-3.3-70b-fp8', help='Name of the LLM model to use')
@@ -55,21 +56,11 @@ def main():
             os.environ["OPENAI_API_KEY"] = args.api_key
 
         # Process patient data
-        processor = WoundDataProcessor(csv_dataset_path=args.csv_dataset_path, impedance_freq_sweep_path=args.impedance_freq_sweep_path)
+        df = Dashboard().load_data(args.csv_dataset_path)
+        processor = WoundDataProcessor(df=df, impedance_freq_sweep_path=args.impedance_freq_sweep_path)
         patient_data = processor.get_patient_visits(record_id=args.record_id)
 
-        # # Analyze data using LLM
-        # llm = WoundAnalysisLLM(platform=args.platform, model_name=args.model_name)
-        # analysis_results = llm.analyze_patient_data(patient_data=patient_data)
 
-        # # Save report
-        # DataManager.create_and_save_report(patient_metadata=patient_data, analysis_results=analysis_results, report_path=word_filename)
-
-        # # Output results
-        # logger.info(f"Report saved: {word_filename}")
-        # print("\nWound Care Analysis Results:")
-        print("=" * 30)
-        # print(analysis_results)
 
     except Exception as e:
         logger.error(f"Analysis failed: {e}")

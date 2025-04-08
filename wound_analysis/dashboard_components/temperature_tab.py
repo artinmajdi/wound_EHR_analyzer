@@ -16,11 +16,11 @@ class TemperatureTab:
 	interpretations.
 	"""
 
-	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
+	def __init__(self, selected_patient: str, wound_data_processor: WoundDataProcessor):
 		self.wound_data_processor = wound_data_processor
 		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
-		self.df = df
-		self.CN = DColumns(df=df)
+		self.df = wound_data_processor.df
+		self.CN = DColumns(df=self.df)
 
 	def render(self) -> None:
 		"""

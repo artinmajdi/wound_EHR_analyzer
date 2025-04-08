@@ -9,7 +9,6 @@ import pathlib
 
 # Third-party imports
 import httpx
-import torch
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -257,9 +256,9 @@ class WoundAnalysisLLM:
             if sensor:
                 temp = sensor.get('temperature', {})
                 impedance = sensor.get('impedance', {})
-                high_freq_imp = impedance.get('high_frequency', {})
-                center_freq_imp = impedance.get('center_frequency', {})
-                low_freq_imp = impedance.get('low_frequency', {})
+                high_freq_imp = impedance.get('highest_freq', {})
+                center_freq_imp = impedance.get('center_freq', {})
+                low_freq_imp = impedance.get('lowest_freq', {})
 
                 prompt += (
                     f"Measurements:\n"
