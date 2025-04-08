@@ -187,29 +187,77 @@ class Dashboard:
 		# Header
 		st.title(self.DashboardSettings.PAGE_TITLE)
 
-		# TODO: check why the date isn't being applied to per patient data.
-
 		# add two columns
-		cols = st.columns((1,2,1,1))
+		cols = st.columns((1,1,2))
 
 		with cols[0]:
 			# Patient selection
+			st.markdown("""
+			<style>
+			.filter-container {
+				border: 1px solid #e0e0e0;
+				border-radius: 5px;
+				padding: 10px;
+				background-color: #f8f9fa;
+				margin-bottom: 10px;
+			}
+			.filter-title {
+				font-weight: bold;
+				margin-bottom: 5px;
+				color: #4b5563;
+			}
+			</style>
+			""", unsafe_allow_html=True)
+			# Create a container for the filter controls
+			st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+			st.markdown('<div class="filter-title">Patient Filter</div>', unsafe_allow_html=True)
+
 			patient_ids      = sorted(df[self.CN.RECORD_ID].unique())
 			patient_options  = ["All Patients"] + [f"Patient {id:d}" for id in patient_ids]
-			selected_patient = st.selectbox("Select Patient", patient_options)
-
-		with cols[-2]:
-			filter_mode = st.radio("Filter Mode", ["Before", "After"], key="filter_mode")
+			selected_patient = st.selectbox("", patient_options)
 
 		with cols[-1]:
-			min_date         = df[self.CN.VISIT_DATE].min()
-			max_date         = df[self.CN.VISIT_DATE].max()
-			filteration_date = pd.to_datetime(st.date_input("Filter by Date", value=min_date, min_value=min_date, max_value=max_date))
+			# Add CSS for the filter container
+			st.markdown("""
+			<style>
+			.filter-container {
+				border: 1px solid #e0e0e0;
+				border-radius: 5px;
+				padding: 10px;
+				background-color: #f8f9fa;
+				margin-bottom: 10px;
+			}
+			.filter-title {
+				font-weight: bold;
+				margin-bottom: 5px;
+				color: #4b5563;
+			}
+			</style>
+			""", unsafe_allow_html=True)
 
-			if filter_mode == "Before":
-				self.filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) <= filteration_date]
-			else:
-				self.filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) >= filteration_date]
+			# Create a container for the filter controls
+			st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+			st.markdown('<div class="filter-title">Date Filter</div>', unsafe_allow_html=True)
+
+			# Create two columns for the filter controls
+			filter_cols = st.columns(2)
+
+			with filter_cols[0]:
+				filter_mode = st.radio("Mode", ["After", "Before"], key="filter_mode")
+
+			with filter_cols[1]:
+				min_date = df[self.CN.VISIT_DATE].min()
+				max_date = df[self.CN.VISIT_DATE].max()
+				filteration_date = pd.to_datetime(st.date_input("Date", value=min_date, min_value=min_date, max_value=max_date))
+
+			# Close the container
+			st.markdown('</div>', unsafe_allow_html=True)
+
+		# Apply the date filter
+		if filter_mode == "Before":
+			self.filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) <= filteration_date]
+		else:
+			self.filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) >= filteration_date]
 
 		# Initialize data processor with filtered data and reuse the impedance_analyzer
 		if self.impedance_analyzer is not None:
