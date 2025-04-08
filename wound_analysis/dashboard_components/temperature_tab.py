@@ -100,7 +100,7 @@ class TemperatureTab:
 
 
 		# Add outlier threshold control
-		col1, _, col3 = st.columns([2,3,3])
+		col1, col2, col3 = st.columns([2,3,3])
 
 		with col1:
 			outlier_threshold = st.number_input(
@@ -112,48 +112,123 @@ class TemperatureTab:
 				help      = "Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
 			)
 
+		# Add visualization selection dropdown
+		with col2:
+			visualization_option = st.selectbox(
+				"Select Visualization",
+				options=[
+					"Temperature Gradients by Wound Type",
+					"Temperature Gradient vs. Healing Rate",
+					"Temperature Values by Visit Number",
+					"Show All Visualizations"
+				],
+				index=3
+			)
+
 		# Calculate correlation with outlier handling
 		stats_analyzer = CorrelationAnalysis(data=temp_df, x_col=self.CN.CENTER_TEMP, y_col=self.CN.HEALING_RATE, outlier_threshold=outlier_threshold)
 		temp_df, r, p = stats_analyzer.calculate_correlation()
 
 		# Display correlation statistics
-		with col3:
-			st.info(stats_analyzer.get_correlation_text())
+		# with col3:
+		st.info(stats_analyzer.get_correlation_text())
 
-		# Create boxplot of temperature gradients by wound type
-		gradient_cols = [self.CN.CENTER_EDGE_GRADIENT, self.CN.EDGE_PERI_GRADIENT, self.CN.TOTAL_GRADIENT]
-		fig = px.box(
-			temp_df,
-			x=self.CN.WOUND_TYPE,
-			y=gradient_cols,
-			title="Temperature Gradients by Wound Type",
-			points="all"
-		)
-
-		fig.update_layout(
-			xaxis_title="Wound Type",
-			yaxis_title="Temperature Gradient (°F)",
-			boxmode='group'
-		)
-		st.plotly_chart(fig, use_container_width=True)
-
-		# Scatter plot of total gradient vs healing rate
-		# temp_df = temp_df.copy() # [df['Healing Rate (%)'] < 0].copy()
+		# Prepare data for visualizations
 		temp_df[self.CN.HEALING_RATE] = temp_df[self.CN.HEALING_RATE].clip(-100, 100)
 		temp_df[self.CN.WOUND_AREA] = temp_df[self.CN.WOUND_AREA].fillna(temp_df[self.CN.WOUND_AREA].mean())
 
-		fig = px.scatter(
-			temp_df,#[temp_df['Healing Rate (%)'] > 0],  # Exclude first visits
-			x=self.CN.TOTAL_GRADIENT,
-			y=self.CN.HEALING_RATE,
-			color=self.CN.WOUND_TYPE,
-			size=self.CN.WOUND_AREA, #'Hemoglobin Level', #
-			size_max=30,
-			hover_data=[self.CN.RECORD_ID, self.CN.EVENT_NAME],
-			title="Temperature Gradient vs. Healing Rate"
-		)
-		fig.update_layout(xaxis_title="Temperature Gradient (Center to Peri-wound, °F)", yaxis_title="Healing Rate (% reduction per visit)")
-		st.plotly_chart(fig, use_container_width=True)
+		# Display visualizations based on selection
+		if visualization_option in ["Temperature Gradients by Wound Type", "Show All Visualizations"]:
+			# Create boxplot of temperature gradients by wound type
+			gradient_cols = [self.CN.CENTER_EDGE_GRADIENT, self.CN.EDGE_PERI_GRADIENT, self.CN.TOTAL_GRADIENT]
+			fig_box = px.box(
+				temp_df,
+				x=self.CN.WOUND_TYPE,
+				y=gradient_cols,
+				title="Temperature Gradients by Wound Type",
+				points="all"
+			)
+
+			fig_box.update_layout(
+				xaxis_title="Wound Type",
+				yaxis_title="Temperature Gradient (°F)",
+				boxmode='group'
+			)
+			st.plotly_chart(fig_box, use_container_width=True)
+
+		if visualization_option in ["Temperature Gradient vs. Healing Rate", "Show All Visualizations"]:
+			# Scatter plot of total gradient vs healing rate
+			fig_scatter = px.scatter(
+				temp_df,  # Exclude first visits if needed: [temp_df['Healing Rate (%)'] > 0]
+				x=self.CN.TOTAL_GRADIENT,
+				y=self.CN.HEALING_RATE,
+				color=self.CN.WOUND_TYPE,
+				size=self.CN.WOUND_AREA,  # Alternative: 'Hemoglobin Level'
+				size_max=30,
+				hover_data=[self.CN.RECORD_ID, self.CN.EVENT_NAME],
+				title="Temperature Gradient vs. Healing Rate"
+			)
+			fig_scatter.update_layout(
+				xaxis_title="Temperature Gradient (Center to Peri-wound, °F)",
+				yaxis_title="Healing Rate (% reduction per visit)"
+			)
+			st.plotly_chart(fig_scatter, use_container_width=True)
+
+		if visualization_option in ["Temperature Values by Visit Number", "Show All Visualizations"]:
+			# Create a dataframe with visit numbers
+			temp_values_df = temp_df.copy()
+			temp_values_df['Visit Number'] = temp_values_df.groupby(self.CN.RECORD_ID).cumcount() + 1
+
+			# Create tabs for different temperature measurements
+			center_tab, edge_tab, peri_tab = st.tabs(["Center Temperature", "Edge Temperature", "Peri-wound Temperature"])
+
+			with center_tab:
+				fig_center = px.line(
+					temp_values_df,
+					x='Visit Number',
+					y=self.CN.CENTER_TEMP,
+					color=self.CN.RECORD_ID,
+					markers=True,
+					title="Center Temperature by Visit Number"
+				)
+				fig_center.update_layout(
+					xaxis_title="Visit Number",
+					yaxis_title="Temperature (°F)",
+					hovermode="closest"
+				)
+				st.plotly_chart(fig_center, use_container_width=True)
+
+			with edge_tab:
+				fig_edge = px.line(
+					temp_values_df,
+					x='Visit Number',
+					y=self.CN.EDGE_TEMP,
+					color=self.CN.RECORD_ID,
+					markers=True,
+					title="Edge Temperature by Visit Number"
+				)
+				fig_edge.update_layout(
+					xaxis_title="Visit Number",
+					yaxis_title="Temperature (°F)",
+					hovermode="closest"
+				)
+				st.plotly_chart(fig_edge, use_container_width=True)
+
+			with peri_tab:
+				fig_peri = px.line(
+					temp_values_df,
+					x='Visit Number',
+					y=self.CN.PERI_TEMP,
+					color=self.CN.RECORD_ID,
+					markers=True,
+					title="Peri-wound Temperature by Visit Number"
+				)
+				fig_peri.update_layout(
+					xaxis_title="Visit Number",
+					yaxis_title="Temperature (°F)",
+					hovermode="closest"
+				)
+				st.plotly_chart(fig_peri, use_container_width=True)
 
 
 	@staticmethod
