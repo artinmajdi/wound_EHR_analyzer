@@ -1643,6 +1643,20 @@ class PatientImpedanceRenderer:
 			visit_date: Date of the visit
 		"""
 		try:
+			# Inject custom CSS to adjust st.metric font sizes
+			st.markdown(
+				"""
+				<style>
+				[data-testid="stMetricValue"] {
+					font-size: 14px !important;
+				}
+				[data-testid="stMetricLabel"] {
+					font-size: 12px !important;
+					font-weight: bold !important;
+				}
+				</style>
+				""", unsafe_allow_html=True)
+
 			# Calculate key metrics
 			metrics = {}
 
