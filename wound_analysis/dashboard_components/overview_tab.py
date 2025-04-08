@@ -17,11 +17,11 @@ class OverviewTab:
 
 	Parameters:
 	----------
-	df : pd.DataFrame
-		The dataframe containing all wound data
 	selected_patient : str
 		The currently selected patient from the sidebar dropdown. Could be "All Patients"
 		or a specific patient name in the format "Patient X" where X is the patient ID.
+	wound_data_processor : WoundDataProcessor
+		The data processor instance containing the filtered DataFrame and processing methods.
 
 	Returns:
 	-------
@@ -29,11 +29,11 @@ class OverviewTab:
 		This method directly renders content to the Streamlit UI and doesn't return any value.
 	"""
 
-	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
+	def __init__(self, selected_patient: str, wound_data_processor: WoundDataProcessor):
 		self.wound_data_processor = wound_data_processor
 		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
-		self.df = df
-		self.CN = DColumns(df=df)
+		self.df = wound_data_processor.df
+		self.CN = DColumns(df=self.df)
 
 	def render(self) -> None:
 

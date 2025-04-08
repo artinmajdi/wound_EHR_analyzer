@@ -25,10 +25,10 @@ class OxygenationTab:
 
 		Parameters
 		-----------
-		df : pd.DataFrame
-			The dataframe containing all wound care data
 		selected_patient : str
 			The selected patient (either "All Patients" or a specific patient identifier)
+		wound_data_processor : WoundDataProcessor
+			The data processor instance containing the filtered DataFrame and processing methods.
 
 		Returns:
 		--------
@@ -36,12 +36,11 @@ class OxygenationTab:
 			This method renders Streamlit components directly to the app
 	"""
 
-	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
-
+	def __init__(self, selected_patient: str, wound_data_processor: WoundDataProcessor):
 		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
 
-		self.df = df
-		self.CN = DColumns(df=df)
+		self.df = wound_data_processor.df
+		self.CN = DColumns(df=self.df)
 
 		if self.patient_id != "All Patients":
 			self.visits        = wound_data_processor.get_patient_visits(record_id=self.patient_id)['visits']

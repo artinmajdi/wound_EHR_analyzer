@@ -22,12 +22,10 @@ class ExudateTab:
 
 	Parameters
 	----------
-	df : pd.DataFrame
-		The dataframe containing wound assessment data for all patients
 	selected_patient : str
 		The currently selected patient ID or "All Patients"
-	data_processor : object, optional
-		An object that processes data to retrieve patient visits.
+	wound_data_processor : WoundDataProcessor
+		The data processor instance containing the filtered DataFrame and processing methods.
 
 	Notes
 	-----
@@ -43,11 +41,11 @@ class ExudateTab:
 	- Offers treatment recommendations based on exudate characteristics
 	"""
 
-	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
+	def __init__(self, selected_patient: str, wound_data_processor: WoundDataProcessor):
 		self.wound_data_processor = wound_data_processor
 		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
-		self.df = df
-		self.CN = DColumns(df=df)
+		self.df = wound_data_processor.df
+		self.CN = DColumns(df=self.df)
 
 	def render(self) -> None:
 		st.header("Exudate Analysis")

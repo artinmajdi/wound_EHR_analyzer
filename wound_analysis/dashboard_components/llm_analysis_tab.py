@@ -46,12 +46,11 @@ class LLMAnalysisTab:
 	- A download button is provided for exporting reports as Word documents
 	"""
 
-	def __init__(self, wound_data_processor: WoundDataProcessor, llm_platform: str, llm_model: str, selected_patient: str, csv_dataset_path: str):
-		self.wound_data_processor   = wound_data_processor
-		self.llm_platform     = llm_platform
-		self.llm_model        = llm_model
-		self.patient_id       = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
-		self.csv_dataset_path = csv_dataset_path
+	def __init__(self, selected_patient: str, wound_data_processor: WoundDataProcessor=None, llm_platform: str='ai-verde', llm_model: str='llama-3.3-70b-fp8'):
+		self.wound_data_processor = wound_data_processor
+		self.llm_platform         = llm_platform
+		self.llm_model            = llm_model
+		self.patient_id           = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
 
 	def render(self) -> None:
 
@@ -120,7 +119,7 @@ class LLMAnalysisTab:
 		if 'llm_reports' not in st.session_state:
 			st.session_state.llm_reports = {}
 
-		if self.csv_dataset_path is not None:
+		if self.wound_data_processor is not None:
 
 			llm = WoundAnalysisLLM(platform=self.llm_platform, model_name=self.llm_model)
 

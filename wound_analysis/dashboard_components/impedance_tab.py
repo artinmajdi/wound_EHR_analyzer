@@ -1,6 +1,7 @@
 # Standard library imports
 import traceback
 from typing import List, Dict, Any, Tuple, Optional
+import logging
 
 # Third-party imports
 import numpy as np
@@ -16,38 +17,27 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # Local application imports
-from wound_analysis.utils.data_processor import ImpedanceAnalyzer, WoundDataProcessor, VisitsDataType, VisitsMetadataType
+from wound_analysis.utils.data_processor import WoundDataProcessor, VisitsDataType, VisitsMetadataType
 from wound_analysis.utils.column_schema import DColumns
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class ImpedanceTab:
 	"""
-	Main class for rendering the impedance analysis tab in the Streamlit application.
+	A class for managing and rendering the Impedance Analysis tab in the wound analysis dashboard.
 
-	This class serves as the entry point for the impedance analysis tab, delegating
-	rendering responsibilities to specialized renderer classes based on whether the
-	analysis is for all patients combined or a specific patient.
-
-	Attributes:
-		wound_data_processor (WoundDataProcessor): Processor for wound data
-		patient_id (Union[str, int]): Identifier for the patient, "All Patients" or an integer
-		df (pd.DataFrame): DataFrame containing patient data
-		CN (DColumns): Column name accessor for the DataFrame
+	This class contains methods to display impedance analysis for both population-level data
+	and individual patient data, including impedance measurements, frequency response analysis,
+	and clinical interpretations.
 	"""
 
-	def __init__(self, df: pd.DataFrame, selected_patient: str, wound_data_processor: WoundDataProcessor):
-		"""
-		Initialize the ImpedanceTab with patient data and selection.
-
-		Args:
-			df: DataFrame containing all patient data
-			selected_patient: Either "All Patients" or a specific patient identifier
-			wound_data_processor: Processor for accessing and manipulating wound data
-		"""
+	def __init__(self, selected_patient: str, wound_data_processor: WoundDataProcessor):
 		self.wound_data_processor = wound_data_processor
 		self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
-		self.df = df
-		self.CN = DColumns(df=df)
+		self.df = wound_data_processor.df
+		self.CN = DColumns(df=self.df)
 
 	def render(self) -> None:
 		"""
@@ -59,12 +49,16 @@ class ImpedanceTab:
 		st.header("Impedance Analysis")
 
 		if self.patient_id == "All Patients":
-			PopulationImpedanceRenderer(df=self.df).render()
+			logger.debug("Rendering population-level impedance analysis")
+			PopulationImpedanceRenderer(df=self.df, wound_data_processor=self.wound_data_processor).render()
 
 		else:
+			logger.debug(f"Rendering patient-level impedance analysis for patient {self.patient_id}")
+
 			visits_meta_data: VisitsMetadataType   = self.wound_data_processor.get_patient_visits(record_id=self.patient_id)
 			visits          : List[VisitsDataType] = visits_meta_data['visits']
-			PatientImpedanceRenderer(visits=visits).render()
+
+			PatientImpedanceRenderer(visits=visits, wound_data_processor=self.wound_data_processor).render()
 
 
 class PopulationImpedanceRenderer:
@@ -80,7 +74,7 @@ class PopulationImpedanceRenderer:
 		CN (DColumns): Column name accessor for the DataFrame
 	"""
 
-	def __init__(self, df: pd.DataFrame):
+	def __init__(self, df: pd.DataFrame, wound_data_processor: WoundDataProcessor):
 		"""
 		Initialize the PopulationImpedanceRenderer with patient data.
 
@@ -89,6 +83,7 @@ class PopulationImpedanceRenderer:
 		"""
 		self.df = df
 		self.CN = DColumns(df=df)
+		self.wound_data_processor = wound_data_processor
 
 	def render(self) -> None:
 		"""
@@ -144,7 +139,7 @@ class PopulationImpedanceRenderer:
 				cluster_features = st.multiselect(
 					"Features for Clustering",
 					options=[
-						self.CN.HIGHEST_FREQ_Z,
+						self.CN.HIGHEST_FREQ_ABSOLUTE,
 						self.CN.WOUND_AREA,
 						self.CN.CENTER_TEMP,
 						self.CN.OXYGENATION,
@@ -154,7 +149,7 @@ class PopulationImpedanceRenderer:
 						self.CN.DAYS_SINCE_FIRST_VISIT,
 						self.CN.HEALING_RATE
 					],
-					default=[self.CN.HIGHEST_FREQ_Z, self.CN.WOUND_AREA, self.CN.HEALING_RATE],
+					default=[self.CN.HIGHEST_FREQ_ABSOLUTE, self.CN.WOUND_AREA, self.CN.HEALING_RATE],
 					help="Select features to be used for clustering patients"
 				)
 
@@ -509,7 +504,7 @@ class PopulationImpedanceRenderer:
 
 		# Get the selected features for analysis
 		features_to_analyze = [
-			self.CN.HIGHEST_FREQ_Z,
+			self.CN.HIGHEST_FREQ_ABSOLUTE,
 			self.CN.WOUND_AREA,
 			self.CN.CENTER_TEMP,
 			self.CN.OXYGENATION,
@@ -688,7 +683,7 @@ class PopulationImpedanceRenderer:
 
 		fig = px.scatter(
 			plot_df,
-			x=self.CN.HIGHEST_FREQ_Z,
+			x=self.CN.HIGHEST_FREQ_ABSOLUTE,
 			y=self.CN.HEALING_RATE,
 			color=self.CN.DIABETES if self.CN.DIABETES in plot_df.columns else None,
 			size=self.CN.WOUND_AREA if self.CN.WOUND_AREA in plot_df.columns else None,
@@ -712,7 +707,10 @@ class PopulationImpedanceRenderer:
 			df: DataFrame containing impedance measurements and visit information
 		"""
 		# Get prepared statistics
-		avg_impedance, avg_by_type = ImpedanceAnalyzer.prepare_population_stats(df=df)
+
+		logger.info("Fetching population statistics")
+		avg_impedance, avg_by_type = self.wound_data_processor.impedance_analyzer.prepare_population_stats(df=df)
+		logger.info("Fetching population statistics complete")
 
 		col1, col2 = st.columns(2)
 
@@ -721,7 +719,7 @@ class PopulationImpedanceRenderer:
 			fig1 = px.line(
 				avg_impedance,
 				x=self.CN.VISIT_NUMBER,
-				y=[self.CN.HIGHEST_FREQ_Z, self.CN.HIGHEST_FREQ_Z_PRIME, self.CN.HIGHEST_FREQ_Z_DOUBLE_PRIME],
+				y=[self.CN.HIGHEST_FREQ_ABSOLUTE, self.CN.HIGHEST_FREQ_REAL, self.CN.HIGHEST_FREQ_IMAGINARY],
 				title="Average Impedance Components by Visit",
 				markers=True
 			)
@@ -733,7 +731,7 @@ class PopulationImpedanceRenderer:
 			fig2 = px.bar(
 				avg_by_type,
 				x=self.CN.WOUND_TYPE,
-				y=self.CN.HIGHEST_FREQ_Z,
+				y=self.CN.HIGHEST_FREQ_ABSOLUTE,
 				title="Average Impedance by Wound Type",
 				color=self.CN.WOUND_TYPE
 			)
@@ -752,7 +750,7 @@ class PatientImpedanceRenderer:
 		visits (List[VisitsDataType]): List of visit data for the patient
 	"""
 
-	def __init__(self, visits: List[VisitsDataType]):
+	def __init__(self, visits: List[VisitsDataType], wound_data_processor: WoundDataProcessor):
 		"""
 		Initialize the PatientImpedanceRenderer with visit data.
 
@@ -760,7 +758,10 @@ class PatientImpedanceRenderer:
 			visits: List of visit data for the patient
 		"""
 		self.visits = visits
-		self.visit_date_tag = WoundDataProcessor.get_visit_date_tag(visits)
+		self.wound_data_processor = wound_data_processor
+
+		logger.info("Fetching visit date tag")
+		self.visit_date_tag = self.wound_data_processor.get_visit_date_tag(visits)
 
 	def render(self) -> None:
 		"""
@@ -846,7 +847,7 @@ class PatientImpedanceRenderer:
 
 				try:
 					# Generate comprehensive clinical analysis
-					analysis = ImpedanceAnalyzer.generate_clinical_analysis(
+					analysis = self.wound_data_processor.impedance_analyzer.generate_clinical_analysis(
 						current_visit=current_visit,
 						previous_visit=previous_visit
 					)
@@ -856,6 +857,7 @@ class PatientImpedanceRenderer:
 						analysis=analysis,
 						has_previous_visit=previous_visit is not None
 					)
+
 				except Exception as e:
 					st.error(f"Error analyzing visit data: {str(e)}")
 					st.error(traceback.format_exc())
@@ -876,7 +878,9 @@ class PatientImpedanceRenderer:
 
 		try:
 			# Generate advanced analysis
-			analysis = ImpedanceAnalyzer.generate_advanced_analysis(visits=self.visits)
+			logger.info("Generating advanced analysis")
+			analysis = self.wound_data_processor.impedance_analyzer.generate_advanced_analysis(visits=self.visits)
+			logger.info("Generating advanced analysis complete")
 
 			# Display healing trajectory analysis if available
 			if 'healing_trajectory' in analysis and analysis['healing_trajectory']['status'] == 'analyzed':
@@ -970,12 +974,7 @@ class PatientImpedanceRenderer:
 		self._display_clinical_analysis_info()
 
 	def _display_tissue_health_assessment(self, tissue_health: Tuple[Optional[float], str]) -> None:
-		"""
-		Display the tissue health assessment.
 
-		Args:
-			tissue_health: Tuple of (health_score, health_interp)
-		"""
 		st.markdown("### Tissue Health Assessment", help="The tissue health index is calculated using multi-frequency impedance ratios.")
 
 		health_score, health_interp = tissue_health
@@ -989,12 +988,7 @@ class PatientImpedanceRenderer:
 			st.warning("Insufficient data for tissue health calculation")
 
 	def _display_infection_risk_assessment(self, infection_risk: Dict[str, Any]) -> None:
-		"""
-		Display the infection risk assessment information.
 
-		Args:
-			infection_risk: Dictionary containing infection risk assessment results
-		"""
 		st.markdown("### Infection Risk Assessment", help="The infection risk assessment is based on impedance measurements.")
 
 		risk_score = infection_risk["risk_score"]
@@ -1011,12 +1005,7 @@ class PatientImpedanceRenderer:
 			st.markdown(f"**Contributing Factors:** {', '.join(factors)}")
 
 	def _display_tissue_composition_analysis(self, freq_response: Dict[str, Any]) -> None:
-		"""
-		Display the tissue composition analysis results based on frequency response data.
 
-		Args:
-			freq_response: Dictionary containing frequency response analysis results
-		"""
 		st.markdown("### Tissue Composition Analysis", help="This analysis utilizes bioelectrical impedance analysis principles.")
 
 		# Display tissue composition analysis from frequency response
@@ -1291,16 +1280,16 @@ class PatientImpedanceRenderer:
 
 		# Frequency labels
 		frequency_labels = {
-			"high_frequency"  : "Highest Freq",
-			"center_frequency": "Center Freq (Max Phase Angle)",
-			"low_frequency"   : "Lowest Freq"
+			"highest_freq": "Highest Freq",
+			"center_freq" : "Center Freq (Max Phase Angle)",
+			"lowest_freq" : "Lowest Freq"
 		}
 
 		# Line styles for different frequencies
 		line_styles = {
-			"high_frequency"  : None,
-			"center_frequency": dict(dash='dot'),
-			"low_frequency"   : dict(dash='dash')
+			"highest_freq": None,
+			"center_freq" : dict(dash='dot'),
+			"lowest_freq" : dict(dash='dash')
 		}
 
 		# Initialize data containers
@@ -1309,15 +1298,23 @@ class PatientImpedanceRenderer:
 						for freq in frequency_labels}
 
 		# Process each visit
+		freq_sweep : Dict[str, pd.DataFrame] = {}
+
 		for visit in self.visits:
-			dates.append(visit[self.visit_date_tag])
+			visit_date = visit[self.visit_date_tag]
+
+			dates.append(visit_date)
 
 			sensor_data = visit.get('sensor_data', {})
 			impedance_data = sensor_data.get('impedance', {})
 
+			freq_sweep[visit_date] = impedance_data.get('entire_freq_sweep', None)
+
+			data_three_freqs = impedance_data.get('data_three_freqs', None)
+
 			# Process each frequency
 			for freq in frequency_labels:
-				freq_data = impedance_data.get(freq, {})
+				freq_data = data_three_freqs.get(freq, {})
 				for field in measurement_fields.values():
 					try:
 						val = float(freq_data.get(field)) if freq_data.get(field) not in (None, '') else None
