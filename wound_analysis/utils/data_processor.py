@@ -14,7 +14,7 @@ import pandas as pd
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-from wound_analysis.utils.column_schema import DColumns
+from wound_analysis.utils.column_schema import DColumns, ExcelSheetColumns
 
 
 VisitsDataType: TypeAlias = Dict[ DColumns | Literal['wound_measurements', 'sensor_data'],
@@ -27,18 +27,43 @@ VisitsMetadataType: TypeAlias = Dict[Literal['patient_metadata', 'visits'], Dict
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+# Helper function to convert NaN to None
+def get_float(data, key):
+	return float(data[key]) if (data is not None) and (not pd.isna(data.get(key))) else None
+
+
 class WoundDataProcessor:
-	def __init__(self, csv_dataset_path: pathlib.Path=None, impedance_freq_sweep_path: pathlib.Path=None, df: pd.DataFrame= None):
+	def __init__(self, impedance_freq_sweep_path: pathlib.Path=None, df: pd.DataFrame=None, impedance_analyzer: Optional['ImpedanceAnalyzer']=None):
+		"""Initialize the WoundDataProcessor.
 
+		Args:
+			impedance_freq_sweep_path: Path to impedance frequency sweep files
+			df: Pre-loaded and preprocessed DataFrame
+			impedance_analyzer: Optional existing ImpedanceAnalyzer instance to reuse
+		"""
 		self.impedance_freq_sweep_path = impedance_freq_sweep_path
+		self.df = df.copy()
 
-		self.df = pd.read_csv( csv_dataset_path ) if df is None else df
-
-		# Clean column names
-		self.df.columns = self.df.columns.str.strip()
+		# Use provided analyzer or create a new one
+		if impedance_analyzer is not None:
+			self.impedance_analyzer = impedance_analyzer
+		else:
+			# Initialize a new analyzer if none was provided
+			self.impedance_analyzer = ImpedanceAnalyzer(impedance_freq_sweep_path=impedance_freq_sweep_path)
 
 		# Initialize column schema
 		self.CN = DColumns(df=self.df)
+
+		self._cache_patient_visits = {}
+
+		for record_id in self.df[self.CN.RECORD_ID].unique():
+			_ = self.get_patient_visits(record_id=record_id)
+
+
+	def get_cache_key_patient_visits(self, record_id: int) -> str:
+		return f"{record_id}_visits"
+
 
 	def get_patient_visits(self, record_id: int) -> VisitsMetadataType:
 		"""
@@ -58,33 +83,49 @@ class WoundDataProcessor:
 			Raises:
 				ValueError: If no records are found for the specified patient
 				Exception: If any error occurs during data processing
+
+			Note:
+				This method uses caching to improve performance when processing impedance data.
+				The cache is used to avoid reprocessing the same data multiple times.
 		"""
 
-		try:
-			patient_data = self.df[self.df[self.CN.RECORD_ID] == record_id]
-			if patient_data.empty:
-				raise ValueError(f"No measurements found for patient {record_id}")
+		cache_key = self.get_cache_key_patient_visits(record_id=record_id)
 
-			# Get metaa from first visit
-			first_visit = patient_data.iloc[0]
-			metadata = self._extract_patient_metadata(first_visit)
+		if cache_key in self._cache_patient_visits:
+			return self._cache_patient_visits[cache_key]
 
-			visits_data = []
-			for _, visit in patient_data.iterrows():
-				if pd.isna(visit.get(self.CN.SKIPPED_VISIT)) or visit[self.CN.SKIPPED_VISIT] != 'Yes':
-					visit_data = self._process_visit_data(visit=visit, record_id=record_id)
-					if visit_data:
-						wound_info = self._get_wound_info(visit)
-						visit_data['wound_info'] = wound_info
-						visits_data.append(visit_data)
+		# try:
+		data_csv_for_patient = self.df[self.df[self.CN.RECORD_ID] == record_id]
+		if data_csv_for_patient.empty:
+			raise ValueError(f"No measurements found for patient {record_id}")
 
-			return {
-				'patient_metadata': metadata,
-				'visits': visits_data
-			}
-		except Exception as e:
-			logger.error(f"Error processing patient {record_id}: {str(e)}")
-			raise
+		# Get metadata from first visit
+		first_visit = data_csv_for_patient.iloc[0]
+		metadata = self._extract_patient_metadata(first_visit)
+
+		visits_data = []
+
+		for _, visit_csv_row in data_csv_for_patient.iterrows():
+
+			if pd.isna(visit_csv_row.get(self.CN.SKIPPED_VISIT)) or visit_csv_row[self.CN.SKIPPED_VISIT] != 'Yes':
+
+				# Check if we already have cached data for this visit
+				visit_data = self._process_visit_data(visit_csv_row=visit_csv_row, record_id=record_id)
+
+				if visit_data:
+
+					wound_info = self._get_wound_info(visit_csv_row)
+
+					visit_data['wound_info'] = wound_info
+
+					visits_data.append(visit_data)
+
+		result = { 'patient_metadata': metadata, 'visits': visits_data }
+
+		self._cache_patient_visits[cache_key] = result
+
+		return result
+
 
 	def get_population_statistics(self) -> Dict:
 		"""
@@ -270,26 +311,26 @@ class WoundDataProcessor:
 				})
 
 		# Impedance Analysis
-		if CN.HIGHEST_FREQ_Z in df.columns:
+		if CN.HIGHEST_FREQ_ABSOLUTE in df.columns:
 			stats_data['sensor_data']['impedance'] = {
 				'magnitude': {
-					'overall': df[CN.HIGHEST_FREQ_Z].agg(['mean', 'std', 'min', 'max']).to_dict(),
-					'by_healing_status': df.groupby('Healing_Status')[CN.HIGHEST_FREQ_Z].mean().to_dict(),
-					'temporal_trend': df.groupby(CN.VISIT_NUMBER)[CN.HIGHEST_FREQ_Z].mean().to_dict()
+					'overall': df[CN.HIGHEST_FREQ_ABSOLUTE].agg(['mean', 'std', 'min', 'max']).to_dict(),
+					'by_healing_status': df.groupby('Healing_Status')[CN.HIGHEST_FREQ_ABSOLUTE].mean().to_dict(),
+					'temporal_trend': df.groupby(CN.VISIT_NUMBER)[CN.HIGHEST_FREQ_ABSOLUTE].mean().to_dict()
 				}
 			}
 
 			# Add complex impedance components if available
-			if all(col in df.columns for col in [CN.HIGHEST_FREQ_Z_PRIME, CN.HIGHEST_FREQ_Z_DOUBLE_PRIME]):
+			if all(col in df.columns for col in [CN.HIGHEST_FREQ_REAL, CN.HIGHEST_FREQ_IMAGINARY]):
 				stats_data['sensor_data']['impedance'].update({
 					'complex_components': {
 						'real': {
-							'overall': df[CN.HIGHEST_FREQ_Z_PRIME].agg(['mean', 'std', 'min', 'max']).to_dict(),
-							'by_healing_status': df.groupby('Healing_Status')[CN.HIGHEST_FREQ_Z_PRIME].mean().to_dict()
+							'overall': df[CN.HIGHEST_FREQ_REAL].agg(['mean', 'std', 'min', 'max']).to_dict(),
+							'by_healing_status': df.groupby('Healing_Status')[CN.HIGHEST_FREQ_REAL].mean().to_dict()
 						},
 						'imaginary': {
-							'overall': df[CN.HIGHEST_FREQ_Z_DOUBLE_PRIME].agg(['mean', 'std', 'min', 'max']).to_dict(),
-							'by_healing_status': df.groupby('Healing_Status')[CN.HIGHEST_FREQ_Z_DOUBLE_PRIME].mean().to_dict()
+							'overall': df[CN.HIGHEST_FREQ_IMAGINARY].agg(['mean', 'std', 'min', 'max']).to_dict(),
+							'by_healing_status': df.groupby('Healing_Status')[CN.HIGHEST_FREQ_IMAGINARY].mean().to_dict()
 						}
 					}
 				})
@@ -658,7 +699,7 @@ class WoundDataProcessor:
 		return wound_info
 
 
-	def _process_visit_data(self, visit: dict, record_id: int) -> Optional[VisitsDataType]:
+	def _process_visit_data(self, visit_csv_row: pd.Series, record_id: int) -> Optional[VisitsDataType]:
 		"""
 			Process the data from a single patient visit and extract relevant information.
 
@@ -684,99 +725,35 @@ class WoundDataProcessor:
 			Notes:
 				The impedance data is either extracted from Excel sweep files if available,
 				or from the visit parameters directly as a fallback.
+
+				This method uses a caching mechanism to avoid reprocessing impedance data
+				for the same patient visit, which improves performance significantly.
 		"""
 
-		visit_date = pd.to_datetime(visit[self.CN.VISIT_DATE]).strftime('%m-%d-%Y') if not pd.isna(visit.get(self.CN.VISIT_DATE)) else None
+		# Extract visit date
+		visit_date = pd.to_datetime(visit_csv_row[self.CN.VISIT_DATE]).strftime('%m-%d-%Y') if not pd.isna(visit_csv_row.get(self.CN.VISIT_DATE)) else None
 
 		if not visit_date:
 			logger.warning("Missing visit date")
 			return None
 
-		def get_float(data, key):
-			return float(data[key]) if not pd.isna(data.get(key)) else None
+		# Check if we have cached impedance data for this visit
+		visit_number = visit_csv_row.get(self.CN.VISIT_NUMBER)
 
-		def get_impedance_data():
-			"""
-			Extracts and processes impedance data for a wound assessment.
-
-			This function retrieves electrical impedance data either from a frequency sweep file
-			or from visit parameters. It processes data for three frequency points (high, center, and low)
-			and calculates impedance (Z), resistance, capacitance, and frequency values for each.
-
-			Returns:
-				dict: A nested dictionary containing processed impedance data structured as:
-					{
-						'high_frequency': {
-							'Z': float or None,             # Impedance magnitude
-							'resistance': float or None,    # Real part of impedance (Z')
-							'capacitance': float or None,   # Calculated from imaginary part (1/(2πf*Z''))
-							'frequency': float or None      # Frequency in Hz
-						},
-						'center_frequency': {...},          # Same structure as high_frequency
-						'low_frequency': {...}              # Same structure as high_frequency
-
-			Notes:
-				- If frequency sweep data is available, values are extracted for all three frequency points
-				- If sweep data is unavailable, only high frequency data is extracted from visit parameters
-				- Capacitance is calculated using the formula: C = 1/(2πf*Z'')
-			"""
-
-			impedance_data = {
-				'high_frequency'  : {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None},
-				'center_frequency': {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None},
-				'low_frequency'   : {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None}
-			}
-
-			def transform_impedance_data(freq_data, frequency):
-				if freq_data is not None:
-					return {
-						'Z': freq_data['Z'],
-						'resistance': freq_data['Z_prime'],
-						'capacitance': None if freq_data['Z_double_prime'] is None else 1 / (2 * 3.14 * frequency * freq_data['Z_double_prime']),
-						'frequency': frequency
-					}
-				return {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None}
-
-			df = ImpedanceAnalyzer.process_impedance_sweep_xlsx(impedance_freq_sweep_path=self.impedance_freq_sweep_path, record_id=record_id, visit_date_being_processed=visit_date)
-
-			if df is not None:
-				# Get data for this visit date
-				visit_df = df[df['visit_date_freq_sweep'] == visit_date]
-
-				if not visit_df.empty:
-					logger.debug(f"Found matching visit data with {len(visit_df)} rows")
-					# Get data for all three frequencies using the index
-					high_freq   = visit_df[visit_df.index == 'highest_freq'].iloc[0] if not visit_df[visit_df.index == 'highest_freq'].empty else None
-					center_freq = visit_df[visit_df.index == 'center_freq'].iloc[0]  if not visit_df[visit_df.index == 'center_freq'].empty  else None
-					low_freq    = visit_df[visit_df.index == 'lowest_freq'].iloc[0]  if not visit_df[visit_df.index == 'lowest_freq'].empty  else None
-
-					impedance_data['high_frequency']   = transform_impedance_data(high_freq,   float(high_freq['frequency'])   if high_freq   is not None else None)
-					impedance_data['center_frequency'] = transform_impedance_data(center_freq, float(center_freq['frequency']) if center_freq is not None else None)
-					impedance_data['low_frequency']    = transform_impedance_data(low_freq,    float(low_freq['frequency'])    if low_freq    is not None else None)
-
-			else:
-				# Get impedance data from visit parameters if no sweep data
-				high_freq = {
-					'Z'             : get_float(visit, self.CN.HIGHEST_FREQ_Z),
-					'Z_prime'       : get_float(visit, self.CN.HIGHEST_FREQ_Z_PRIME),
-					'Z_double_prime': get_float(visit, self.CN.HIGHEST_FREQ_Z_DOUBLE_PRIME)
-				}
-
-				impedance_data['high_frequency'] = transform_impedance_data(high_freq, 80000)
-
-			return impedance_data
+		# logger.info(f"Processing impedance data for patient {record_id}, visit {visit_number}")
+		impedance_data = self.impedance_analyzer.get_structured_three_freq_high_center_low_impedance_data_for_view(visit_csv_row=visit_csv_row, record_id=record_id, visit_date=visit_date, CN=self.CN)
 
 		wound_measurements = {
-			'length': get_float(visit, self.CN.LENGTH),
-			'width' : get_float(visit, self.CN.WIDTH),
-			'depth' : get_float(visit, self.CN.DEPTH),
-			'area'  : get_float(visit, self.CN.WOUND_AREA)
+			'length': get_float(visit_csv_row, self.CN.LENGTH),
+			'width' : get_float(visit_csv_row, self.CN.WIDTH),
+			'depth' : get_float(visit_csv_row, self.CN.DEPTH),
+			'area'  : get_float(visit_csv_row, self.CN.WOUND_AREA)
 		}
 
 		temperature_readings = {
-			'center': get_float(visit, self.CN.CENTER_TEMP),
-			'edge'  : get_float(visit, self.CN.EDGE_TEMP),
-			'peri'  : get_float(visit, self.CN.PERI_TEMP)
+			'center': get_float(visit_csv_row, self.CN.CENTER_TEMP),
+			'edge'  : get_float(visit_csv_row, self.CN.EDGE_TEMP),
+			'peri'  : get_float(visit_csv_row, self.CN.PERI_TEMP)
 		}
 
 		hemoglobin_types = {
@@ -789,18 +766,20 @@ class WoundDataProcessor:
 			self.CN.VISIT_DATE: visit_date,
 			'wound_measurements': wound_measurements,
 			'sensor_data': {
-				'oxygenation': get_float(visit, self.CN.OXYGENATION),
+				'oxygenation': get_float(visit_csv_row, self.CN.OXYGENATION),
 				'temperature': temperature_readings,
-				'impedance'  : get_impedance_data(),
-				**{key: get_float(visit, value) for key, value in hemoglobin_types.items()}
+				'impedance'  : impedance_data,
+				**{key: get_float(visit_csv_row, value) for key, value in hemoglobin_types.items()}
 			}
 		}
+
 
 	def get_patient_dataframe(self, record_id: int) -> pd.DataFrame:
 		"""
 		Get the patient dataframe for a given record ID.
 		"""
 		return self.df[self.df[self.CN.RECORD_ID] == record_id].sort_values(self.CN.VISIT_DATE)
+
 
 	@staticmethod
 	def get_visit_date_tag(visits:List[VisitsDataType]) -> str:
@@ -1207,204 +1186,33 @@ class DataManager:
 
 class ImpedanceExcelProcessor:
 	"""
-	Processes and manages impedance data from Excel files containing frequency sweep measurements.
+		Processes and manages impedance data from Excel files containing frequency sweep measurements.
 
-	This class handles the loading, parsing, and caching of impedance frequency sweep data
-	from Excel files. It extracts key frequency data points (lowest, center, highest frequencies)
-	for each patient visit and provides methods to retrieve specific visit data.
+		This class handles the loading, parsing, and caching of impedance frequency sweep data
+		from Excel files. It extracts key frequency data points (lowest, center, highest frequencies)
+		for each patient visit and provides methods to retrieve specific visit data.
 
-	The processor maintains a cache to improve performance when repeatedly accessing
-	the same data files.
+		The processor maintains a cache to improve performance when repeatedly accessing
+		the same data files.
 
-	Attributes
-	cache : dict
-		A dictionary that stores processed data to avoid redundant file operations.
-		Data is organized by cache keys (based on record ID and file path).
+		Attributes:
+			cache : dict
+				A dictionary that stores processed data to avoid redundant file operations.
+				Data is organized by cache keys (based on record ID and file path).
 
-	Methods
-	get_visit_data(impedance_freq_sweep_path, record_id, visit_date)
-		Retrieves processed impedance data for a specific visit.
-
-	_process_excel_file(impedance_freq_sweep_path, record_id, cache_key)
-		Processes an Excel file and caches the extracted data.
-
-	_process_sheet(excel_file, sheet_name)
-		Extracts date and frequency data from a specific sheet in an Excel file.
-
-	_parse_date(date_cell_value, sheet_name)
-		Parses date values from various formats to standardized MM-DD-YYYY format.
-
-	_extract_frequency_data(df_bottom, parsed_date)
-		Extracts key frequency data points from processed DataFrame.
-
-	- Excel files are expected to be named as '{record_id}.xlsx'
-	- Each sheet in an Excel file typically represents a visit date
-	- For each visit, three key impedance measurements are extracted: lowest frequency, center frequency (max negative phase), and highest frequency
+			CN : DColumns
+			Column names for the data processor.
 	"""
-	def __init__(self):
-		self.cache = {}
-		self.CN = DColumns(df=None)
+	def __init__(self, impedance_freq_sweep_path: pathlib.Path):
+		self.impedance_freq_sweep_path = impedance_freq_sweep_path
+
+		self.cache_processed_excel_files = {}
+		self._process_all_excel_files()
 
 
-	def get_visit_data(self, impedance_freq_sweep_path: pathlib.Path, record_id: int, visit_date: str) -> Optional[pd.DataFrame]:
-		"""
-		Retrieves frequency sweep impedance data for a specific visit.
+	def get_cache_key_excel_file(self, record_id):
+		return f"excel_file_{record_id}"
 
-		This method checks the cache for previously processed data before extracting
-		visit-specific data from an Excel file. It handles the data retrieval and
-		processing workflow.
-
-		Parameters
-		----------
-		impedance_freq_sweep_path : pathlib.Path
-			Path to the Excel file containing impedance frequency sweep data.
-		record_id : int
-			Unique identifier for the patient record.
-		visit_date : str
-			Date of the visit for which data is requested.
-
-		Returns
-		-------
-		Optional[pd.DataFrame]
-			DataFrame containing impedance data for the specified visit date, with 'index'
-			set as the index column. Returns None if no data is available for the specified date.
-		"""
-		logger.debug(f"Retrieving visit data for record {record_id}, date {visit_date}")
-
-		# Check cache first
-		cache_key = f"{record_id}_{impedance_freq_sweep_path}"
-		logger.debug(f"Cache key: {cache_key}")
-
-		# Process file if not in cache
-		if cache_key not in self.cache:
-			logger.debug("Data not found in cache, processing Excel file")
-			self._process_excel_file(impedance_freq_sweep_path=impedance_freq_sweep_path, record_id=record_id, cache_key=cache_key)
-		else:
-			logger.debug("Found data in cache")
-
-		# Return data for requested visit date if available
-		if cache_key in self.cache and visit_date in self.cache[cache_key]:
-			logger.debug(f"Found visit data in cache for date {visit_date}")
-			freq_data = self.cache[cache_key][visit_date]
-			return pd.DataFrame(freq_data).set_index('index')
-		else:
-			logger.debug(f"No data found for visit date {visit_date}")
-			if cache_key in self.cache:
-				logger.debug(f"Available dates in cache: {list(self.cache[cache_key].keys())}")
-			return None
-
-	def _process_excel_file(self, impedance_freq_sweep_path: pathlib.Path, record_id: int, cache_key: str) -> None:
-		"""
-		Process an Excel file containing impedance frequency sweep data for a specific record.
-
-		This method extracts data from each sheet in the Excel file, where each sheet typically
-		represents a visit date. The processed data is stored in a dictionary organized by visit date
-		and cached using the provided cache key.
-
-		Parameters
-		----------
-		impedance_freq_sweep_path : pathlib.Path
-			Path to the directory containing impedance frequency sweep Excel files
-		record_id : int
-			The record ID used to locate the specific Excel file
-		cache_key : str
-			Key to use for storing the processed data in the cache
-
-		Returns
-		-------
-		None
-			The method stores the processed data in the cache under cache_key
-
-		Notes
-		-----
-		- The Excel file should be named as '{record_id}.xlsx'
-		- Each sheet in the Excel file is processed using the _process_sheet method
-		- If the Excel file doesn't exist, a warning is logged and the method returns
-		- Exceptions during file processing are caught and logged as errors
-		"""
-		# Find the Excel file
-		excel_file = impedance_freq_sweep_path / f'{record_id}.xlsx'
-		if not excel_file.exists():
-			logger.warning(f"Failed to find Excel file for record ID: {excel_file}")
-			return
-
-		visit_data_by_date = {}
-
-		# Use context manager for proper resource handling
-		with pd.ExcelFile(excel_file) as xl:
-			for sheet_name in xl.sheet_names:
-				sheet_data = self._process_sheet(excel_file, sheet_name)
-				if sheet_data:
-					parsed_date, freq_data = sheet_data
-					visit_data_by_date[parsed_date] = freq_data
-
-		# Store in cache
-		self.cache[cache_key] = visit_data_by_date
-		logger.info(f"Processed {len(visit_data_by_date)} visits for record ID: {record_id}")
-
-
-	def _process_sheet(self, excel_file: pathlib.Path, sheet_name: str) -> Optional[tuple]:
-		"""
-		Process a single sheet from an Excel file to extract date and frequency data.
-
-		This method reads the header to extract the date, validates the sheet structure,
-		and processes the bottom half of the sheet to extract frequency data.
-
-		Parameters
-		----------
-		excel_file : pathlib.Path
-			Path to the Excel file to process
-		sheet_name : str
-			Name of the sheet to process within the Excel file
-
-		Returns
-		-------
-		Optional[tuple]
-			A tuple containing (parsed_date, frequency_data) if successful,
-			None if any validation fails or an exception occurs
-
-		Notes
-		-----
-		The method expects:
-		- Date information in cell C1 (index [0,2])
-		- Data rows starting from the second row (skiprows=1)
-		- Processes only the bottom half of the available data rows
-		"""
-		# try:
-		# Read header row
-		header_df = pd.read_excel(excel_file, sheet_name=sheet_name, nrows=1, header=None)
-
-		# Validate header
-		if header_df.shape[1] < 3:
-			logger.warning(f"Sheet {sheet_name} has insufficient columns")
-			return None
-
-		# Extract and parse date
-		date_cell_value = header_df.iloc[0, 2]
-		if pd.isna(date_cell_value):
-			logger.warning(f"No date found in sheet {sheet_name}")
-			return None
-
-		parsed_date: str = self._parse_date(date_cell_value, sheet_name)
-		if not parsed_date:
-			return None
-
-		# Process data
-		df = pd.read_excel(excel_file, sheet_name=sheet_name, skiprows=1)
-		df.columns = df.columns.str.strip()
-
-		# Get bottom half
-		half_point = len(df) // 2
-		df_bottom = df.iloc[half_point:]
-
-		# Extract frequency data
-		freq_data = self._extract_frequency_data(df_bottom, parsed_date)
-
-		return parsed_date, freq_data
-
-		# except Exception as e:
-		# 	logger.warning(f"Error processing sheet {sheet_name}: {e}")
-		# 	return None
 
 	def _parse_date(self, date_cell_value, sheet_name: str) -> Optional[str]:
 		try:
@@ -1440,99 +1248,316 @@ class ImpedanceExcelProcessor:
 			logger.warning(f"Error parsing date: {e}")
 			return None
 
-	def _extract_frequency_data(self, df_bottom: pd.DataFrame, parsed_date: str) -> list:
+
+	def _extract_three_frequency_data(self, df_bottom: pd.DataFrame) -> pd.DataFrame:
 		"""
-		Extract frequency data at key frequency points from the dataframe.
+			Extract frequency data at key frequency points from the dataframe.
 
-		This method identifies the lowest, highest, and center frequency points
-		from the impedance data and extracts corresponding electrical measurements.
-		The center frequency is determined as the frequency with the maximum negative phase.
+			This method identifies the lowest, highest, and center frequency points
+			from the impedance data and extracts corresponding electrical measurements.
+			The center frequency is determined as the frequency with the maximum negative phase.
 
-		Parameters
-		----------
-		df_bottom : pd.DataFrame
-			DataFrame containing the frequency data with columns:
-			'freq / Hz', 'Z / Ohm', "Z' / Ohm", "-Z'' / Ohm", "neg. Phase / °"
-		parsed_date : str
-			The date of the visit in string format
+			Parameters
+			----------
+			freq_data : pd.DataFrame
+				DataFrame containing the frequency data with columns:
+				'frequency', 'Z', 'Z_prime', 'Z_double_prime', 'neg. Phase / °'
 
-		Returns
-		-------
-		list
-			A list of dictionaries containing the extracted data for each key frequency:
-			lowest, center, and highest. Each dictionary contains:
-			- DataColumn.VISIT_DATE: parsed date
-			- DataColumn.VISIT_NUMBER: None (to be filled later)
-			- 'frequency': frequency value as string
-			- 'Z': impedance magnitude
-			- 'Z_prime': real part of impedance
-			- 'Z_double_prime': imaginary part of impedance
-			- 'neg. Phase / °': negative phase angle
-			- 'index': identifier of frequency type ('lowest_freq', 'center_freq', or 'highest_freq')
+			Returns
+			-------
+			list
+				List of dictionaries containing impedance data at the three key frequencies:
+				- lowest frequency
+				- center frequency
+				- highest frequency
 		"""
+		# Check if dataframe is empty
+		if df_bottom.empty:
+			return []
+
 		# Find key frequencies
-		lowest_freq  = df_bottom[self.CN.Z_FREQ_SWEEP_FREQ].min()
-		highest_freq = df_bottom[self.CN.Z_FREQ_SWEEP_FREQ].max()
-		center_freq  = df_bottom.loc[df_bottom[self.CN.Z_FREQ_SWEEP_NEG_PHASE].idxmax(), self.CN.Z_FREQ_SWEEP_FREQ]
+		lowest_freq  = df_bottom[ExcelSheetColumns.FREQ.value].min()
+		highest_freq = df_bottom[ExcelSheetColumns.FREQ.value].max()
+
+		# Find center frequency (max negative phase)
+		max_phase_idx = df_bottom[ExcelSheetColumns.NEG_PHASE.value].idxmax()
+		center_freq   = df_bottom.loc[max_phase_idx, ExcelSheetColumns.FREQ.value]
 
 		# Create data for each frequency
-		freq_data = []
-		for freq_type, freq in [('lowest_freq',  lowest_freq),
-								('center_freq',  center_freq),
+		result = []
+		for freq_type, freq in [('lowest_freq', lowest_freq),
+								('center_freq', center_freq),
 								('highest_freq', highest_freq)]:
 
-			row = df_bottom[df_bottom[self.CN.Z_FREQ_SWEEP_FREQ] == freq].iloc[0]
+			# Find row for current frequency
+			rows = df_bottom[df_bottom[ExcelSheetColumns.FREQ.value] == freq]
+			if rows.empty:
+				continue
 
-			freq_data.append({
-				'visit_date_freq_sweep': parsed_date,
-				'frequency'            : str(freq),
-				'Z'                    : row[self.CN.Z_FREQ_SWEEP_ABSOLUTE],
-				'Z_prime'              : row[self.CN.Z_FREQ_SWEEP_REAL],
-				'Z_double_prime'       : row[self.CN.Z_FREQ_SWEEP_IMAGINARY],
-				'neg. Phase / °'       : row[self.CN.Z_FREQ_SWEEP_NEG_PHASE],
-				'index'                : freq_type
-			})
+			row = rows.iloc[0]
 
-		return freq_data
+			result.append({
+				'index'                                      : freq_type,
+				ExcelSheetColumns.FREQ.value                 : str(freq),
+				ExcelSheetColumns.VISIT_DATE_FREQ_SWEEP.value: df_bottom.attrs.get(ExcelSheetColumns.VISIT_DATE_FREQ_SWEEP.value),
+				ExcelSheetColumns.ABSOLUTE.value             : row[ExcelSheetColumns.ABSOLUTE.value],
+				ExcelSheetColumns.REAL.value                 : row[ExcelSheetColumns.REAL.value],
+				ExcelSheetColumns.IMAGINARY.value            : row[ExcelSheetColumns.IMAGINARY.value],
+				ExcelSheetColumns.NEG_PHASE.value            : row[ExcelSheetColumns.NEG_PHASE.value]
+				})
+
+		return pd.DataFrame(result).set_index('index')
+
+
+	def _process_sheet(self, excel_file: pathlib.Path, sheet_name: str) -> Optional[pd.DataFrame]:
+		"""
+			Process a single sheet from an Excel file to extract date and frequency data.
+
+			This method reads the header to extract the date, validates the sheet structure,
+			and processes the bottom half of the sheet to extract frequency data.
+
+			Parameters
+			----------
+			excel_file : pathlib.Path
+				Path to the Excel file to process
+			sheet_name : str
+				Name of the sheet to process within the Excel file
+
+			Returns
+			-------
+			Optional[pd.DataFrame]
+				A DataFrame containing frequency data if successful,
+				None if any validation fails or an exception occurs
+
+			Notes
+			-----
+			The method expects:
+			- Date information in cell C1 (index [0,2])
+			- Data rows starting from the second row (skiprows=1)
+			- Processes only the bottom half of the available data rows
+		"""
+
+		# Read header row
+		header_df = pd.read_excel(excel_file, sheet_name=sheet_name, nrows=1, header=None)
+
+		# Validate header
+		if header_df.shape[1] < 3:
+			# logger.warning(f"Sheet {sheet_name} has insufficient columns")
+			return None
+
+		# Extract and parse date
+		date_cell_value = header_df.iloc[0, 2]
+		if pd.isna(date_cell_value):
+			logger.warning(f"No date found in sheet {sheet_name}")
+			return None
+
+		visit_date_freq_sweep: str = self._parse_date(date_cell_value, sheet_name)
+		if not visit_date_freq_sweep:
+			return None
+
+		# Process data
+		df = pd.read_excel(excel_file, sheet_name=sheet_name, skiprows=1)
+		df.columns = df.columns.str.strip()
+
+		# Get bottom half
+		half_point = len(df) // 2
+		df_bottom = df.iloc[half_point:]
+
+		# date of visit
+		df_bottom.attrs[ExcelSheetColumns.VISIT_DATE_FREQ_SWEEP.value] = visit_date_freq_sweep
+
+		return df_bottom
+
+
+	def _process_excel_file(self, record_id: int) -> None:
+		"""
+			Process an Excel file containing impedance frequency sweep data for a specific record.
+
+			This method extracts data from each sheet in the Excel file, where each sheet typically
+			represents a visit date. The processed data is stored in a dictionary organized by visit date
+			and cached using the provided cache key.
+
+			Parameters
+			----------
+			impedance_freq_sweep_path : pathlib.Path
+				Path to the directory containing impedance frequency sweep Excel files
+			record_id : int
+				The record ID used to locate the specific Excel file
+			cache_key : str
+				Key to use for storing the processed data in the cache
+
+			Returns
+			-------
+			None
+				The method stores the processed data in the cache under cache_key
+
+			Notes
+			-----
+			- The Excel file should be named as '{record_id}.xlsx'
+			- If the Excel file doesn't exist, a warning is logged and the method returns
+			- Exceptions during file processing are caught and logged as errors
+		"""
+
+		cache_key = self.get_cache_key_excel_file(record_id)
+
+		if cache_key in self.cache_processed_excel_files:
+			return self.cache_processed_excel_files[cache_key]
+
+		# Find the Excel file
+		excel_file = self.impedance_freq_sweep_path / f'{record_id}.xlsx'
+		if not excel_file.exists():
+			logger.warning(f"Failed to find Excel file for record ID: {excel_file}")
+			return None
+
+		# Dictionary to store visit data by date
+		visit_data_by_date_dict: Dict[str, Dict[str, pd.DataFrame]] = {}
+
+		# Use context manager for proper resource handling
+		with pd.ExcelFile(excel_file) as xl:
+			for sheet_name in xl.sheet_names:
+				# Process each sheet
+				df_bottom = self._process_sheet(excel_file=excel_file, sheet_name=sheet_name)
+
+				if df_bottom is not None:
+					date = df_bottom.attrs[ExcelSheetColumns.VISIT_DATE_FREQ_SWEEP.value]
+					visit_data_by_date_dict[date] = {	'data_three_freqs' : self._extract_three_frequency_data(df_bottom),
+														'entire_freq_sweep': df_bottom.copy()}
+
+		# Store in cache
+		self.cache_processed_excel_files[cache_key] = visit_data_by_date_dict
+
+		logger.info(f"Processed {len(visit_data_by_date_dict)} visits for record ID: {record_id}")
+
+
+	def _process_all_excel_files(self) -> None:
+		"""
+			Processes all Excel files in the specified directory.
+
+			This method iterates through all Excel files in the directory and processes
+			each file using the _process_excel_file method. The processed data is stored
+			in the cache for future retrieval.
+		"""
+		# Get sorted list of Excel files
+		excel_files = sorted([f for f in self.impedance_freq_sweep_path.iterdir()
+							if f.is_file() and f.suffix == '.xlsx' and not f.name.startswith('~')])
+
+		# Process each file in sorted order
+		for file in excel_files:
+			record_id = int(file.stem)
+			self._process_excel_file(record_id=record_id)
+
+
+	def get_freq_data_for_visit(self, record_id: int, visit_date: str) -> Optional[Dict[str, pd.DataFrame]]:
+		"""
+			Retrieves frequency sweep impedance data for a specific visit.
+
+			This method checks the cache for previously processed data before extracting
+			visit-specific data from an Excel file. It handles the data retrieval and
+			processing workflow.
+
+			Parameters
+			----------
+			impedance_freq_sweep_path : pathlib.Path
+				Path to the Excel file containing impedance frequency sweep data.
+			record_id : int
+				Unique identifier for the patient record.
+			visit_date : str
+				Date of the visit for which data is requested.
+
+			Returns
+			-------
+			Optional[Dict[str, pd.DataFrame]]
+				Dictionary containing impedance data for the specified visit date, with 'index'
+				set as the index column. Returns None if no data is available for the specified date.
+
+			Note:
+				This method uses caching to improve performance. The cache is checked first
+				before attempting to process the Excel file again.
+		"""
+		# Check cache first
+		cache_key = self.get_cache_key_excel_file(record_id)
+
+		if cache_key in self.cache_processed_excel_files and visit_date in self.cache_processed_excel_files[cache_key]:
+			# logger.info(f"Using cached frequency data for patient {record_id}, visit date {visit_date}")
+			return self.cache_processed_excel_files[cache_key][visit_date]
+
+		return None
 
 
 class ImpedanceAnalyzer:
 	"""Handles advanced bioimpedance analysis and clinical interpretation."""
 
-	# Create a single instance of the processor
-	_excel_processor = ImpedanceExcelProcessor()
+	def __init__(self, impedance_freq_sweep_path: pathlib.Path):
+		self.impedance_freq_sweep_path = impedance_freq_sweep_path
+		self._excel_processor = ImpedanceExcelProcessor(impedance_freq_sweep_path)
+		self._structured_three_freq_cache = {}  # Cache for processed impedance data
 
-	@staticmethod
-	def process_impedance_sweep_xlsx(impedance_freq_sweep_path: pathlib.Path, record_id: int, visit_date_being_processed: str) -> Optional[pd.DataFrame]:
-		"""
-		Process impedance sweep data from an Excel file for a specific record ID and visit date.
 
-		This function reads the Excel file containing impedance sweep data for a given patient,
-		extracts the relevant information for the specified visit date, and returns it as a
-		processed DataFrame.
+	def get_cache_key_structured_three_freq(self, record_id: int, visit_date: str) -> str:
+		return f"{record_id}_{visit_date}"
 
-		Args:
-			impedance_freq_sweep_path: Path to directory containing impedance sweep Excel files
-			record_id: The unique identifier for the patient record
-			visit_date_being_processed: The specific visit date to process, in 'mm-dd-yyyy' format
 
-		Returns:
-			DataFrame with processed impedance data or None if not found/processing fails
-		"""
-		logger.debug(f"Processing impedance sweep data for record {record_id}, visit date {visit_date_being_processed}")
-		logger.debug(f"Looking for Excel file in: {impedance_freq_sweep_path}")
+	def get_structured_three_freq_high_center_low_impedance_data_for_view(self, visit_csv_row: pd.Series, record_id: int, visit_date: str, CN: DColumns) -> Dict:
 
-		result = ImpedanceAnalyzer._excel_processor.get_visit_data(
-					impedance_freq_sweep_path = impedance_freq_sweep_path,
-					record_id                 = record_id,
-					visit_date                = visit_date_being_processed )
+		# Create a cache key based on record_id and visit date
+		cache_key = self.get_cache_key_structured_three_freq(record_id=record_id, visit_date=visit_date)
 
-		if result is not None:
-			logger.debug(f"Found impedance data with {len(result)} rows")
+		# Check if we already have this data in cache
+		if cache_key in self._structured_three_freq_cache:
+			logger.info(f"Using cached impedance data for patient {record_id}, visit date {visit_date}")
+			return self._structured_three_freq_cache[cache_key]
+
+		impedance_data = {
+			'highest_freq': {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None},
+			'center_freq' : {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None},
+			'lowest_freq' : {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None},
+			'entire_freq_sweep': None
+		}
+
+		def transform_impedance_data(freq_data):
+			frequency = get_float(freq_data, ExcelSheetColumns.FREQ.value)
+
+			if freq_data is not None:
+				result = {
+					'Z'          : freq_data[ExcelSheetColumns.ABSOLUTE.value],
+					'resistance' : freq_data[ExcelSheetColumns.REAL.value],
+					'capacitance': None if freq_data[ExcelSheetColumns.IMAGINARY.value] is None else 1 / (2 * 3.14 * frequency * freq_data[ExcelSheetColumns.IMAGINARY.value]),
+					'frequency'  : frequency
+				}
+				return result
+
+			return {'Z': None, 'resistance': None, 'capacitance': None, 'frequency': None}
+
+
+		# Get data for this visit date
+		visit_data_for_date: Dict[str, pd.DataFrame] = self._excel_processor.get_freq_data_for_visit(record_id=record_id, visit_date=visit_date)
+
+
+		if visit_data_for_date is not None:
+			df_bottom = visit_data_for_date['entire_freq_sweep']
+			data_three_freqs = visit_data_for_date['data_three_freqs'].T
+			impedance_data['highest_freq'] = transform_impedance_data(data_three_freqs['highest_freq'].to_dict())
+			impedance_data['center_freq']  = transform_impedance_data(data_three_freqs['center_freq'].to_dict())
+			impedance_data['lowest_freq']  = transform_impedance_data(data_three_freqs['lowest_freq'].to_dict())
+			impedance_data['entire_freq_sweep'] = df_bottom
+
 		else:
-			logger.debug("No impedance data found")
+			# Get impedance data from visit parameters if no sweep data
+			logger.debug("No freq sweep impedance data found")
 
-		return result
+			high_freq = {
+				ExcelSheetColumns.ABSOLUTE.value : get_float(visit_csv_row, CN.HIGHEST_FREQ_ABSOLUTE),
+				ExcelSheetColumns.REAL.value     : get_float(visit_csv_row, CN.HIGHEST_FREQ_REAL),
+				ExcelSheetColumns.IMAGINARY.value: get_float(visit_csv_row, CN.HIGHEST_FREQ_IMAGINARY),
+				ExcelSheetColumns.FREQ.value     : 80000
+			}
+
+			impedance_data['highest_freq'] = transform_impedance_data(high_freq)
+
+		# Store the processed data in cache for future use
+		self._structured_three_freq_cache[cache_key] = impedance_data
+
+		return impedance_data
 
 	@staticmethod
 	def calculate_visit_changes(current_visit: VisitsDataType, previous_visit: VisitsDataType) -> tuple[dict, dict]:
@@ -1556,7 +1581,7 @@ class ImpedanceAnalyzer:
 			-------
 			tuple
 				A tuple containing two dictionaries:
-				- changes: Dictionary mapping parameter names (e.g., 'resistance_low_frequency') to their percentage changes between visits.
+				- changes: Dictionary mapping parameter names (e.g., 'resistance_lowest_freq') to their percentage changes between visits.
 				- clinically_significant: Dictionary mapping parameter names to boolean values indicating whether the change is clinically significant.
 
 			Notes
@@ -1579,7 +1604,7 @@ class ImpedanceAnalyzer:
 			'Z': 0.15  # 15% change is clinically significant for absolute impedance
 		}
 
-		freq_types = ['low_frequency', 'center_frequency', 'high_frequency']
+		freq_types = ['lowest_freq', 'center_freq', 'highest_freq']
 		params = ['Z', 'resistance', 'capacitance']
 
 		for freq_type in freq_types:
@@ -1620,11 +1645,11 @@ class ImpedanceAnalyzer:
 			{
 				'sensor_data': {
 					'impedance': {
-						'low_frequency': {
+						'lowest_freq': {
 							'Z': float,  # Impedance magnitude at low frequency
 							'frequency': float  # Actual frequency value
 						},
-						'high_frequency': {
+						'highest_freq': {
 							'Z': float,  # Impedance magnitude at high frequency
 							'resistance': float,  # Optional
 							'capacitance': float,  # Optional
@@ -1661,8 +1686,8 @@ class ImpedanceAnalyzer:
 		impedance_data = sensor_data.get('impedance', {})
 
 		# Extract absolute impedance at different frequencies
-		low_freq  = impedance_data.get('low_frequency', {})
-		high_freq = impedance_data.get('high_frequency', {})
+		low_freq  = impedance_data.get('lowest_freq', {})
+		high_freq = impedance_data.get('highest_freq', {})
 
 		low_z  = low_freq.get('Z', 0)
 		high_z = high_freq.get('Z', 0)
@@ -1742,7 +1767,7 @@ class ImpedanceAnalyzer:
 				List of visit dictionaries, each containing visit data including sensor readings.
 				Each visit dictionary should have:
 				- DataColumns.VISIT_DATE: date of the visit
-				- 'sensor_data': dict containing 'impedance' data with 'high_frequency' values including a 'Z' value representing impedance measurement
+				- 'sensor_data': dict containing 'impedance' data with 'highest_freq' values including a 'Z' value representing impedance measurement
 
 			Returns
 			--------
@@ -1775,7 +1800,7 @@ class ImpedanceAnalyzer:
 		dates, z_values = [], []
 		for visit in visits:
 			try:
-				high_freq = visit.get('sensor_data', {}).get('impedance', {}).get('high_frequency', {})
+				high_freq = visit.get('sensor_data', {}).get('impedance', {}).get('highest_freq', {})
 				z_val = float(high_freq.get('Z', 0))
 				if z_val > 0:
 					z_values.append(z_val)
@@ -1865,9 +1890,9 @@ class ImpedanceAnalyzer:
 		impedance_data = sensor_data.get('impedance', {})
 
 		# Extract absolute impedance at different frequencies
-		low_freq    = impedance_data.get('low_frequency', {})
-		center_freq = impedance_data.get('center_frequency', {})
-		high_freq   = impedance_data.get('high_frequency', {})
+		low_freq    = impedance_data.get('lowest_freq', {})
+		center_freq = impedance_data.get('center_freq', {})
+		high_freq   = impedance_data.get('highest_freq', {})
 
 		try:
 			# Get impedance values
@@ -1964,9 +1989,9 @@ class ImpedanceAnalyzer:
 
 		# Parameters to monitor
 		params = [
-					('high_frequency' , 'Z'           , 'High-frequency impedance')   ,
-					('low_frequency'  , 'resistance'  , 'Low-frequency resistance')   ,
-					('high_frequency' , 'capacitance' , 'High-frequency capacitance')
+					('highest_freq' , 'Z'           , 'High-frequency impedance')   ,
+					('lowest_freq'  , 'resistance'  , 'Low-frequency resistance')   ,
+					('highest_freq' , 'capacitance' , 'High-frequency capacitance')
 				]
 
 		current_impedance = current_visit.get('sensor_data', {}).get('impedance', {})
@@ -2001,17 +2026,17 @@ class ImpedanceAnalyzer:
 							direction = "increase" if z_score > 0 else "decrease"
 
 							# Clinical interpretation
-							if freq_type == 'high_frequency' and param_name == 'Z':
+							if freq_type == 'highest_freq' and param_name == 'Z':
 								if direction == 'increase':
 									clinical_meaning = "Possible deterioration in tissue quality or increased inflammation"
 								else:
 									clinical_meaning = "Possible improvement in cellular integrity or reduction in edema"
-							elif freq_type == 'low_frequency' and param_name == 'resistance':
+							elif freq_type == 'lowest_freq' and param_name == 'resistance':
 								if direction == 'increase':
 									clinical_meaning = "Possible decrease in extracellular fluid or improved barrier function"
 								else:
 									clinical_meaning = "Possible increase in extracellular fluid or breakdown of tissue barriers"
-							elif freq_type == 'high_frequency' and param_name == 'capacitance':
+							elif freq_type == 'highest_freq' and param_name == 'capacitance':
 								if direction == 'increase':
 									clinical_meaning = "Possible increase in cellular density or membrane integrity"
 								else:
@@ -2044,7 +2069,7 @@ class ImpedanceAnalyzer:
 			----------
 			current_visit : dict
 				Dictionary containing current visit data with sensor_data.impedance measurements
-				(including low_frequency and high_frequency values with Z, resistance, capacitance)
+				(including lowest_freq and highest_freq values with Z, resistance, capacitance)
 			previous_visit : dict, optional
 				Dictionary containing previous visit data in the same format as current_visit,
 				used for trend analysis
@@ -2074,8 +2099,8 @@ class ImpedanceAnalyzer:
 		current_impedance = current_visit.get('sensor_data', {}).get('impedance', {})
 
 		# Factor 1: Low/high frequency impedance ratio
-		low_freq = current_impedance.get('low_frequency', {})
-		high_freq = current_impedance.get('high_frequency', {})
+		low_freq = current_impedance.get('lowest_freq', {})
+		high_freq = current_impedance.get('highest_freq', {})
 
 		try:
 			low_z = float(low_freq.get('Z', 0))
@@ -2096,7 +2121,7 @@ class ImpedanceAnalyzer:
 		# Factor 2: Sudden increase in low-frequency resistance (inflammatory response)
 		if previous_visit:
 			prev_impedance = previous_visit.get('sensor_data', {}).get('impedance', {})
-			prev_low_freq = prev_impedance.get('low_frequency', {})
+			prev_low_freq = prev_impedance.get('lowest_freq', {})
 
 			try:
 				current_r = float(low_freq.get('resistance', 0))
@@ -2189,9 +2214,9 @@ class ImpedanceAnalyzer:
 		impedance_data = visit.get('sensor_data', {}).get('impedance', {})
 
 		# Extract resistance at different frequencies
-		low_freq = impedance_data.get('low_frequency', {})
-		center_freq = impedance_data.get('center_frequency', {})
-		high_freq = impedance_data.get('high_frequency', {})
+		low_freq = impedance_data.get('lowest_freq', {})
+		center_freq = impedance_data.get('center_freq', {})
+		high_freq = impedance_data.get('highest_freq', {})
 
 		try:
 			# Get resistance values
@@ -2455,11 +2480,11 @@ class ImpedanceAnalyzer:
 
 		# Impedance components by visit
 		avg_impedance = df.groupby(CN.VISIT_NUMBER, observed=False)[
-			[CN.HIGHEST_FREQ_Z, CN.HIGHEST_FREQ_Z_PRIME, CN.HIGHEST_FREQ_Z_DOUBLE_PRIME]
+			[CN.HIGHEST_FREQ_ABSOLUTE, CN.HIGHEST_FREQ_REAL, CN.HIGHEST_FREQ_IMAGINARY]
 		].mean().reset_index()
 
 		# Impedance by wound type
-		avg_by_type = df.groupby(CN.WOUND_TYPE)[CN.HIGHEST_FREQ_Z].mean().reset_index()
+		avg_by_type = df.groupby(CN.WOUND_TYPE)[CN.HIGHEST_FREQ_ABSOLUTE].mean().reset_index()
 
 		return avg_impedance, avg_by_type
 

@@ -124,7 +124,7 @@ class ImpedanceTab:
 				cluster_features = st.multiselect(
 					"Features for Clustering",
 					options=[
-						CN.HIGHEST_FREQ_Z,
+						CN.HIGHEST_FREQ_ABSOLUTE,
 						CN.WOUND_AREA,
 						CN.CENTER_TEMP,
 						CN.OXYGENATION,
@@ -134,7 +134,7 @@ class ImpedanceTab:
 						CN.DAYS_SINCE_FIRST_VISIT,
 						CN.HEALING_RATE
 					],
-					default=[CN.HIGHEST_FREQ_Z, CN.WOUND_AREA, CN.HEALING_RATE],
+					default=[CN.HIGHEST_FREQ_ABSOLUTE, CN.WOUND_AREA, CN.HEALING_RATE],
 					help="Select features to be used for clustering patients"
 				)
 
@@ -448,7 +448,7 @@ class ImpedanceTab:
 
 		# Get the selected features for analysis
 		features_to_analyze = [
-			CN.HIGHEST_FREQ_Z,
+			CN.HIGHEST_FREQ_ABSOLUTE,
 			CN.WOUND_AREA,
 			CN.CENTER_TEMP,
 			CN.OXYGENATION,
@@ -598,7 +598,7 @@ class ImpedanceTab:
 
 		fig = px.scatter(
 			plot_df,
-			x=CN.HIGHEST_FREQ_Z,
+			x=CN.HIGHEST_FREQ_ABSOLUTE,
 			y=CN.HEALING_RATE,
 			color=CN.DIABETES if CN.DIABETES in plot_df.columns else None,
 			size=CN.WOUND_AREA if CN.WOUND_AREA in plot_df.columns else None,
@@ -648,7 +648,7 @@ class ImpedanceTab:
 			fig1 = px.line(
 				avg_impedance,
 				x=CN.VISIT_NUMBER,
-				y=[CN.HIGHEST_FREQ_Z, CN.HIGHEST_FREQ_Z_PRIME, CN.HIGHEST_FREQ_Z_DOUBLE_PRIME],
+				y=[CN.HIGHEST_FREQ_ABSOLUTE, CN.HIGHEST_FREQ_REAL, CN.HIGHEST_FREQ_IMAGINARY],
 				title="Average Impedance Components by Visit",
 				markers=True
 			)
@@ -660,7 +660,7 @@ class ImpedanceTab:
 			fig2 = px.bar(
 				avg_by_type,
 				x=CN.WOUND_TYPE,
-				y=CN.HIGHEST_FREQ_Z,
+				y=CN.HIGHEST_FREQ_ABSOLUTE,
 				title="Average Impedance by Wound Type",
 				color=CN.WOUND_TYPE
 			)
@@ -1400,16 +1400,16 @@ class ImpedanceTab:
 
 		# Frequency labels
 		FREQUENCY_LABELS = {
-			"high_frequency"  : "Highest Freq",
-			"center_frequency": "Center Freq (Max Phase Angle)",
-			"low_frequency"   : "Lowest Freq"
+			"highest_freq"  : "Highest Freq",
+			"center_freq": "Center Freq (Max Phase Angle)",
+			"lowest_freq"   : "Lowest Freq"
 		}
 
 		# Line styles for different frequencies
 		LINE_STYLES = {
-			"high_frequency"  : None,
-			"center_frequency": dict(dash='dot'),
-			"low_frequency"   : dict(dash='dash')
+			"highest_freq"  : None,
+			"center_freq": dict(dash='dot'),
+			"lowest_freq"   : dict(dash='dash')
 		}
 
 		# Initialize data containers

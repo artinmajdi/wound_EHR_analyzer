@@ -2,6 +2,7 @@
 import os
 import pathlib
 from typing import Optional
+import logging
 
 # Third-party imports
 import pandas as pd
@@ -31,7 +32,12 @@ from wound_analysis.utils import (
 	DColumns
 )
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 # TODO: add password for the deployed streamlit app
+# TODO: check why the date isn't being applied to per patient data.
 
 # Try to load environment variables from different possible locations
 env_paths = [
@@ -101,15 +107,17 @@ class Dashboard:
 		self.DashboardSettings  = DashboardSettings()
 		self.data_manager       = DataManager()
 		self.visualizer         = Visualizer()
-		self.impedance_analyzer = ImpedanceAnalyzer()
+		self.impedance_analyzer: Optional[ImpedanceAnalyzer] = None
 
 		# LLM configuration placeholders
 		self.llm_platform:              Optional[str] = None
 		self.llm_model:                 Optional[str] = None
 		self.csv_dataset_path:          Optional[pathlib.Path] = None
-		self.wound_data_processor:            Optional[WoundDataProcessor] = None
+		self.wound_data_processor:      Optional[WoundDataProcessor] = None
 		self.impedance_freq_sweep_path: Optional[pathlib.Path] = None
 		self.CN: Optional[DColumns] = None
+
+		self.filtered_df: Optional[pd.DataFrame] = None
 
 
 	def setup(self) -> None:
@@ -176,62 +184,123 @@ class Dashboard:
 			st.error("Failed to load data. Please check the CSV file.")
 			return
 
-		self.wound_data_processor = WoundDataProcessor(df=df, impedance_freq_sweep_path=self.impedance_freq_sweep_path)
-
 		# Header
 		st.title(self.DashboardSettings.PAGE_TITLE)
 
 		# add two columns
-		cols = st.columns((1,2,1))
+		cols = st.columns((1,1,2))
 
 		with cols[0]:
 			# Patient selection
+			st.markdown("""
+			<style>
+			.filter-container {
+				border: 1px solid #e0e0e0;
+				border-radius: 5px;
+				padding: 10px;
+				background-color: #f8f9fa;
+				margin-bottom: 10px;
+			}
+			.filter-title {
+				font-weight: bold;
+				margin-bottom: 5px;
+				color: #4b5563;
+			}
+			</style>
+			""", unsafe_allow_html=True)
+			# Create a container for the filter controls
+			st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+			st.markdown('<div class="filter-title">Patient Filter</div>', unsafe_allow_html=True)
+
 			patient_ids      = sorted(df[self.CN.RECORD_ID].unique())
 			patient_options  = ["All Patients"] + [f"Patient {id:d}" for id in patient_ids]
-			selected_patient = st.selectbox("Select Patient", patient_options)
+			selected_patient = st.selectbox("", patient_options)
 
-		with cols[2]:
-			min_date = df[self.CN.VISIT_DATE].min()
-			max_date = df[self.CN.VISIT_DATE].max()
-			filteration_date = pd.to_datetime(st.date_input("Filter by Date", value=min_date, min_value=min_date, max_value=max_date))
-			filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) >= filteration_date]
+		with cols[-1]:
+			# Add CSS for the filter container
+			st.markdown("""
+			<style>
+			.filter-container {
+				border: 1px solid #e0e0e0;
+				border-radius: 5px;
+				padding: 10px;
+				background-color: #f8f9fa;
+				margin-bottom: 10px;
+			}
+			.filter-title {
+				font-weight: bold;
+				margin-bottom: 5px;
+				color: #4b5563;
+			}
+			</style>
+			""", unsafe_allow_html=True)
 
-		# Create tabs
-		self._create_dashboard_tabs(filtered_df, selected_patient)
+			# Create a container for the filter controls
+			st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+			st.markdown('<div class="filter-title">Date Filter</div>', unsafe_allow_html=True)
 
+			# Create two columns for the filter controls
+			filter_cols = st.columns(2)
 
+			with filter_cols[0]:
+				filter_mode = st.radio("Mode", ["After", "Before"], key="filter_mode")
+
+			with filter_cols[1]:
+				min_date = df[self.CN.VISIT_DATE].min()
+				max_date = df[self.CN.VISIT_DATE].max()
+				filteration_date = pd.to_datetime(st.date_input("Date", value=min_date, min_value=min_date, max_value=max_date))
+
+			# Close the container
+			st.markdown('</div>', unsafe_allow_html=True)
+
+		# Apply the date filter
+		if filter_mode == "Before":
+			self.filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) <= filteration_date]
+		else:
+			self.filtered_df = df[pd.to_datetime(df[self.CN.VISIT_DATE]) >= filteration_date]
+
+		# Initialize data processor with filtered data and reuse the impedance_analyzer
+		if self.impedance_analyzer is not None:
+			logger.info("Initializing new wound data processor with impedance analyzer")
+			self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path, impedance_analyzer=self.impedance_analyzer )
+		else:
+			logger.info("Initializing new wound data processor without impedance analyzer")
+			self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path )
+
+		# Create tabs with filtered data
+		self._create_dashboard_tabs(df=self.filtered_df, selected_patient=selected_patient)
 
 
 	def _create_dashboard_tabs(self, df: pd.DataFrame, selected_patient: str) -> None:
 		"""
-		Create and manage dashboard tabs for displaying patient wound data.
+			Create and manage dashboard tabs for displaying patient wound data.
 
-		This method sets up the main dashboard interface with multiple tabs for different
-		wound analysis categories. Each tab is populated with specific visualizations and
-		data analyses related to the selected patient.
+			This method sets up the main dashboard interface with multiple tabs for different
+			wound analysis categories. Each tab is populated with specific visualizations and
+			data analyses related to the selected patient.
 
-		Parameters:
-		-----------
-		df : pd.DataFrame
-			The dataframe containing wound data for analysis
-		selected_patient : str
-			The identifier of the currently selected patient
+			Parameters:
+			-----------
+			df : pd.DataFrame
+				The dataframe containing wound data for analysis
+			selected_patient : str
+				The identifier of the currently selected patient
 
-		Returns:
-		--------
-		None
-			This method updates the Streamlit UI directly without returning values
+			Returns:
+			--------
+			None
+				This method updates the Streamlit UI directly without returning values
 
-		Notes:
-		------
-		The following tabs are created:
-		- Overview          : General patient information and wound summary
-		- Impedance Analysis: Electrical measurements of wound tissue
-		- Temperature       : Thermal measurements and analysis
-		- Oxygenation       : Oxygen saturation and related metrics
-		- Exudate           : Analysis of wound drainage
-		- Risk Factors      : Patient-specific risk factors for wound healing
-		- LLM Analysis      : Natural language processing analysis of wound data
+			Notes:
+			------
+			The following tabs are created:
+			- Overview          : General patient information and wound summary
+			- Impedance Analysis: Electrical measurements of wound tissue
+			- Temperature       : Thermal measurements and analysis
+			- Oxygenation       : Oxygen saturation and related metrics
+			- Exudate           : Analysis of wound drainage
+			- Risk Factors      : Patient-specific risk factors for wound healing
+			- LLM Analysis      : Natural language processing analysis of wound data
 		"""
 
 		tabs = st.tabs([
@@ -244,7 +313,7 @@ class Dashboard:
 			"LLM Analysis"
 		])
 
-		argsv = dict(df=df, selected_patient=selected_patient, wound_data_processor=self.wound_data_processor)
+		argsv = dict(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor)
 		with tabs[0]:
 			OverviewTab(**argsv).render()
 		with tabs[1]:
@@ -259,26 +328,26 @@ class Dashboard:
 		with tabs[5]:
 			RiskFactorsTab(**argsv).render()
 		with tabs[6]:
-			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model, csv_dataset_path=self.csv_dataset_path).render()
+			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model).render()
 
 
 	def _get_input_user_data(self) -> None:
 		"""
-		Get user inputs from Streamlit interface for data paths and validate them.
+			Get user inputs from Streamlit interface for data paths and validate them.
 
-		This method provides UI components for users to:
-		1. Upload a CSV file containing patient data
-		2. Specify a path to the folder containing impedance frequency sweep XLSX files
-		3. Validate the path and check for the existence of XLSX files
+			This method provides UI components for users to:
+			1. Upload a CSV file containing patient data
+			2. Specify a path to the folder containing impedance frequency sweep XLSX files
+			3. Validate the path and check for the existence of XLSX files
 
-		The method populates:
-		- self.csv_dataset_path: The uploaded CSV file
-		- self.impedance_freq_sweep_path: Path to the folder containing impedance XLSX files
+			The method populates:
+			- self.csv_dataset_path: The uploaded CSV file
+			- self.impedance_freq_sweep_path: Path to the folder containing impedance XLSX files
 
-		Returns:
-			None
+			Returns:
+				None
 		"""
-
+		logger.info("Getting user input for dataset path and impedance frequency sweep path")
 		self.csv_dataset_path = st.file_uploader("Upload Patient Data (CSV)", type=['csv'])
 
 		default_path = str(pathlib.Path(__file__).parent.parent / "dataset/impedance_frequency_sweep")
@@ -295,8 +364,6 @@ class Dashboard:
 			# Convert to Path object
 			self.impedance_freq_sweep_path = pathlib.Path(dataset_path_input)
 
-			# Button to check if files exist
-			# if st.button("Check XLSX Files"):
 			try:
 				# Check if path exists
 				if not self.impedance_freq_sweep_path.exists():
@@ -311,6 +378,13 @@ class Dashboard:
 						with st.expander("View Found Files"):
 							for file in xlsx_files:
 								st.text(f"- {file.name}")
+
+						# Initialize the wound data processor once
+						# logger.info("Initializing wound data processor after excel files are uploaded")
+						# self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path )
+						logger.info("Initializing impedance analyzer after excel files are uploaded")
+						self.impedance_analyzer = ImpedanceAnalyzer(impedance_freq_sweep_path=self.impedance_freq_sweep_path)
+
 					else:
 						st.warning(f"No XLSX files found in {self.dataset_path}")
 			except Exception as e:
