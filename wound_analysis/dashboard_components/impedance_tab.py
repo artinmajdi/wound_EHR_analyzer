@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 
 # Local application imports
 from wound_analysis.utils.data_processor import WoundDataProcessor, VisitsDataType, VisitsMetadataType
-from wound_analysis.utils.column_schema import DColumns
+from wound_analysis.utils.column_schema import DColumns, ExcelSheetColumns
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -796,16 +796,23 @@ class PatientImpedanceRenderer:
 		"""
 		st.subheader("Impedance Measurements Over Time")
 
-		# Add measurement mode selector
-		measurement_mode = st.selectbox(
-			"Select Measurement Mode:",
-			["Absolute Impedance (|Z|)", "Resistance", "Capacitance"],
-			key="impedance_mode_selector"
-		)
+		tabs = st.tabs(["High/Center/Low", "Entire Freq Sweep"])
 
-		# Create impedance chart with selected mode
-		fig = self._create_impedance_chart(measurement_mode=measurement_mode)
-		st.plotly_chart(fig, use_container_width=True)
+		with tabs[0]:
+			# Add measurement mode selector
+			measurement_mode = st.selectbox(
+				"Select Measurement Mode:",
+				["Absolute Impedance (|Z|)", "Resistance", "Capacitance"],
+				key="impedance_mode_selector"
+			)
+
+			# Create impedance chart with selected mode
+			fig = self._create_impedance_chart(measurement_mode=measurement_mode)
+			st.plotly_chart(fig, use_container_width=True)
+
+		with tabs[1]:
+			# Create impedance chart with entire frequency sweep
+			self._create_impedance_chart_entire_freq_sweep()
 
 		# Logic behind analysis
 		st.markdown("""
@@ -1298,8 +1305,6 @@ class PatientImpedanceRenderer:
 						for freq in frequency_labels}
 
 		# Process each visit
-		freq_sweep : Dict[str, pd.DataFrame] = {}
-
 		for visit in self.visits:
 			visit_date = visit[self.visit_date_tag]
 
@@ -1308,19 +1313,20 @@ class PatientImpedanceRenderer:
 			sensor_data = visit.get('sensor_data', {})
 			impedance_data = sensor_data.get('impedance', {})
 
-			freq_sweep[visit_date] = impedance_data.get('entire_freq_sweep', None)
-
-			data_three_freqs = impedance_data.get('data_three_freqs', None)
-
+			# try:
 			# Process each frequency
 			for freq in frequency_labels:
-				freq_data = data_three_freqs.get(freq, {})
+				freq_data = impedance_data.get(freq, {})
 				for field in measurement_fields.values():
 					try:
 						val = float(freq_data.get(field)) if freq_data.get(field) not in (None, '') else None
-					except (ValueError, TypeError):
-						val = None
+					except (ValueError, TypeError) as e:
+						raise ValueError(f"Invalid {field} in visit {visit_date}: {impedance_data} {str(e)}")
+
 					measurements[freq][field].append(val)
+
+			# except Exception as e:
+			# 	raise ValueError(f"Invalid {impedance_data} {str(e)}")
 
 		# Create figure
 		fig = go.Figure()
@@ -1350,3 +1356,325 @@ class PatientImpedanceRenderer:
 		)
 
 		return fig
+
+	def _create_impedance_chart_entire_freq_sweep(self) -> None:
+		"""
+		Create multiple tabs for different visit dates, each showing the entire frequency sweep plot.
+		Each plot displays the real and imaginary impedance components against frequency.
+
+		Features:
+		- Interactive plots with hover information and zoom capabilities
+		- Nyquist plot (Real vs. Imaginary) for impedance analysis
+		- Frequency response analysis with key metrics
+		- Data table with sortable columns
+		- Error handling for missing or invalid data
+		"""
+		try:
+			# Initialize data containers
+			dates = []
+			freq_sweep: Dict[str, pd.DataFrame] = {}
+			valid_data_count = 0
+
+			# Process each visit and collect data
+			for visit in self.visits:
+				try:
+					visit_date = visit[self.visit_date_tag]
+					dates.append(visit_date)
+
+					sensor_data = visit.get('sensor_data', {}) or {}
+					impedance_data = sensor_data.get('impedance', {}) or {}
+					df = impedance_data.get('entire_freq_sweep', None)
+
+					# Validate dataframe
+					if isinstance(df, pd.DataFrame) and not df.empty:
+						# Ensure required columns exist
+						required_columns = [ExcelSheetColumns.FREQ.value,
+										ExcelSheetColumns.REAL.value,
+										ExcelSheetColumns.IMAGINARY.value]
+
+						if all(col in df.columns for col in required_columns):
+							# Sort by frequency for consistent plotting
+							df = df.sort_values(by=ExcelSheetColumns.FREQ.value)
+							freq_sweep[visit_date] = df
+							valid_data_count += 1
+						else:
+							freq_sweep[visit_date] = None
+							logger.warning(f"Missing required columns for visit {visit_date}. Required: {required_columns}")
+					else:
+						freq_sweep[visit_date] = None
+				except Exception as e:
+					logger.error(f"Error processing visit data: {str(e)}")
+					continue
+
+			# Check if we have any valid data
+			if not dates:
+				st.warning("No visit data available for frequency sweep analysis.")
+				return
+
+			if valid_data_count == 0:
+				st.warning("No valid frequency sweep data found in any visits.")
+				return
+
+			# Create tabs for each visit date
+			visit_tabs = st.tabs([f"{visit_date}" for visit_date in dates])
+
+			# For each tab, create plots for that visit date
+			for i, visit_date in enumerate(dates):
+				with visit_tabs[i]:
+					df = freq_sweep[visit_date]
+
+					if df is None or df.empty:
+						st.warning(f"No frequency sweep data available for visit date: {visit_date}")
+						continue
+
+					# Create frequency response plot
+					st.subheader("Frequency Response")
+					fig_freq = self._create_frequency_response_plot(df, visit_date)
+					st.plotly_chart(fig_freq, use_container_width=True)
+
+					# Create two columns for additional plots and metrics
+					col1, col2 = st.columns(2)
+
+					with col1:
+						# Create Nyquist plot (Real vs Imaginary)
+						st.subheader("Nyquist Plot")
+						fig_nyquist = self._create_nyquist_plot(df, visit_date)
+						st.plotly_chart(fig_nyquist, use_container_width=True)
+
+					with col2:
+						# Display key metrics
+						st.subheader("Key Metrics")
+						self._display_impedance_metrics(df, visit_date)
+
+					# Display data table with frequency sweep values
+					with st.expander("View Frequency Sweep Data Table"):
+						# Format the dataframe for better display
+						display_df = df.copy()
+
+						# Round numeric columns to 2 decimal places for display
+						for col in display_df.select_dtypes(include=['float64']).columns:
+							display_df[col] = display_df[col].round(2)
+
+						st.dataframe(
+							display_df,
+							use_container_width=True,
+							hide_index=True
+						)
+
+						# Add download button for the data
+						csv = df.to_csv(index=False)
+						st.download_button(
+							label="Download CSV",
+							data=csv,
+							file_name=f"impedance_sweep_{visit_date}.csv",
+							mime="text/csv"
+						)
+		except Exception as e:
+			st.error(f"Error generating frequency sweep plots: {str(e)}")
+			logger.error(f"Error in _create_impedance_chart_entire_freq_sweep: {traceback.format_exc()}")
+
+	def _create_frequency_response_plot(self, df: pd.DataFrame, visit_date: str) -> go.Figure:
+		"""
+		Create a frequency response plot showing real and imaginary components.
+
+		Args:
+			df: DataFrame containing frequency sweep data
+			visit_date: Date of the visit
+
+		Returns:
+			Plotly Figure object with the frequency response plot
+		"""
+		# Create figure
+		fig = go.Figure()
+
+		# Add real component trace with improved styling
+		fig.add_trace(go.Scatter(
+			x=df[ExcelSheetColumns.FREQ.value],
+			y=df[ExcelSheetColumns.REAL.value],
+			name=f"Real Component (Z')",
+			mode='lines+markers',
+			line=dict(color='blue', width=2),
+			marker=dict(size=6),
+			hovertemplate=(
+				"<b>Frequency:</b> %{x:.2f} Hz<br>"
+				"<b>Real:</b> %{y:.2f} Ohm<br>"
+			)
+		))
+
+		# Add imaginary component trace with improved styling
+		fig.add_trace(go.Scatter(
+			x=df[ExcelSheetColumns.FREQ.value],
+			y=df[ExcelSheetColumns.IMAGINARY.value],
+			name=f"Imaginary Component (-Z'')",
+			mode='lines+markers',
+			line=dict(color='red', width=2),
+			marker=dict(size=6),
+			hovertemplate=(
+				"<b>Frequency:</b> %{x:.2f} Hz<br>"
+				"<b>Imaginary:</b> %{y:.2f} Ohm<br>"
+			)
+		))
+
+		# Add absolute impedance if available
+		if ExcelSheetColumns.ABSOLUTE.value in df.columns:
+			fig.add_trace(go.Scatter(
+				x=df[ExcelSheetColumns.FREQ.value],
+				y=df[ExcelSheetColumns.ABSOLUTE.value],
+				name=f"Absolute Impedance (|Z|)",
+				mode='lines+markers',
+				line=dict(color='green', width=2),
+				marker=dict(size=6),
+				hovertemplate=(
+					"<b>Frequency:</b> %{x:.2f} Hz<br>"
+					"<b>|Z|:</b> %{y:.2f} Ohm<br>"
+				)
+			))
+
+		# Configure layout with improved styling
+		fig.update_layout(
+			title={
+				'text': f'Impedance Components vs. Frequency - {visit_date}',
+				'font': dict(size=18)
+			},
+			xaxis_title='Frequency (Hz)',
+			yaxis_title='Impedance (Ohm)',
+			xaxis=dict(
+				type='log',  # Log scale for frequency
+				title_font=dict(size=14),
+				gridcolor='rgba(211, 211, 211, 0.3)'
+			),
+			yaxis=dict(
+				title_font=dict(size=14),
+				gridcolor='rgba(211, 211, 211, 0.3)'
+			),
+			hovermode='closest',
+			showlegend=True,
+			legend=dict(
+				yanchor="top",
+				y=0.99,
+				xanchor="right",
+				x=0.99,
+				bgcolor='rgba(255, 255, 255, 0.8)'
+			),
+			height=450,
+			margin=dict(l=50, r=50, t=80, b=50),
+			paper_bgcolor='white',
+			plot_bgcolor='white',
+			font=dict(family="Arial, sans-serif")
+		)
+
+		# Add range slider for better interactivity
+		fig.update_layout(
+			xaxis=dict(
+				rangeslider=dict(visible=True),
+				type='log'
+			)
+		)
+
+		return fig
+
+	def _create_nyquist_plot(self, df: pd.DataFrame, visit_date: str) -> go.Figure:
+		"""
+		Create a Nyquist plot (Real vs. Imaginary components).
+
+		Args:
+			df: DataFrame containing frequency sweep data
+			visit_date: Date of the visit
+
+		Returns:
+			Plotly Figure object with the Nyquist plot
+		"""
+		# Create figure
+		fig = go.Figure()
+
+		# Add Nyquist plot (Real vs. Imaginary)
+		fig.add_trace(go.Scatter(
+			x=df[ExcelSheetColumns.REAL.value],
+			y=df[ExcelSheetColumns.IMAGINARY.value],
+			mode='lines+markers',
+			name='Nyquist Plot',
+			line=dict(color='purple', width=2),
+			marker=dict(
+				size=8,
+				color=df[ExcelSheetColumns.FREQ.value],
+				colorscale='Viridis',
+				colorbar=dict(title='Frequency (Hz)'),
+				showscale=True
+			),
+			hovertemplate=(
+				"<b>Real:</b> %{x:.2f} Ohm<br>"
+				"<b>Imaginary:</b> %{y:.2f} Ohm<br>"
+				"<b>Frequency:</b> %{marker.color:.2f} Hz<br>"
+			)
+		))
+
+		# Configure layout
+		fig.update_layout(
+			title={
+				'text': f'Nyquist Plot - {visit_date}',
+				'font': dict(size=16)
+			},
+			xaxis_title="Real Component (Z') [Ohm]",
+			yaxis_title="Imaginary Component (-Z'') [Ohm]",
+			xaxis=dict(
+				title_font=dict(size=14),
+				gridcolor='rgba(211, 211, 211, 0.3)'
+			),
+			yaxis=dict(
+				title_font=dict(size=14),
+				gridcolor='rgba(211, 211, 211, 0.3)'
+			),
+			hovermode='closest',
+			height=400,
+			margin=dict(l=50, r=50, t=80, b=50),
+			paper_bgcolor='white',
+			plot_bgcolor='white',
+			font=dict(family="Arial, sans-serif")
+		)
+
+		return fig
+
+	def _display_impedance_metrics(self, df: pd.DataFrame, visit_date: str) -> None:
+		"""
+		Display key metrics from the impedance data.
+
+		Args:
+			df: DataFrame containing frequency sweep data
+			visit_date: Date of the visit
+		"""
+		try:
+			# Calculate key metrics
+			metrics = {}
+
+			# Frequency range
+			metrics['min_freq'] = df[ExcelSheetColumns.FREQ.value].min()
+			metrics['max_freq'] = df[ExcelSheetColumns.FREQ.value].max()
+
+			# Impedance ranges
+			metrics['min_real'] = df[ExcelSheetColumns.REAL.value].min()
+			metrics['max_real'] = df[ExcelSheetColumns.REAL.value].max()
+			metrics['min_imag'] = df[ExcelSheetColumns.IMAGINARY.value].min()
+			metrics['max_imag'] = df[ExcelSheetColumns.IMAGINARY.value].max()
+
+			# Calculate phase angle if negative phase is available
+			if ExcelSheetColumns.NEG_PHASE.value in df.columns:
+				# Find frequency with maximum phase angle
+				max_phase_idx = df[ExcelSheetColumns.NEG_PHASE.value].idxmax()
+				metrics['max_phase'] = df.loc[max_phase_idx, ExcelSheetColumns.NEG_PHASE.value]
+				metrics['max_phase_freq'] = df.loc[max_phase_idx, ExcelSheetColumns.FREQ.value]
+
+			# Display metrics
+			st.metric("Frequency Range", f"{metrics['min_freq']:.1f} - {metrics['max_freq']:.1f} Hz")
+			st.metric("Real Impedance Range", f"{metrics['min_real']:.1f} - {metrics['max_real']:.1f} Ohm")
+			st.metric("Imaginary Impedance Range", f"{metrics['min_imag']:.1f} - {metrics['max_imag']:.1f} Ohm")
+
+			if 'max_phase' in metrics:
+				st.metric("Max Phase Angle", f"{metrics['max_phase']:.2f}°")
+				st.metric("Frequency at Max Phase", f"{metrics['max_phase_freq']:.1f} Hz")
+
+			# Add data points count
+			st.metric("Data Points", f"{len(df)}")
+
+		except Exception as e:
+			logger.error(f"Error calculating impedance metrics: {str(e)}")
+			st.warning("Could not calculate impedance metrics due to an error.")
