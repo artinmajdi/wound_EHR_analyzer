@@ -1,0 +1,60 @@
+{
+  "name": "Wound EHR Analyzer Dev Environment",
+  // Use the same Python version as in the Dockerfile
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bullseye",
+  // Mount the dataset directory as a volume
+  "mounts": [
+    "source=${localWorkspaceFolder}/dataset,target=/workspaces/wound_EHR_analyzer_private/dataset,type=bind,consistency=cached"
+  ],
+  "customizations": {
+    "codespaces": {
+      "openFiles": [
+        "README.md",
+        "wound_analysis/dashboard.py",
+        "streamlit_app.py"
+      ]
+    },
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.flake8Enabled": true,
+        "python.formatting.provider": "black",
+        "editor.formatOnSave": true,
+        "editor.rulers": [127],
+        "python.analysis.extraPaths": [
+          "${workspaceFolder}"
+        ]
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.flake8",
+        "ms-python.black-formatter",
+        "streetsidesoftware.code-spell-checker",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker",
+        "bierner.markdown-preview-github-styles"
+      ]
+    }
+  },
+  // Setup commands that mirror the Dockerfile approach
+  "updateContentCommand": "pip3 install --upgrade pip && pip3 install -r requirements.txt && pip3 install -e . && mkdir -p wound_analysis/utils/logs && echo '✅ Packages installed and Requirements met'",
+  "postAttachCommand": {
+    "server": "streamlit run wound_analysis/dashboard.py --server.enableCORS false --server.enableXsrfProtection false"
+  },
+  "portsAttributes": {
+    "8501": {
+      "label": "Streamlit App",
+      "onAutoForward": "openPreview"
+    }
+  },
+  "forwardPorts": [
+    8501
+  ],
+  // Set environment variables similar to docker-compose.yml
+  "remoteEnv": {
+    "PYTHONPATH": "${containerWorkspaceFolder}",
+    "PYTHONUNBUFFERED": "1"
+  }
+}
