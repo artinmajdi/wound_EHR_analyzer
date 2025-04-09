@@ -57,44 +57,114 @@ class StochasticModelingTab:
             'Exponential': stats.expon
         }
 
+        # Initialize session state for model parameters
+        if 'deterministic_model' not in st.session_state:
+            st.session_state.deterministic_model = None
+        if 'polynomial_degree' not in st.session_state:
+            st.session_state.polynomial_degree = None
+        if 'deterministic_coefs' not in st.session_state:
+            st.session_state.deterministic_coefs = None
+        if 'residuals' not in st.session_state:
+            st.session_state.residuals = None
+
         # Models for storing analysis results
-        self.deterministic_model = None
-        self.polynomial_degree = None
-        self.deterministic_coefs = None
-        self.residuals = None
+        self.deterministic_model = st.session_state.deterministic_model
+        self.polynomial_degree = st.session_state.polynomial_degree
+        self.deterministic_coefs = st.session_state.deterministic_coefs
+        self.residuals = st.session_state.residuals
 
     def _initialize_parameter_lists(self):
-        """Initialize parameter lists for dropdown selections."""
-        # Define available dependent variables (outcomes)
+        """Initialize parameter lists for dropdown selections based on the probabilistic modeling framework.
+
+        Following the two-component model approach:
+        - Dependent variables (Y): Physiological measurements (impedance, temperature, oxygenation)
+        - Independent variables (X): Wound characteristics and time-related variables
+        - Additional parameters: Control variables (patient demographics, medical history, etc.)
+        """
+        # Define available dependent variables (Y) - Physiological measurements
+        # These are the outcomes we're modeling probabilistically
         self.dependent_variables = {
-            'Impedance Absolute' : self.CN.HIGHEST_FREQ_ABSOLUTE,
-            'Impedance Real'     : self.CN.HIGHEST_FREQ_REAL,
-            'Impedance Imaginary': self.CN.HIGHEST_FREQ_IMAGINARY,
-            'Wound Area'         : self.CN.WOUND_AREA,
-            'Temperature Center' : self.CN.CENTER_TEMP,
-            'Temperature Edge'   : self.CN.EDGE_TEMP,
-            'Temperature Peri'   : self.CN.PERI_TEMP,
+            # Impedance measurements at different frequencies
+            'High Freq Impedance Absolute'   : self.CN.HIGHEST_FREQ_ABSOLUTE,
+            'High Freq Impedance Real'       : self.CN.HIGHEST_FREQ_REAL,
+            'High Freq Impedance Imaginary'  : self.CN.HIGHEST_FREQ_IMAGINARY,
+            'Center Freq Impedance Absolute' : self.CN.CENTER_FREQ_ABSOLUTE,
+            'Center Freq Impedance Real'     : self.CN.CENTER_FREQ_REAL,
+            'Center Freq Impedance Imaginary': self.CN.CENTER_FREQ_IMAGINARY,
+            'Low Freq Impedance Absolute'    : self.CN.LOWEST_FREQ_ABSOLUTE,
+            'Low Freq Impedance Real'        : self.CN.LOWEST_FREQ_REAL,
+            'Low Freq Impedance Imaginary'   : self.CN.LOWEST_FREQ_IMAGINARY,
+
+            # Temperature measurements
+            'Temperature Center'  : self.CN.CENTER_TEMP,
+            'Temperature Edge'    : self.CN.EDGE_TEMP,
+            'Temperature Peri'    : self.CN.PERI_TEMP,
+            'Temperature Gradient': self.CN.TOTAL_GRADIENT,
+            'Center-Edge Temp Gradient': self.CN.CENTER_EDGE_GRADIENT,
+            'Edge-Peri Temp Gradient': self.CN.EDGE_PERI_GRADIENT,
+
+            # Oxygenation measurements
+            'Oxygenation': self.CN.OXYGENATION,
+            'Hemoglobin': self.CN.HEMOGLOBIN,
+            'Oxyhemoglobin': self.CN.OXYHEMOGLOBIN,
+            'Deoxyhemoglobin': self.CN.DEOXYHEMOGLOBIN,
         }
 
-        # Define available independent variables (predictors)
+        # Define available independent variables (X) - Wound characteristics and time variables
+        # These are the primary predictors in our model
         self.independent_variables = {
-            'Wound Size': self.CN.WOUND_AREA,
+            # Wound characteristics
+            'Wound Area'  : self.CN.WOUND_AREA,
+            'Wound Length': self.CN.LENGTH,
+            'Wound Width' : self.CN.WIDTH,
+            'Wound Depth' : self.CN.DEPTH,
+
+            # Time-related variables
             'Days Since First Visit': self.CN.DAYS_SINCE_FIRST_VISIT,
-            'Time (days)': self.CN.DAYS_SINCE_FIRST_VISIT,
-            'Age': self.CN.AGE,
-            'BMI': self.CN.BMI
+            'Visit Number'          : self.CN.VISIT_NUMBER,
+
+            # Healing metrics
+            'Healing Rate': self.CN.HEALING_RATE,
         }
 
-        # Define additional parameters for multi-select
+        # Define additional parameters (control variables)
+        # These help isolate the effects of primary variables of interest
         self.additional_parameters = {
-            'Age': self.CN.AGE,
-            'BMI': self.CN.BMI,
-            'Sex': self.CN.SEX,
+            # Patient-level controls
+            'Age'         : self.CN.AGE,
+            'Sex'         : self.CN.SEX,
+            'BMI'         : self.CN.BMI,
+            'BMI Category': self.CN.BMI_CATEGORY,
+            'Race'        : self.CN.RACE,
+            'Ethnicity'   : self.CN.ETHNICITY,
+
+            # Medical history
             'Diabetes Status': self.CN.DIABETES,
-            'A1C Value': self.CN.A1C,
+            'A1C Value'      : self.CN.A1C,
+
+            # Lifestyle factors
             'Smoking Status': self.CN.SMOKING_STATUS,
             'Alcohol Status': self.CN.ALCOHOL_STATUS,
+
+            # Wound-specific factors
+            'Wound Location'  : self.CN.WOUND_LOCATION,
+            'Wound Type'      : self.CN.WOUND_TYPE,
+            'Infection Status': self.CN.INFECTION,
+
+            # Treatment-related
+            'Current Wound Care': self.CN.CURRENT_WOUND_CARE,
         }
+
+        # You might also want to add distribution types for the probabilistic modeling
+        self.distribution_types = [
+            'Normal',
+            'Log-normal',
+            'Gamma',
+            'Weibull'
+        ]
+
+        # Polynomial degrees for the deterministic component
+        self.polynomial_degrees = list(range(1, 6))  # Linear to 5th degree
 
     def _parameter_selection_ui(self) -> Tuple[str, str, List[str], Dict, bool]:
         """
@@ -706,12 +776,18 @@ class StochasticModelingTab:
             with col1:
                 selected_degree = st.slider("Select Polynomial Degree",
                                            min_value=1, max_value=max_degree,
-                                           value=2, step=1,
-                                           help="Higher degrees can fit the data better but may overfit")
+                                           value=st.session_state.polynomial_degree if st.session_state.polynomial_degree is not None else 2,
+                                           step=1,
+                                           help="Higher degrees can fit the data better but may overfit",
+                                           key="polynomial_degree_slider")
 
-            # Store the selected model for later use
-            self.deterministic_model = model_results[selected_degree]
-            self.polynomial_degree = selected_degree
+            # Store the selected model and parameters in session state
+            st.session_state.deterministic_model = model_results[selected_degree]
+            st.session_state.polynomial_degree = selected_degree
+
+            # Update instance variables
+            self.deterministic_model = st.session_state.deterministic_model
+            self.polynomial_degree = st.session_state.polynomial_degree
 
             # Display model metrics for different degrees
             metrics_df = pd.DataFrame({
