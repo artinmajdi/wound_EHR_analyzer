@@ -86,16 +86,16 @@ install_with_pip() {
                 if [[ "$delete_existing" =~ ^[Yy]$ ]]; then
                     echo -e "${YELLOW}Removing existing virtual environment...${NC}"
                     rm -rf .venv
-                    echo -e "${YELLOW}Creating new virtual environment (.venv)...${NC}"
-                    $PYTHON_CMD -m venv .venv
+                    echo -e "${YELLOW}Creating new virtual environment (.venv) with copied binaries...${NC}"
+                    $PYTHON_CMD -m venv --copies .venv
                 else
                     echo -e "${YELLOW}Installation aborted.${NC}"
                     exit 1
                 fi
             fi
         else
-            echo -e "${YELLOW}Creating virtual environment (.venv)...${NC}"
-            $PYTHON_CMD -m venv .venv
+            echo -e "${YELLOW}Creating virtual environment (.venv) with copied binaries...${NC}"
+            $PYTHON_CMD -m venv --copies .venv
         fi
 
         # Activate virtual environment
@@ -270,13 +270,13 @@ if [ -f ".env" ]; then
     if [[ ! "$overwrite_env" =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}Keeping existing .env file.${NC}"
     else
-        setup_env=true
+        setup_env_variables=true
     fi
 else
-    setup_env=true
+    setup_env_variables=true
 fi
 
-if [ "$setup_env" = true ]; then
+if [ "$setup_env_variables" = true ]; then
     echo -e "${YELLOW}Setting up .env file...${NC}"
 
     # Prompt for API keys
@@ -303,4 +303,29 @@ if [ "$setup_env" = true ]; then
     echo "DATA_DIR=./dataset" >> .env
 
     echo -e "${GREEN}.env file created successfully.${NC}"
+fi
+
+# Ask if user wants to install type stubs
+echo -e "${BLUE}===========================================================${NC}"
+echo -e "${BLUE}          Installing Type Stubs                           ${NC}"
+echo -e "${BLUE}===========================================================${NC}"
+echo ""
+
+echo -e "${YELLOW}Type stubs provide better code completion and type checking in your IDE.${NC}"
+read -p "Do you want to install type stubs for the project dependencies? (y/n): " install_stubs
+
+if [[ "$install_stubs" =~ ^[Yy]$ ]]; then
+    echo -e "${YELLOW}Installing type stubs...${NC}"
+
+    # Make sure the script is executable
+    chmod +x "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/type_stubs.py"
+
+    # Run the type stubs installation script
+    "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/type_stubs.py"
+
+    echo -e "${GREEN}Type stubs installation completed.${NC}"
+else
+    echo -e "${YELLOW}Skipping type stubs installation.${NC}"
+    echo -e "${YELLOW}You can install them later by running:${NC}"
+    echo -e "${BLUE}./scripts/type_stubs.py${NC}"
 fi

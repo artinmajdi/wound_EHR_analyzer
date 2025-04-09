@@ -19,7 +19,7 @@ The project includes a dedicated script that handles all Docker operations:
 
 ```bash
 # Set up environment variables first
-./scripts/setup_env.sh
+./scripts/setup_env_variables.sh
 
 # Start the application
 ./scripts/run_docker.sh start
@@ -103,7 +103,7 @@ The Docker deployment uses environment variables for configuration. These can be
 ### Method 1: Using the Setup Script (Recommended)
 
 ```bash
-./scripts/setup_env.sh
+./scripts/setup_env_variables.sh
 ./scripts/run_docker.sh start
 ```
 

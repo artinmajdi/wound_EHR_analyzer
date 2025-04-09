@@ -16,7 +16,7 @@ echo ""
 # Check if .env file exists
 if [ ! -f "$ROOT_DIR/.env" ]; then
     echo "Warning: .env file not found. Some features may not work properly."
-    echo "Consider running './scripts/setup_env.sh' first to set up your environment."
+    echo "Consider running './scripts/setup_env_variables.sh' first to set up your environment."
     echo ""
 fi
 

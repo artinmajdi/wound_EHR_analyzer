@@ -708,9 +708,7 @@ class PopulationImpedanceRenderer:
 		"""
 		# Get prepared statistics
 
-		logger.info("Fetching population statistics")
 		avg_impedance, avg_by_type = self.wound_data_processor.impedance_analyzer.prepare_population_stats(df=df)
-		logger.info("Fetching population statistics complete")
 
 		col1, col2 = st.columns(2)
 
@@ -760,7 +758,7 @@ class PatientImpedanceRenderer:
 		self.visits = visits
 		self.wound_data_processor = wound_data_processor
 
-		logger.info("Fetching visit date tag")
+		logger.debug("Fetching visit date tag")
 		self.visit_date_tag = self.wound_data_processor.get_visit_date_tag(visits)
 
 	def render(self) -> None:
@@ -885,9 +883,9 @@ class PatientImpedanceRenderer:
 
 		try:
 			# Generate advanced analysis
-			logger.info("Generating advanced analysis")
+			logger.debug("Generating advanced analysis")
 			analysis = self.wound_data_processor.impedance_analyzer.generate_advanced_analysis(visits=self.visits)
-			logger.info("Generating advanced analysis complete")
+			logger.debug("Generating advanced analysis complete")
 
 			# Display healing trajectory analysis if available
 			if 'healing_trajectory' in analysis and analysis['healing_trajectory']['status'] == 'analyzed':
