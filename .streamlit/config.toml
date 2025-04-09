@@ -33,11 +33,7 @@ postScriptGC = true
 # Headless mode for deployment
 headless = true
 
-[caching]
-# Cache settings for better performance
-type = "memory"
-# Set maximum cache size (in MiB)
-maxEntrySize = 200
+# Caching options have been removed as they are no longer valid config options
 
 [logger]
 # Configure logging level
