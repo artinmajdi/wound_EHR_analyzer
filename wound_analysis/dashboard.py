@@ -17,7 +17,8 @@ from wound_analysis.dashboard_components import (
 	RiskFactorsTab,
 	TemperatureTab,
 	DashboardSettings,
-	Visualizer
+	Visualizer,
+	StochasticModelingTab
 )
 from wound_analysis.utils import (
 	CorrelationAnalysis,
@@ -285,6 +286,7 @@ class Dashboard:
 			- Exudate           : Analysis of wound drainage
 			- Risk Factors      : Patient-specific risk factors for wound healing
 			- LLM Analysis      : Natural language processing analysis of wound data
+			- Stochastic Modeling: Probabilistic modeling of wound healing parameters
 		"""
 
 		tabs = st.tabs([
@@ -294,7 +296,8 @@ class Dashboard:
 			"Oxygenation",
 			"Exudate",
 			"Risk Factors",
-			"LLM Analysis"
+			"LLM Analysis",
+			"Stochastic Modeling"
 		])
 
 		argsv = dict(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor)
@@ -313,6 +316,8 @@ class Dashboard:
 			RiskFactorsTab(**argsv).render()
 		with tabs[6]:
 			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model).render()
+		with tabs[7]:
+			StochasticModelingTab(**argsv).render()
 
 
 	def _get_input_user_data(self) -> None:
