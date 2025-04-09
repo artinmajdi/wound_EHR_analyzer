@@ -1,0 +1,70 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Wound EHR Analyzer CI
+
+on:
+  push:
+    branches: [ "main", "public_repo_sync" ]
+  pull_request:
+    branches: [ "main", "public_repo_sync" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pytest pytest-cov
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        # Install the package in development mode
+        pip install -e .
+
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Check for test files
+      id: check-tests
+      run: |
+        if [ -d "tests" ] && [ "$(find tests -name 'test_*.py' | wc -l)" -gt 0 ]; then
+          echo "tests_exist=true" >> $GITHUB_OUTPUT
+        else
+          echo "No test files found. Skipping test step."
+          echo "tests_exist=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Test with pytest
+      if: steps.check-tests.outputs.tests_exist == 'true'
+      run: |
+        pytest --cov=wound_analysis
+
+    - name: Validate Streamlit app
+      run: |
+        # Check if the Streamlit app can be imported without errors
+        python -c "import streamlit; import wound_analysis; from wound_analysis.dashboard import Dashboard; print('Streamlit app validation successful!')"
+
