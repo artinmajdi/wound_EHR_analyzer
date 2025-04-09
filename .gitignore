@@ -23,6 +23,13 @@ wheels/
 wound_analysis/utils/logs/*.docx
 wound_analysis/utils/logs/*.log
 
+# Public Branch Stuff
+dataset/csv_files
+.env
+*.code-workspace
+documentation/sync_repos_guide.md
+
+
 # Virtual Environment
 venv/
 ENV/
