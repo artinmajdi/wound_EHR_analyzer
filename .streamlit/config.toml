@@ -3,10 +3,6 @@
 enableCORS = true
 # Enable XSRF protection for security
 enableXsrfProtection = true
-# Set the base path for imports
-scriptPath = "."
-# Increase timeout for long-running operations
-connectionTimeout = 300
 # Port to run on (will use default 8501 if not specified)
 port = 8501
 # Maximum size for uploaded files (100MB)
@@ -28,23 +24,17 @@ textColor = "#262730"
 font = "sans serif"
 
 [runner]
-# This helps with Python module imports
-moduleImportPath = "."
-# Set the maximum number of retries for module imports
+# Set garbage collection after script execution
 postScriptGC = true
 
-[pythonPath]
-# Add the project root to the Python path
-path = "."
+# Python path is now configured differently in Streamlit
 
 [server.headless]
 # Headless mode for deployment
 headless = true
 
-[cache]
+[caching]
 # Cache settings for better performance
-enabled = true
-# Set cache type to memory for faster access
 type = "memory"
 # Set maximum cache size (in MiB)
 maxEntrySize = 200

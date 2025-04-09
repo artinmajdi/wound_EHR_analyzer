@@ -24,8 +24,8 @@ ENVIRONMENT = "production"
 
 [resources]
 # Resource allocation for the app
-cpu = "1x"
-memory = "1GB"
+cpu = "2x"
+memory = "2GB"
 
 [health_check]
 # Health check settings
