@@ -8,13 +8,9 @@ import logging
 import pandas as pd
 import streamlit as st
 
-# Load environment variables from .env file
-from dotenv import load_dotenv
-
 from wound_analysis.dashboard_components import (
 	ExudateTab,
 	ImpedanceTab,
-	ImpedanceTabOriginal,
 	LLMAnalysisTab,
 	OverviewTab,
 	OxygenationTab,
@@ -37,18 +33,6 @@ logger = logging.getLogger(__name__)
 
 
 # TODO: add password for the deployed streamlit app
-# TODO: check why the date isn't being applied to per patient data.
-
-# Try to load environment variables from different possible locations
-env_paths = [
-	pathlib.Path(__file__).parent.parent / '.env',  # Project root .env
-	pathlib.Path.cwd() / '.env',                    # Current working directory
-]
-
-for env_path in env_paths:
-	if env_path.exists():
-		load_dotenv(dotenv_path=env_path)
-		break
 
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
@@ -214,7 +198,7 @@ class Dashboard:
 
 			patient_ids      = sorted(df[self.CN.RECORD_ID].unique())
 			patient_options  = ["All Patients"] + [f"Patient {id:d}" for id in patient_ids]
-			selected_patient = st.selectbox("", patient_options)
+			selected_patient = st.selectbox("Select Patients", patient_options, label_visibility="hidden")
 
 		with cols[-1]:
 			# Add CSS for the filter container
@@ -261,10 +245,10 @@ class Dashboard:
 
 		# Initialize data processor with filtered data and reuse the impedance_analyzer
 		if self.impedance_analyzer is not None:
-			logger.info("Initializing new wound data processor with impedance analyzer")
+			logger.debug("Initializing new wound data processor with impedance analyzer")
 			self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path, impedance_analyzer=self.impedance_analyzer )
 		else:
-			logger.info("Initializing new wound data processor without impedance analyzer")
+			logger.debug("Initializing new wound data processor without impedance analyzer")
 			self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path )
 
 		# Create tabs with filtered data
@@ -347,7 +331,7 @@ class Dashboard:
 			Returns:
 				None
 		"""
-		logger.info("Getting user input for dataset path and impedance frequency sweep path")
+		logger.debug("Getting user input for dataset path and impedance frequency sweep path")
 		self.csv_dataset_path = st.file_uploader("Upload Patient Data (CSV)", type=['csv'])
 
 		default_path = str(pathlib.Path(__file__).parent.parent / "dataset/impedance_frequency_sweep")
@@ -380,9 +364,7 @@ class Dashboard:
 								st.text(f"- {file.name}")
 
 						# Initialize the wound data processor once
-						# logger.info("Initializing wound data processor after excel files are uploaded")
-						# self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path )
-						logger.info("Initializing impedance analyzer after excel files are uploaded")
+						logger.debug("Initializing impedance analyzer after excel files are uploaded")
 						self.impedance_analyzer = ImpedanceAnalyzer(impedance_freq_sweep_path=self.impedance_freq_sweep_path)
 
 					else:

@@ -67,7 +67,7 @@ See [documentation/INSTALL.md](documentation/INSTALL.md) for detailed pip instal
 
 ```bash
 # 1. Set up environment variables (API keys, etc.)
-./scripts/setup_env.sh
+./scripts/setup_env_variables.sh
 
 # 2. Start the application in Docker
 ./scripts/run_docker.sh start
@@ -104,7 +104,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 # 2. Install dependencies and set up environment
 pip install -r setup_config/requirements.txt
 pip install -e .
-./scripts/setup_env.sh
+./scripts/setup_env_variables.sh
 
 # 3. Run the dashboard
 streamlit run wound_analysis/dashboard.py
@@ -146,7 +146,7 @@ wound_management_interpreter_LLM/
 ├── scripts/                  # Utility scripts
 │   ├── run_docker.sh         # Docker management script
 │   ├── install.sh        # Conda environment setup
-│   └── setup_env.sh          # Environment configuration
+│   └── setup_env_variables.sh          # Environment configuration
 ├── tests/                    # Test suite
 ├── wound_analysis/           # Core application code
 │   ├── dashboard.py          # Streamlit interface

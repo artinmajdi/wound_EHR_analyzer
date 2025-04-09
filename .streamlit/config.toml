@@ -9,10 +9,16 @@ scriptPath = "."
 connectionTimeout = 300
 # Port to run on (will use default 8501 if not specified)
 port = 8501
+# Maximum size for uploaded files (100MB)
+maxUploadSize = 100
+# Maximum message size for WebSocket communication
+maxMessageSize = 200
 
 [browser]
 gatherUsageStats = false
 serverAddress = "localhost"
+# Set server port in browser address
+serverPort = 8501
 
 [theme]
 primaryColor = "#0466c8"
@@ -24,6 +30,8 @@ font = "sans serif"
 [runner]
 # This helps with Python module imports
 moduleImportPath = "."
+# Set the maximum number of retries for module imports
+postScriptGC = true
 
 [pythonPath]
 # Add the project root to the Python path
@@ -36,4 +44,18 @@ headless = true
 [cache]
 # Cache settings for better performance
 enabled = true
+# Set cache type to memory for faster access
+type = "memory"
+# Set maximum cache size (in MiB)
+# maxEntrySize = 200
+
+[logger]
+# Configure logging level
+level = "info"
+
+[client]
+# Show error details in client
+showErrorDetails = true
+# Toolbar mode for development
+toolbarMode = "auto"
 

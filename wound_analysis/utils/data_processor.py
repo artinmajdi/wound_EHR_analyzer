@@ -13,6 +13,7 @@ from scipy import stats
 import pandas as pd
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import streamlit as st
 
 from wound_analysis.utils.column_schema import DColumns, ExcelSheetColumns
 
@@ -1478,12 +1479,13 @@ class ImpedanceExcelProcessor:
 		cache_key = self.get_cache_key_excel_file(record_id)
 
 		if cache_key in self.cache_processed_excel_files and visit_date in self.cache_processed_excel_files[cache_key]:
-			# logger.info(f"Using cached frequency data for patient {record_id}, visit date {visit_date}")
+			# logger.debug(f"Using cached frequency data for patient {record_id}, visit date {visit_date}")
 			return self.cache_processed_excel_files[cache_key][visit_date]
 
 		return None
 
 
+@st.cache_resource
 class ImpedanceAnalyzer:
 	"""Handles advanced bioimpedance analysis and clinical interpretation."""
 
@@ -1504,7 +1506,6 @@ class ImpedanceAnalyzer:
 
 		# Check if we already have this data in cache
 		if cache_key in self._structured_three_freq_cache:
-			logger.info(f"Using cached impedance data for patient {record_id}, visit date {visit_date}")
 			return self._structured_three_freq_cache[cache_key]
 
 		impedance_data = {
@@ -2484,7 +2485,7 @@ class ImpedanceAnalyzer:
 		].mean().reset_index()
 
 		# Impedance by wound type
-		avg_by_type = df.groupby(CN.WOUND_TYPE)[CN.HIGHEST_FREQ_ABSOLUTE].mean().reset_index()
+		avg_by_type = df.groupby(CN.WOUND_TYPE, observed=False)[CN.HIGHEST_FREQ_ABSOLUTE].mean().reset_index()
 
 		return avg_impedance, avg_by_type
 
@@ -2592,3 +2593,19 @@ class ImpedanceAnalyzer:
 		analysis['healing_stage'] = ImpedanceAnalyzer.classify_wound_healing_stage(analysis=analysis)
 
 		return analysis
+
+
+def load_env():
+	# Load environment variables from .env file
+	from dotenv import load_dotenv
+
+	# Try to load environment variables from different possible locations
+	env_paths = [
+		pathlib.Path(__file__).parent.parent / '.env',  # Project root .env
+		pathlib.Path.cwd() / '.env',                    # Current working directory
+	]
+
+	for env_path in env_paths:
+		if env_path.exists():
+			load_dotenv(dotenv_path=env_path)
+			break

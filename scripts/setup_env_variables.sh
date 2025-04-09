@@ -2,7 +2,7 @@
 # Script to set up environment variables from the setup_config directory
 
 # Navigate to the project root directory
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 ROOT_DIR=$(pwd)
 
 # Create .env file if it doesn't exist

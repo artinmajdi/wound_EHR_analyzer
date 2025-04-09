@@ -11,7 +11,7 @@ This document outlines the configuration process for the Wound Management Interp
 The project includes a dedicated script that handles all environment configuration tasks automatically:
 
 ```bash
-./scripts/setup_env.sh
+./scripts/setup_env_variables.sh
 ```
 
 **What this script does:**
@@ -45,7 +45,7 @@ For development environments, use the provided Conda setup script:
 **What this script does:**
 - Creates a Conda environment named `wound_analysis`
 - Installs all required dependencies from `setup_config/environment.yml`
-- Automatically calls `setup_env.sh` if `.env` doesn't exist
+- Automatically calls `setup_env_variables.sh` if `.env` doesn't exist
 - Provides activation instructions
 
 ### Manual Conda Configuration
@@ -64,7 +64,7 @@ For advanced users who need custom Conda configurations:
 
 3. Run the environment setup script:
    ```bash
-   ./scripts/setup_env.sh
+   ./scripts/setup_env_variables.sh
    ```
 
 ## Docker Environment Configuration
@@ -73,7 +73,7 @@ For containerized deployments, environment variables can be passed to Docker in 
 
 1. Using the automated script (recommended):
    ```bash
-   ./scripts/setup_env.sh
+   ./scripts/setup_env_variables.sh
    ./scripts/run_docker.sh start
    ```
 
@@ -101,6 +101,6 @@ If you encounter configuration issues:
 For persistent issues, run the setup script with verbose output:
 
 ```bash
-./scripts/setup_env.sh --verbose
+./scripts/setup_env_variables.sh --verbose
 
 ```

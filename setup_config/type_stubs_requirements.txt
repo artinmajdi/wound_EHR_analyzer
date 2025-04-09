@@ -1,0 +1,13 @@
+types-Flask
+types-Flask-Cors
+types-Werkzeug
+types-openpyxl
+types-xlrd
+types-seaborn
+types-pillow
+types-protobuf
+types-regex
+types-jinja2
+types-requests
+types-tqdm
+types-colorama

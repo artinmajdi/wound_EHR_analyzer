@@ -49,21 +49,26 @@ def main():
     _, word_filename = setup_logging(args.output_dir)
 
     try:
-        logger.info(f"Starting analysis for patient {args.record_id}")
+        logger.debug(f"Starting Wound Analysis Dashboard")
 
         # Set up environment
         if args.api_key:
             os.environ["OPENAI_API_KEY"] = args.api_key
 
-        # Process patient data
-        df = Dashboard().load_data(args.csv_dataset_path)
-        processor = WoundDataProcessor(df=df, impedance_freq_sweep_path=args.impedance_freq_sweep_path)
-        patient_data = processor.get_patient_visits(record_id=args.record_id)
+        # Initialize the dashboard
+        dashboard = Dashboard()
 
+        # Set the necessary paths and configurations
+        dashboard.csv_dataset_path = args.csv_dataset_path
+        dashboard.impedance_freq_sweep_path = args.impedance_freq_sweep_path
+        dashboard.llm_platform = args.platform
+        dashboard.llm_model = args.model_name
 
+        # Run the dashboard application
+        dashboard.run()
 
     except Exception as e:
-        logger.error(f"Analysis failed: {e}")
+        logger.error(f"Dashboard initialization failed: {e}")
         raise
 
 
