@@ -363,8 +363,6 @@ class Dashboard:
 							for file in xlsx_files:
 								st.text(f"- {file.name}")
 
-						# Initialize the wound data processor once
-						logger.debug("Initializing impedance analyzer after excel files are uploaded")
 						self.impedance_analyzer = ImpedanceAnalyzer(impedance_freq_sweep_path=self.impedance_freq_sweep_path)
 
 					else:

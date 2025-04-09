@@ -18,7 +18,7 @@ maxMessageSize = 200
 gatherUsageStats = false
 serverAddress = "localhost"
 # Set server port in browser address
-serverPort = 8501
+# serverPort = 8501
 
 [theme]
 primaryColor = "#0466c8"
@@ -47,7 +47,7 @@ enabled = true
 # Set cache type to memory for faster access
 type = "memory"
 # Set maximum cache size (in MiB)
-# maxEntrySize = 200
+maxEntrySize = 200
 
 [logger]
 # Configure logging level

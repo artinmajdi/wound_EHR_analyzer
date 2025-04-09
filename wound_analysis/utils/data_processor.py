@@ -1442,10 +1442,35 @@ class ImpedanceExcelProcessor:
 		excel_files = sorted([f for f in self.impedance_freq_sweep_path.iterdir()
 							if f.is_file() and f.suffix == '.xlsx' and not f.name.startswith('~')])
 
-		# Process each file in sorted order
-		for file in excel_files:
-			record_id = int(file.stem)
-			self._process_excel_file(record_id=record_id)
+		# Only show progress bar if there are files to process
+		if excel_files:
+			# Create a progress bar
+			progress_text = "Loading impedance frequency sweep files..."
+			st.write('')
+			progress_bar = st.progress(0, text=progress_text)
+			total_files = len(excel_files)
+
+			# Process each file in sorted order with progress updates
+			for i, file in enumerate(excel_files):
+				record_id = int(file.stem)
+				self._process_excel_file(record_id=record_id)
+
+				# Update progress bar
+				progress = (i + 1) / total_files
+				progress_bar.progress(progress, text=f"{progress_text} ({i+1}/{total_files})")
+
+			# Complete the progress bar
+			progress_bar.progress(1.0, text="Impedance files loaded successfully!")
+
+			# Add a small delay so users can see the completion message
+			import time
+			time.sleep(0.5)
+
+			# Clear the progress bar after completion
+			progress_bar.empty()
+		else:
+			# No files to process
+			pass
 
 
 	def get_freq_data_for_visit(self, record_id: int, visit_date: str) -> Optional[Dict[str, pd.DataFrame]]:
