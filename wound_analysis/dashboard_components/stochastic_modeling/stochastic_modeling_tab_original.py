@@ -18,6 +18,7 @@ from statsmodels.distributions.empirical_distribution import ECDF
 import pickle
 import json
 from datetime import datetime
+import streamlit as st
 
 from wound_analysis.utils.column_schema import DColumns
 from wound_analysis.utils.data_processor import WoundDataProcessor
@@ -66,12 +67,15 @@ class StochasticModelingTab:
             st.session_state.deterministic_coefs = None
         if 'residuals' not in st.session_state:
             st.session_state.residuals = None
+        if 'fitted_distribution' not in st.session_state:
+            st.session_state.fitted_distribution = None
 
         # Models for storing analysis results
         self.deterministic_model = st.session_state.deterministic_model
         self.polynomial_degree = st.session_state.polynomial_degree
         self.deterministic_coefs = st.session_state.deterministic_coefs
         self.residuals = st.session_state.residuals
+        self.fitted_distribution = st.session_state.fitted_distribution
 
     def _initialize_parameter_lists(self):
         """Initialize parameter lists for dropdown selections based on the probabilistic modeling framework.
@@ -168,7 +172,7 @@ class StochasticModelingTab:
 
     def _parameter_selection_ui(self) -> Tuple[str, str, List[str], Dict, bool]:
         """
-        Create the parameter selection UI.
+        Create a visually appealing parameter selection UI.
 
         Returns:
         -------
@@ -179,31 +183,40 @@ class StochasticModelingTab:
             - Dictionary of filter parameters
             - Boolean indicating if the analysis should be run
         """
-        st.subheader("Parameter Selection")
+        st.subheader("📊 Parameter Selection")
 
-        # Create a container with a border
+        # Create a styled container
         with st.container():
-            st.markdown("""
-            <style>
-            .parameter-section {
-                border: 1px solid #e0e0e0;
-                border-radius: 5px;
-                padding: 15px;
-                background-color: #f8f9fa;
-                margin-bottom: 20px;
-            }
-            </style>
-            """, unsafe_allow_html=True)
+            # st.markdown("""
+            # <style>
+            # .parameter-section {
+            #     border: 2px solid #4a90e2;
+            #     border-radius: 10px;
+            #     padding: 20px;
+            #     background: linear-gradient(145deg, #f8f9fa, #e9ecef);
+            #     margin-bottom: 25px;
+            #     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            # }
+            # .section-title {
+            #     color: #2c3e50;
+            #     font-size: 1.2em;
+            #     margin-bottom: 15px;
+            # }
+            # .stSelectbox > div > div {
+            #     border-radius: 8px;
+            #     border: 1px solid #ced4da;
+            # }
+            # </style>
+            # """, unsafe_allow_html=True)
 
-            st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
+            # st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
 
-            # Create two columns for primary variable selection
-            col1, col2 = st.columns(2)
+            # Primary variable selection in columns
+            col1, col2, col3, col4 = st.columns(4)
 
             with col1:
-                # Dependent variable selection
                 dependent_var_name = st.selectbox(
-                    "Dependent Variable (Y)",
+                    "📈 Dependent Variable (Y)",
                     options=list(self.dependent_variables.keys()),
                     index=0,
                     help="The outcome variable to be modeled probabilistically"
@@ -211,68 +224,66 @@ class StochasticModelingTab:
                 dependent_var = self.dependent_variables[dependent_var_name]
 
             with col2:
-                # Independent variable selection
                 independent_var_name = st.selectbox(
-                    "Independent Variable (X)",
+                    "📉 Independent Variable (X)",
                     options=list(self.independent_variables.keys()),
                     index=0,
                     help="The primary predictor variable"
                 )
                 independent_var = self.independent_variables[independent_var_name]
 
-            # Additional parameters multi-select
-            st.markdown("### Additional Parameters")
-            st.write("Select additional parameters to include in the analysis:")
-
-            additional_params_names = st.multiselect(
-                "Additional Parameters",
-                options=list(self.additional_parameters.keys()),
-                default=[],
-                help="These parameters will be used for conditional analysis and stratification"
-            )
-            additional_params = [self.additional_parameters[param] for param in additional_params_names]
-
-            # Filter options
-            st.markdown("### Data Filtering")
-
-            filters = {}
-
-            # Patient filter (if All Patients is selected)
-            if self.patient_id == "All Patients":
-                patient_ids = sorted(self.df[self.CN.RECORD_ID].unique())
-                selected_patients = st.multiselect(
-                    "Filter by Patient ID",
-                    options=[f"Patient {id:d}" for id in patient_ids],
+            # Additional parameters section
+            with col3:
+                additional_params_names = st.multiselect(
+                    "➕ Additional Parameters",
+                    options=list(self.additional_parameters.keys()),
                     default=[],
-                    help="Select specific patients to include in the analysis"
+                    help="These parameters will be used for conditional analysis and stratification"
                 )
-                if selected_patients:
-                    filters['patients'] = [int(p.split()[1]) for p in selected_patients]
+                additional_params = [self.additional_parameters[param] for param in additional_params_names]
 
-            # Date range filter
-            date_filter = st.checkbox("Filter by Date Range", value=False)
-            if date_filter:
-                col1, col2 = st.columns(2)
-                with col1:
-                    min_date = self.df[self.CN.VISIT_DATE].min()
-                    start_date = pd.to_datetime(st.date_input(
-                        "Start Date",
-                        value=min_date,
-                        min_value=min_date,
-                        max_value=self.df[self.CN.VISIT_DATE].max()
-                    ))
-                with col2:
-                    max_date = self.df[self.CN.VISIT_DATE].max()
-                    end_date = pd.to_datetime(st.date_input(
-                        "End Date",
-                        value=max_date,
-                        min_value=min_date,
-                        max_value=max_date
-                    ))
-                filters['date_range'] = (start_date, end_date)
+            with col4:
+                # Filter options section
+                filters = {}
+
+                # Patient filter
+                if self.patient_id == "All Patients":
+
+                    if st.checkbox("👤 Filter by Patient ID", value=False):
+                        patient_ids = sorted(self.df[self.CN.RECORD_ID].unique())
+
+                        selected_patients = st.multiselect(
+                            "👤 Filter by Patient ID",
+                            options=[f"Patient {id:d}" for id in patient_ids],
+                            default=[],
+                            help="Select specific patients to include in the analysis"
+                        )
+                        if selected_patients:
+                            filters['patients'] = [int(p.split()[1]) for p in selected_patients]
+
+                # Date range filter
+                if st.checkbox("📅 Filter by Date Range", value=False):
+                    col1a, col2a = st.columns(2)
+                    with col1a:
+                        min_date = self.df[self.CN.VISIT_DATE].min()
+                        start_date = pd.to_datetime(st.date_input(
+                            "Start Date",
+                            value=min_date,
+                            min_value=min_date,
+                            max_value=self.df[self.CN.VISIT_DATE].max()
+                        ))
+                    with col2a:
+                        max_date = self.df[self.CN.VISIT_DATE].max()
+                        end_date = pd.to_datetime(st.date_input(
+                            "End Date",
+                            value=max_date,
+                            min_value=min_date,
+                            max_value=max_date
+                        ))
+                    filters['date_range'] = (start_date, end_date)
 
             # Run analysis button
-            run_analysis = st.button("Run Analysis", type="primary")
+            run_analysis = st.button("🚀 Run Analysis", type="primary", use_container_width=True)
 
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -450,7 +461,152 @@ class StochasticModelingTab:
         """
         st.subheader("Distribution Analysis")
 
+        # Helper function to build vertical tabs HTML for distribution parameters
+        def build_vertical_tabs_html(dist_results, available_dists, best_dist):
+            tabs_html = """
+            <script type="text/javascript" async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+            <style>
+              .vertical-tabs {
+                  display: flex;
+                  border: 1px solid #ccc;
+                  border-radius: 5px;
+                  overflow: hidden;
+                  font-family: Arial, sans-serif;
+              }
+              .tab-buttons {
+                  display: flex;
+                  flex-direction: column;
+                  width: 200px;
+                  background-color: #f9f9f9;
+                  border-right: 1px solid #ccc;
+              }
+              .tab-buttons button {
+                  background-color: inherit;
+                  border: none;
+                  outline: none;
+                  padding: 12px 16px;
+                  text-align: left;
+                  cursor: pointer;
+                  transition: background-color 0.3s;
+                  font-weight: 600;
+                  font-size: 14px;
+              }
+              .tab-buttons button:hover {
+                  background-color: #ddd;
+              }
+              .tab-buttons button.active {
+                  background-color: #ccc;
+              }
+              .tab-content-container {
+                  flex-grow: 1;
+                  padding: 20px;
+              }
+              .tab-content {
+                  display: none;
+              }
+              .tab-content.active {
+                  display: block;
+              }
+              .tab-content h3 {
+                  margin-top: 0;
+                  color: #333;
+              }
+              .tab-content p {
+                  font-size: 16px;
+                  margin: 10px 0;
+              }
+              .tab-content ul {
+                  list-style: none;
+                  padding: 0;
+              }
+              .tab-content ul li {
+                  margin-bottom: 8px;
+                  font-size: 14px;
+                  line-height: 1.4;
+              }
+              .tab-content ul li strong {
+                  color: #555;
+              }
+            </style>
+            <div class="vertical-tabs">
+              <div class="tab-buttons">
+            """
+            for idx, dist in enumerate(available_dists):
+                active_class = "active" if idx == 0 else ""
+                button_label = f"{dist} (Best Fit)" if dist == best_dist else dist
+                tabs_html += f'<button class="tablinks {active_class}" onclick="openTab(event, \'{dist}\')">{button_label}</button>'
+            tabs_html += """
+              </div>
+              <div class="tab-content-container">
+            """
+            for idx, dist in enumerate(available_dists):
+                selected = dist_results[dist]
+                active_class = "active" if idx == 0 else ""
+                header_label = f"{dist} Distribution Parameters" + (" (Best Fit)" if dist == best_dist else "")
+                content_html = f"<h3>{header_label}</h3>"
+                if dist == "Normal":
+                    content_html += """<p>$$ f(x) = \\frac{1}{\\sigma\\sqrt{2\\pi}} e^{-\\frac{1}{2}\\left(\\frac{x-\\mu}{\\sigma}\\right)^2} $$</p>"""
+                    content_html += f"<ul><li><strong>μ (mean):</strong> {selected['params'][0]:.4f}</li>"
+                    content_html += f"<li><strong>σ (std dev):</strong> {selected['params'][1]:.4f}</li></ul>"
+                elif dist == "Log-Normal":
+                    content_html += """<p>$$ f(x) = \\frac{1}{x\\,\\sigma\\sqrt{2\\pi}} e^{-\\frac{(\\ln x-\\mu)^2}{2\\sigma^2}} $$</p>"""
+                    content_html += f"<ul><li><strong>σ (shape):</strong> {selected['params']['s']:.4f}</li>"
+                    content_html += f"<li><strong>μ (scale):</strong> {selected['params']['scale']:.4f}</li></ul>"
+                elif dist == "Weibull":
+                    content_html += """<p>$$ f(x) = \\frac{k}{\\lambda} \\left(\\frac{x}{\\lambda}\\right)^{k-1} e^{-\\left(\\frac{x}{\\lambda}\\right)^k} $$</p>"""
+                    content_html += f"<ul><li><strong>k (shape):</strong> {selected['params'][0]:.4f}</li>"
+                    content_html += f"<li><strong>λ (scale):</strong> {selected['params'][1]:.4f}</li>"
+                    if len(selected['params']) > 2:
+                        content_html += f"<li><strong>Location (shift):</strong> {selected['params'][2]:.4f}</li>"
+                    content_html += "</ul>"
+                elif dist == "Exponential":
+                    content_html += """<p>$$ f(x) = \\lambda e^{-\\lambda x} $$</p>"""
+                    content_html += f"<ul><li><strong>λ (rate):</strong> {selected['params'][0]:.4f}</li>"
+                    content_html += "<li><strong>Note:</strong> λ = 1/mean (average time between events)</li>"
+                    if len(selected['params']) > 1:
+                        content_html += f"<li><strong>Location (shift):</strong> {selected['params'][1]:.4f}</li>"
+                    content_html += "</ul>"
+                elif dist == "Gamma":
+                    content_html += """<p>$$ f(x) = \\frac{\\beta^\\alpha}{\\Gamma(\\alpha)} x^{\\alpha-1} e^{-\\beta x} $$</p>"""
+                    content_html += f"<ul><li><strong>α (shape):</strong> {selected['params'][0]:.4f}</li>"
+                    content_html += f"<li><strong>β (rate):</strong> {selected['params'][1]:.4f}</li>"
+                    content_html += "<li><strong>Note:</strong> β = 1/scale (average time between events)</li>"
+                    if len(selected['params']) > 2:
+                        content_html += f"<li><strong>Location (shift):</strong> {selected['params'][2]:.4f}</li>"
+                    content_html += "</ul>"
+                else:
+                    content_html += "<p><strong>Distribution Parameters:</strong></p><ul>"
+                    param_names = []
+                    if hasattr(selected['distribution'], 'shapes') and selected['distribution'].shapes is not None:
+                        param_names = selected['distribution'].shapes.split(",")
+                    for i, param in enumerate(selected['params']):
+                        param_name = param_names[i] if i < len(param_names) else f"Parameter {i+1}"
+                        content_html += f"<li><strong>{param_name}:</strong> {param:.4f}</li>"
+                    content_html += "</ul>"
+                tabs_html += f'<div id="{dist}" class="tab-content {active_class}">{content_html}</div>'
+            tabs_html += """
+              </div>
+            </div>
+            <script>
+              function openTab(evt, tabName) {
+                var i, tabcontent, tablinks;
+                tabcontent = document.getElementsByClassName("tab-content");
+                for (i = 0; i < tabcontent.length; i++) {
+                  tabcontent[i].classList.remove("active");
+                }
+                tablinks = document.getElementsByClassName("tablinks");
+                for (i = 0; i < tablinks.length; i++) {
+                  tablinks[i].classList.remove("active");
+                }
+                document.getElementById(tabName).classList.add("active");
+                evt.currentTarget.classList.add("active");
+              }
+            </script>
+            """
+            return tabs_html
+
         with st.container():
+            # Inject custom CSS for the analysis section
             st.markdown("""
             <style>
             .analysis-section {
@@ -462,22 +618,18 @@ class StochasticModelingTab:
             }
             </style>
             """, unsafe_allow_html=True)
-
             st.markdown('<div class="analysis-section">', unsafe_allow_html=True)
 
             st.write(f"Analyzing the distribution of {dependent_var_name}")
 
-            # Get data for dependent variable
+            # Extract and clean the data for the dependent variable
             data = df[dependent_var].values
-
-            # Remove NaN values
             valid_data = data[~np.isnan(data)]
-
             if len(valid_data) == 0:
                 st.error(f"No valid data available for {dependent_var_name}")
                 return
 
-            # Show basic statistics
+            # Display basic statistics
             st.markdown("### Basic Statistics")
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Mean", f"{np.mean(valid_data):.2f}")
@@ -485,26 +637,82 @@ class StochasticModelingTab:
             col3.metric("Std Dev", f"{np.std(valid_data):.2f}")
             col4.metric("Sample Size", f"{len(valid_data)}")
 
-            # Fit distributions
+            # Fit distributions to the data
             with st.spinner("Fitting probability distributions..."):
                 dist_results = self._fit_distributions(valid_data)
-
             if not dist_results:
                 st.error("Failed to fit distributions to the data.")
                 return
 
-            # Display distribution plots
+            # Display distribution fitting plot
             st.markdown("### Distribution Fitting")
+            with st.expander("Understanding Probability Distributions"):
+                st.markdown("""
+                ### Common Probability Distributions and Their Interpretation
 
+                **Weibull Distribution:**
+                - **Description:** Models time-to-failure data and is widely used in reliability analysis
+                - **Key Parameters:** Shape (k) and Scale (λ)
+                - **Interpretation:**
+                    - Shape < 1: Failure rate decreases over time (early failures)
+                    - Shape = 1: Exponential distribution (constant failure rate)
+                    - Shape > 1: Failure rate increases over time (aging/wear-out)
+                - **Applications:** Survival analysis, reliability engineering, wind speed modeling
+
+                **Normal (Gaussian) Distribution:**
+                - **Description:** Symmetric bell-shaped distribution for continuous variables
+                - **Key Parameters:** Mean (μ) and Standard Deviation (σ)
+                - **Interpretation:**
+                    - μ determines the center of the distribution
+                    - σ controls the spread (larger σ = more variability)
+                    - 68% of data within μ ± σ, 95% within μ ± 2σ
+                - **Applications:** Natural phenomena, measurement errors, statistical inference
+
+                **Gamma Distribution:**
+                - **Description:** Models positive-valued, right-skewed data
+                - **Key Parameters:** Shape (α) and Rate (β)
+                - **Interpretation:**
+                    - Shape controls the skewness (α < 1 = highly skewed, α > 1 = more symmetric)
+                    - Rate controls the spread (higher β = more concentrated)
+                - **Applications:** Waiting times, insurance claims, rainfall modeling
+                """)
             buf = self._plot_distribution_fit(valid_data, dist_results, dependent_var_name)
-
             if buf is not None:
                 st.image(buf, caption=f"Distribution Analysis for {dependent_var_name}")
 
             # Display goodness of fit statistics
             st.markdown("### Goodness of Fit Statistics")
+            with st.expander("Understanding Goodness of Fit Metrics"):
+                st.markdown("""
+                ### Interpreting Goodness of Fit Statistics
 
-            # Create dataframe for display
+                **Akaike Information Criterion (AIC):**
+                - Measures the relative quality of statistical models for a given dataset
+                - Lower AIC values indicate better model fit
+                - Accounts for both model complexity and goodness of fit
+                - Rule of thumb:
+                    - ΔAIC < 2: Models are essentially equivalent
+                    - 4 < ΔAIC < 7: Considerably less support for higher AIC model
+                    - ΔAIC > 10: Strong evidence against higher AIC model
+                - When comparing models, choose the one with the lowest AIC
+
+                **Kolmogorov-Smirnov (KS) Statistic:**
+                - Measures the maximum distance between empirical and theoretical distributions
+                - Ranges from 0 to 1, where lower values indicate better fit
+                - KS p-value interpretation:
+                    - p < 0.05: Significant difference between distributions (reject null hypothesis)
+                    - p ≥ 0.05: No significant difference (fail to reject null hypothesis)
+                - Note: KS test is sensitive to sample size - large samples may show significant differences even for good fits
+
+                **Using Both Metrics Together:**
+                - First look at AIC to identify the best overall model
+                - Then examine KS statistic and p-value to assess goodness of fit
+                - A good model will have:
+                    - Low AIC compared to other models
+                    - Low KS statistic
+                    - High KS p-value (≥ 0.05)
+                """)
+            # Build dataframe with fit statistics and display it
             fit_stats = []
             for dist_name, result in dist_results.items():
                 fit_stats.append({
@@ -513,37 +721,22 @@ class StochasticModelingTab:
                     "KS Statistic": result["ks_stat"],
                     "p-value": result["p_value"]
                 })
+            fit_stats_df = pd.DataFrame(fit_stats).sort_values("AIC")
+            st.dataframe(fit_stats_df.style.format({'p-value': lambda x: "{:.3f}".format(x) if x >= 0.001 else "{:.2e}".format(x)}))
 
-            fit_stats_df = pd.DataFrame(fit_stats)
-            fit_stats_df = fit_stats_df.sort_values("AIC")
-
-            st.dataframe(fit_stats_df)
-
-            # Add download button for the statistics
+            # Provide a CSV download link for the statistics
             csv = fit_stats_df.to_csv(index=False)
             b64 = base64.b64encode(csv.encode()).decode()
             href = f'<a href="data:file/csv;base64,{b64}" download="distribution_statistics.csv">Download Statistics (CSV)</a>'
             st.markdown(href, unsafe_allow_html=True)
 
-            # Show best fit distribution parameters
-            if fit_stats_df.shape[0] > 0:
+            # Show distribution parameters using vertical tabs if statistics are available
+            if not fit_stats_df.empty:
+                available_dists = fit_stats_df['Distribution'].tolist()
                 best_dist = fit_stats_df.iloc[0]["Distribution"]
-                st.markdown(f"### Best Fit: {best_dist} Distribution")
-
-                best_result = dist_results[best_dist]
-                param_names = best_result['distribution'].shapes.split(",") if hasattr(best_result['distribution'], 'shapes') else []
-
-                if best_dist == "Normal":
-                    st.write(f"μ (mean): {best_result['params'][0]:.4f}")
-                    st.write(f"σ (std dev): {best_result['params'][1]:.4f}")
-                elif best_dist == "Log-Normal":
-                    st.write(f"σ (shape): {best_result['params']['s']:.4f}")
-                    st.write(f"μ (scale): {best_result['params']['scale']:.4f}")
-                else:
-                    # Generic parameter display
-                    for i, param in enumerate(best_result['params']):
-                        param_name = param_names[i] if i < len(param_names) else f"Parameter {i+1}"
-                        st.write(f"{param_name}: {param:.4f}")
+                import streamlit.components.v1 as components
+                tabs_html = build_vertical_tabs_html(dist_results, available_dists, best_dist)
+                components.html(tabs_html, height=600)
 
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -574,11 +767,12 @@ class StochasticModelingTab:
 
         results = {}
 
+        # Fit polynomial models of different degrees
         for degree in range(1, max_degree + 1):
             # Create polynomial features
-            poly = PolynomialFeatures(degree=degree)
+            poly         = PolynomialFeatures(degree=degree)
             X_poly_train = poly.fit_transform(X_train)
-            X_poly_test = poly.transform(X_test)
+            X_poly_test  = poly.transform(X_test)
 
             # Fit the model
             model = LinearRegression()
@@ -586,19 +780,19 @@ class StochasticModelingTab:
 
             # Make predictions
             y_pred_train = model.predict(X_poly_train)
-            y_pred_test = model.predict(X_poly_test)
+            y_pred_test  = model.predict(X_poly_test)
 
             # Calculate metrics
-            r2_train = r2_score(y_train, y_pred_train)
-            r2_test = r2_score(y_test, y_pred_test)
+            r2_train  = r2_score(y_train, y_pred_train)
+            r2_test   = r2_score(y_test, y_pred_test)
             mse_train = mean_squared_error(y_train, y_pred_train)
-            mse_test = mean_squared_error(y_test, y_pred_test)
+            mse_test  = mean_squared_error(y_test, y_pred_test)
 
             # Calculate AIC and BIC
             n_train = len(y_train)
-            k = degree + 1  # number of parameters
-            aic = n_train * np.log(mse_train) + 2 * k
-            bic = n_train * np.log(mse_train) + k * np.log(n_train)
+            k       = degree + 1  # number of parameters
+            aic     = n_train * np.log(mse_train) + 2 * k
+            bic     = n_train * np.log(mse_train) + k * np.log(n_train)
 
             # Store results
             results[degree] = {
@@ -698,6 +892,7 @@ class StochasticModelingTab:
 
         return buf
 
+
     def _create_deterministic_component(self, df: pd.DataFrame, dependent_var: str, independent_var: str,
                                        dependent_var_name: str, independent_var_name: str):
         """
@@ -786,18 +981,18 @@ class StochasticModelingTab:
             st.session_state.polynomial_degree = selected_degree
 
             # Update instance variables
-            self.deterministic_model = st.session_state.deterministic_model
+            self.deterministic_model = model_results[selected_degree]
             self.polynomial_degree = st.session_state.polynomial_degree
 
             # Display model metrics for different degrees
             metrics_df = pd.DataFrame({
-                'Degree': list(range(1, max_degree + 1)),
-                'R² (Train)': [model_results[d]['r2_train'] for d in range(1, max_degree + 1)],
-                'R² (Test)': [model_results[d]['r2_test'] for d in range(1, max_degree + 1)],
+                'Degree'     : list(range(1, max_degree + 1)),
+                'R² (Train)' : [model_results[d]['r2_train'] for d in range(1, max_degree + 1)],
+                'R² (Test)'  : [model_results[d]['r2_test'] for d in range(1, max_degree + 1)],
                 'MSE (Train)': [model_results[d]['mse_train'] for d in range(1, max_degree + 1)],
-                'MSE (Test)': [model_results[d]['mse_test'] for d in range(1, max_degree + 1)],
-                'AIC': [model_results[d]['aic'] for d in range(1, max_degree + 1)],
-                'BIC': [model_results[d]['bic'] for d in range(1, max_degree + 1)]
+                'MSE (Test)' : [model_results[d]['mse_test'] for d in range(1, max_degree + 1)],
+                'AIC'        : [model_results[d]['aic'] for d in range(1, max_degree + 1)],
+                'BIC'        : [model_results[d]['bic'] for d in range(1, max_degree + 1)]
             })
 
             with col2:
@@ -807,6 +1002,30 @@ class StochasticModelingTab:
                 best_bic = metrics_df['BIC'].idxmin() + 1
                 st.write(f"Best degree by AIC: {best_aic}")
                 st.write(f"Best degree by BIC: {best_bic}")
+
+            with st.expander("How to Interpret Model Metrics"):
+                st.markdown("""
+                - **R² (R-squared)**: Measures the proportion of variance in the dependent variable that's explained by the model.
+                  - Values range from 0 to 1, where 1 indicates perfect fit
+                  - Higher values generally indicate better fit, but beware of overfitting
+                  - Compare train vs test R² to check for overfitting
+
+                - **MSE (Mean Squared Error)**: Measures the average squared difference between predicted and actual values
+                  - Lower values indicate better fit
+                  - More sensitive to outliers than R²
+                  - Compare train vs test MSE to check for overfitting
+
+                - **AIC (Akaike Information Criterion)**: Measures model quality while penalizing complexity
+                  - Lower values indicate better model
+                  - Useful for comparing models with different complexities
+                  - Prefers simpler models that fit well
+
+                - **BIC (Bayesian Information Criterion)**: Similar to AIC but with stronger penalty for complexity
+                  - Lower values indicate better model
+                  - More conservative than AIC in selecting complex models
+                  - Prefers simpler models more strongly than AIC
+                """)
+
 
             st.dataframe(metrics_df.style.highlight_min(subset=['AIC', 'BIC'], color='lightgreen'))
 
@@ -819,29 +1038,34 @@ class StochasticModelingTab:
             if buf is not None:
                 st.image(buf, caption=f"Polynomial Fit (Degree {selected_degree})")
 
-            # Display equation and coefficients
-            st.markdown("### Model Equation")
+            # Display equation and coefficients in a nicely formatted HTML block
+            st.markdown("<h3 style='color: #2c3e50;'>Model Equation</h3>", unsafe_allow_html=True)
 
             # Get coefficients and format equation
             selected_model = model_results[selected_degree]
-            coef = selected_model['coefficients']
-            intercept = selected_model['intercept']
+            coef           = selected_model['coefficients']
+            intercept      = selected_model['intercept']
 
             # Store for later use
             self.deterministic_coefs = (intercept, coef)
 
-            # Format equation
+            # Format equation using HTML styling (using <sup> for exponents)
             equation = f"g({independent_var_name}) = {intercept:.4f}"
-            for i, c in enumerate(coef[1:]):  # Skip the first coefficient (it's just 1)
+            for i, c in enumerate(coef[1:]):  # Skip the intercept term
+                term = f"{abs(c):.4f} {independent_var_name.replace(' ', '_')}<sup>{i+1}</sup>"
                 if c >= 0:
-                    equation += f" + {c:.4f}{independent_var_name}^{i+1}"
+                    equation += f" + {term}"
                 else:
-                    equation += f" - {abs(c):.4f}{independent_var_name}^{i+1}"
+                    equation += f" - {term}"
 
-            st.markdown(f"**{equation}**")
+            # Display the formatted equation in a styled container
+            st.markdown(
+                f"<div style='background-color: #f0f8ff; border-left: 4px solid #2c3e50; padding: 10px; border-radius: 5px; font-size: 1.1em;'>"
+                f"{equation}"
+                f"</div>", unsafe_allow_html=True)
 
             # Display coefficient table
-            st.markdown("### Coefficient Values")
+            # st.markdown("### Coefficient Values")
 
             coef_df = pd.DataFrame({
                 'Term': [f"{independent_var_name}^{i}" if i > 0 else "Intercept"
@@ -849,7 +1073,7 @@ class StochasticModelingTab:
                 'Coefficient': [intercept] + list(coef[1:])
             })
 
-            st.dataframe(coef_df)
+            # st.dataframe(coef_df)
 
             # Calculate residuals for random component analysis
             X_poly = selected_model['poly'].transform(X)
@@ -1003,6 +1227,17 @@ class StochasticModelingTab:
             best_dist = fit_stats_df.iloc[0]["Distribution"]
             st.markdown(f"### Best Fit: {best_dist} Distribution")
 
+            # Store the best fit distribution
+            best_dist_result = dist_results[best_dist]
+            st.session_state.fitted_distribution = {
+                'best_distribution': best_dist,
+                'params'           : best_dist_result['params'],
+                'aic'              : best_dist_result['aic'],
+                'ks_stat'          : best_dist_result['ks_stat'],
+                'p_value'          : best_dist_result['p_value']
+            }
+            self.fitted_distribution = st.session_state.fitted_distribution
+
             # Display plot of residuals with best fit
             buf_fit = self._plot_distribution_fit(self.residuals, dist_results, "Residuals")
 
@@ -1028,9 +1263,28 @@ class StochasticModelingTab:
             # Create plot to visualize residuals versus independent variable
             fig, ax = plt.subplots(figsize=(10, 6))
 
-            # Get X values from the deterministic model
-            X = self.deterministic_model['poly'].get_feature_names_out()[1]  # Get the name of the original feature
-            X_values = np.array([float(x.split('^')[0].split('_')[1]) for x in X.split()])
+            try:
+                # Try to get X values from the polynomial features
+                feature_names = self.deterministic_model['poly'].get_feature_names_out()
+                if len(feature_names) > 1:
+                    X = feature_names[1]  # Get the name of the original feature
+                    try:
+                        # Safely extract numeric values from feature name
+                        X_values = np.array([float(x.split('^')[0].split('_')[-1]) for x in X.split()])
+                    except (IndexError, ValueError):
+                        # If feature name parsing fails, use the original X values from the model fit
+                        X_values = self.deterministic_model['model']._fit_X[:, 0]
+                else:
+                    # If only one feature exists, use the original X values from the model fit
+                    X_values = self.deterministic_model['model']._fit_X[:, 0]
+            except Exception as e:
+                # Fallback to using the residuals' index if all else fails
+                st.warning(f"Could not retrieve X values: {str(e)}. Using index as X values.")
+                X_values = np.arange(len(self.residuals))
+
+            # # Get X values from the deterministic model
+            # X = self.deterministic_model['poly'].get_feature_names_out()[1]  # Get the name of the original feature
+            # X_values = np.array([float(x.split('^')[0].split('_')[1]) for x in X.split()])
 
             # Plot residuals versus independent variable
             ax.scatter(X_values, self.residuals, color='blue', alpha=0.6)
@@ -1807,7 +2061,7 @@ class StochasticModelingTab:
                     st.info("Variance function modeling has already been performed in the Random Component section.")
                     # Add a button to navigate to that section
                     if st.button("Go to Variance Function in Random Component"):
-                        st.session_state.active_tab = "Random Component"
+                        st.session_state.active_stochastic_tab = "Random Component"
                 else:
                     st.warning("Please complete the Deterministic and Random Component analyses first to access variance function modeling.")
 
@@ -2536,10 +2790,6 @@ def predict_wound_healing(x, confidence_level=0.95):
             the expected trend, and a random component representing the variability around that trend.
             """)
 
-            # Display a conceptual diagram (placeholder)
-            st.image("https://via.placeholder.com/800x300?text=Deterministic+vs+Probabilistic+Modeling",
-                    caption="Conceptual comparison of deterministic vs. probabilistic modeling approaches")
-
         # Parameter selection UI
         dependent_var, independent_var, additional_params, filters, run_analysis = self._parameter_selection_ui()
 
@@ -2548,7 +2798,7 @@ def predict_wound_healing(x, confidence_level=0.95):
         independent_var_name = next((name for name, col in self.independent_variables.items() if col == independent_var), independent_var)
 
         # Analysis results when the Run Analysis button is clicked
-        if run_analysis:
+        if run_analysis or any([self.deterministic_model, self.residuals, self.fitted_distribution]):
             st.subheader("Analysis Results")
 
             # Filter the data
@@ -2563,7 +2813,7 @@ def predict_wound_healing(x, confidence_level=0.95):
             st.write(f"Analysis based on {filtered_df.shape[0]} records")
 
             # Create tabs for different analysis components
-            analysis_tabs = st.tabs([
+            tabs = st.tabs([
                 "Distribution Analysis",
                 "Deterministic Component",
                 "Random Component",
@@ -2573,29 +2823,29 @@ def predict_wound_healing(x, confidence_level=0.95):
             ])
 
             # Distribution Analysis Tab
-            with analysis_tabs[0]:
+            with tabs[0]:
                 self._create_distribution_analysis(filtered_df, dependent_var, dependent_var_name)
 
             # Deterministic Component Tab
-            with analysis_tabs[1]:
+            with tabs[1]:
                 self._create_deterministic_component(filtered_df, dependent_var, independent_var,
-                                                    dependent_var_name, independent_var_name)
+                                                   dependent_var_name, independent_var_name)
 
             # Random Component Tab
-            with analysis_tabs[2]:
+            with tabs[2]:
                 self._create_random_component(independent_var_name)
 
             # Complete Model Tab
-            with analysis_tabs[3]:
+            with tabs[3]:
                 self._create_complete_model(filtered_df, dependent_var, independent_var,
                                           dependent_var_name, independent_var_name)
 
             # Advanced Statistics Tab
-            with analysis_tabs[4]:
+            with tabs[4]:
                 self._create_advanced_statistics(filtered_df, dependent_var, independent_var,
                                                dependent_var_name, independent_var_name)
 
             # Uncertainty Quantification Tools Tab
-            with analysis_tabs[5]:
+            with tabs[5]:
                 self._create_uncertainty_quantification_tools(filtered_df, dependent_var, independent_var,
                                                            dependent_var_name, independent_var_name)
