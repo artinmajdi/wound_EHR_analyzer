@@ -15,7 +15,6 @@ from .oxygenation_tab import OxygenationTab
 from .temperature_tab import TemperatureTab
 from .overview_tab import OverviewTab
 from .stochastic_modeling_tab import StochasticModelingTab
-from .stochastic_modeling_tab_original import StochasticModelingTab as StochasticModelingTabOriginal
 
 __all__ = [ 'DashboardSettings',
             'Visualizer',
@@ -26,5 +25,4 @@ __all__ = [ 'DashboardSettings',
             'OxygenationTab',
             'TemperatureTab',
             'OverviewTab',
-            'StochasticModelingTab',
-            'StochasticModelingTabOriginal']
+            'StochasticModelingTab']

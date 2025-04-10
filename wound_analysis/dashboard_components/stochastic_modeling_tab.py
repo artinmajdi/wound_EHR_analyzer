@@ -23,7 +23,13 @@ import streamlit as st
 from wound_analysis.utils.column_schema import DColumns
 from wound_analysis.utils.data_processor import WoundDataProcessor
 from wound_analysis.dashboard_components.visualizer import Visualizer
+from wound_analysis.utils.stochastic_modeling.distribution_analyzer import DistributionAnalyzer
 
+
+# TODO: refactor this into smaller components (1st step: make the functions staticmethods. 2nd step: refactor into smaller components)
+# TODO: Check if I have already done the hermit polynomial modeling.
+# TODO: Ask the AI to review this and tell me in text all the things that is happening here (with mathematical equations).
+# TODO: Add the advanced statistical tests to the output.
 
 class StochasticModelingTab:
     """
@@ -306,6 +312,7 @@ class StochasticModelingTab:
 
         return filtered_df
 
+
     def _fit_distributions(self, data: np.ndarray) -> Dict:
         """
         Fit multiple probability distributions to the data.
@@ -353,6 +360,7 @@ class StochasticModelingTab:
                 st.warning(f"Could not fit {dist_name} distribution: {str(e)}")
 
         return results
+
 
     def _calculate_aic(self, distribution, params, data):
         """Calculate Akaike Information Criterion for the distribution fit."""
@@ -624,7 +632,9 @@ class StochasticModelingTab:
 
             # Fit distributions to the data
             with st.spinner("Fitting probability distributions..."):
-                dist_results = self._fit_distributions(valid_data)
+                dist_results = self._fit_distributions(data=valid_data)
+                # dist_results = DistributionAnalyzer().fit_distributions(data=valid_data)
+
             if not dist_results:
                 st.error("Failed to fit distributions to the data.")
                 return
@@ -725,7 +735,8 @@ class StochasticModelingTab:
 
             st.markdown('</div>', unsafe_allow_html=True)
 
-    def _fit_polynomial_models(self, X: np.ndarray, y: np.ndarray, max_degree: int = 5) -> Dict[int, Dict]:
+    @staticmethod
+    def _fit_polynomial_models(X: np.ndarray, y: np.ndarray, max_degree: int = 5) -> Dict[int, Dict]:
         """
         Fit polynomial models of different degrees to the data.
 
@@ -795,7 +806,9 @@ class StochasticModelingTab:
 
         return results
 
-    def _plot_polynomial_fit(self, X: np.ndarray, y: np.ndarray, model_results: Dict, degree: int,
+
+    @staticmethod
+    def _plot_polynomial_fit(X: np.ndarray, y: np.ndarray, model_results: Dict, degree: int,
                             x_label: str, y_label: str) -> BytesIO:
         """
         Create a plot of the data with the fitted polynomial curve.
@@ -948,7 +961,7 @@ class StochasticModelingTab:
             # Fit polynomial models of different degrees
             with st.spinner("Fitting polynomial models..."):
                 max_degree = 5
-                model_results = self._fit_polynomial_models(X, y, max_degree)
+                model_results = self._fit_polynomial_models(X=X, y=y, max_degree=max_degree)
 
             # Display polynomial degree selection
             col1, col2 = st.columns([1, 1])
@@ -1085,6 +1098,7 @@ class StochasticModelingTab:
                 st.markdown(href, unsafe_allow_html=True)
 
             st.markdown('</div>', unsafe_allow_html=True)
+
 
     def _create_random_component(self, independent_var_name: str):
         """
@@ -1408,6 +1422,7 @@ class StochasticModelingTab:
             st.markdown(href, unsafe_allow_html=True)
 
             st.markdown('</div>', unsafe_allow_html=True)
+
 
     def _create_complete_model(self, df: pd.DataFrame, dependent_var: str, independent_var: str,
                                dependent_var_name: str, independent_var_name: str):

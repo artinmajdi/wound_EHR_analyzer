@@ -74,9 +74,7 @@ class PolynomialModeler:
             bic = n * np.log(rss/n) + np.log(n) * p
 
             # Calculate confidence bands
-            confidence_bands = self._calculate_confidence_bands(
-                model, X_poly, x, y_pred, residuals
-            )
+            confidence_bands = self._calculate_confidence_bands( model=model, X_poly=X_poly, x=x, y_pred=y_pred, residuals=residuals )
 
             # Store results
             results[degree] = {
@@ -94,9 +92,7 @@ class PolynomialModeler:
             }
 
             # Add standard errors and p-values
-            se, p_values = self._calculate_coefficient_stats(
-                X_poly, y, model, residuals
-            )
+            se, p_values = self._calculate_coefficient_stats( X=X_poly, y=y, model=model, residuals=residuals )
             results[degree]['std_errors'] = se
             results[degree]['p_values'] = p_values
 

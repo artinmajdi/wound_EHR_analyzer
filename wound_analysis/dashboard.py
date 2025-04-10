@@ -18,8 +18,7 @@ from wound_analysis.dashboard_components import (
 	TemperatureTab,
 	DashboardSettings,
 	Visualizer,
-	StochasticModelingTab,
-	StochasticModelingTabOriginal
+	StochasticModelingTab
 )
 from wound_analysis.utils import (
 	CorrelationAnalysis,
@@ -318,7 +317,7 @@ class Dashboard:
 			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model).render()
 		with tabs[7]:
 			# StochasticModelingTab(**argsv).render()
-			StochasticModelingTabOriginal(**argsv).render()
+			StochasticModelingTab(**argsv).render()
 
 
 	def _get_input_user_data(self) -> None:
