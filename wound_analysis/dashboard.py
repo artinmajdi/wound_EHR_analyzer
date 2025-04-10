@@ -306,7 +306,6 @@ class Dashboard:
 			OverviewTab(**argsv).render()
 		with tabs[1]:
 			ImpedanceTab(**argsv).render()
-			# ImpedanceTabOriginal(**argsv).render()
 		with tabs[2]:
 			TemperatureTab(**argsv).render()
 		with tabs[3]:
@@ -320,6 +319,7 @@ class Dashboard:
 		with tabs[7]:
 			# StochasticModelingTab(**argsv).render()
 			StochasticModelingTabOriginal(**argsv).render()
+
 
 	def _get_input_user_data(self) -> None:
 		"""

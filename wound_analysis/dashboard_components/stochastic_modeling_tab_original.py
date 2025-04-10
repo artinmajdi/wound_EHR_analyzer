@@ -41,20 +41,28 @@ class StochasticModelingTab:
     """
 
     def __init__(self, selected_patient: str, wound_data_processor: WoundDataProcessor):
+        """
+        Initialize the StochasticModelingTab with the given parameters.
+
+        Args:
+            selected_patient (str): The currently selected patient from the sidebar dropdown.
+            wound_data_processor (WoundDataProcessor): The data processor instance containing the filtered DataFrame and processing methods.
+        """
+        # Store input parameters
         self.wound_data_processor = wound_data_processor
-        self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
-        self.df = wound_data_processor.df
-        self.CN = DColumns(df=self.df)
+        self.patient_id           = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
+        self.df                   = wound_data_processor.df
+        self.CN                   = DColumns(df=self.df)
 
         # Initialize parameter lists for selections
         self._initialize_parameter_lists()
 
         # Available probability distributions for fitting
         self.available_distributions = {
-            'Normal': stats.norm,
-            'Log-Normal': stats.lognorm,
-            'Gamma': stats.gamma,
-            'Weibull': stats.weibull_min,
+            'Normal'     : stats.norm,
+            'Log-Normal' : stats.lognorm,
+            'Gamma'      : stats.gamma,
+            'Weibull'    : stats.weibull_min,
             'Exponential': stats.expon
         }
 
@@ -72,9 +80,9 @@ class StochasticModelingTab:
 
         # Models for storing analysis results
         self.deterministic_model = st.session_state.deterministic_model
-        self.polynomial_degree = st.session_state.polynomial_degree
+        self.polynomial_degree   = st.session_state.polynomial_degree
         self.deterministic_coefs = st.session_state.deterministic_coefs
-        self.residuals = st.session_state.residuals
+        self.residuals           = st.session_state.residuals
         self.fitted_distribution = st.session_state.fitted_distribution
 
     def _initialize_parameter_lists(self):
@@ -187,29 +195,6 @@ class StochasticModelingTab:
 
         # Create a styled container
         with st.container():
-            # st.markdown("""
-            # <style>
-            # .parameter-section {
-            #     border: 2px solid #4a90e2;
-            #     border-radius: 10px;
-            #     padding: 20px;
-            #     background: linear-gradient(145deg, #f8f9fa, #e9ecef);
-            #     margin-bottom: 25px;
-            #     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            # }
-            # .section-title {
-            #     color: #2c3e50;
-            #     font-size: 1.2em;
-            #     margin-bottom: 15px;
-            # }
-            # .stSelectbox > div > div {
-            #     border-radius: 8px;
-            #     border: 1px solid #ced4da;
-            # }
-            # </style>
-            # """, unsafe_allow_html=True)
-
-            # st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
 
             # Primary variable selection in columns
             col1, col2, col3, col4 = st.columns(4)
@@ -2231,7 +2216,7 @@ class StochasticModelingTab:
             st.markdown('</div>', unsafe_allow_html=True)
 
     def _create_uncertainty_quantification_tools(self, df: pd.DataFrame, dependent_var: str, independent_var: str,
-                                              dependent_var_name: str, independent_var_name: str):
+                                                dependent_var_name: str, independent_var_name: str):
         """
         Create and display uncertainty quantification tools for risk assessment and decision support.
 
@@ -2616,66 +2601,66 @@ class StochasticModelingTab:
                 dist_params = self.fitted_distribution['params'][dist_name]
 
                 python_code = f"""
-import numpy as np
-from scipy import stats
+                                import numpy as np
+                                from scipy import stats
 
-def predict_wound_healing(x, confidence_level=0.95):
-    \"\"\"
-    Predict wound healing with confidence intervals.
+                                def predict_wound_healing(x, confidence_level=0.95):
+                                    \"\"\"
+                                    Predict wound healing with confidence intervals.
 
-    Parameters:
-    ----------
-    x : float
-        The {independent_var_name} value to predict for
-    confidence_level : float, optional
-        Confidence level for prediction interval, default 0.95
+                                    Parameters:
+                                    ----------
+                                    x : float
+                                        The {independent_var_name} value to predict for
+                                    confidence_level : float, optional
+                                        Confidence level for prediction interval, default 0.95
 
-    Returns:
-    -------
-    dict
-        Dictionary containing prediction, confidence interval, and metadata
-    \"\"\"
-    # Polynomial model (degree {best_degree})
-    coefficients = {list(coeffs)}
-    intercept = {intercept}
+                                    Returns:
+                                    -------
+                                    dict
+                                        Dictionary containing prediction, confidence interval, and metadata
+                                    \"\"\"
+                                    # Polynomial model (degree {best_degree})
+                                    coefficients = {list(coeffs)}
+                                    intercept = {intercept}
 
-    # Make polynomial features
-    poly_features = [1]  # Intercept
-    for i in range(1, {best_degree + 1}):
-        poly_features.append(x ** i)
+                                    # Make polynomial features
+                                    poly_features = [1]  # Intercept
+                                    for i in range(1, {best_degree + 1}):
+                                        poly_features.append(x ** i)
 
-    # Make prediction
-    y_pred = np.dot(coefficients, poly_features[1:]) + intercept
+                                    # Make prediction
+                                    y_pred = np.dot(coefficients, poly_features[1:]) + intercept
 
-    # Distribution parameters for residuals
-    dist_name = "{dist_name}"
-    dist_params = {list(dist_params)}
+                                    # Distribution parameters for residuals
+                                    dist_name = "{dist_name}"
+                                    dist_params = {list(dist_params)}
 
-    # Calculate prediction interval
-    if dist_name == "norm":
-        loc, scale = dist_params
-        lower_bound = y_pred + stats.norm.ppf((1-confidence_level)/2, loc=loc, scale=scale)
-        upper_bound = y_pred + stats.norm.ppf(1-(1-confidence_level)/2, loc=loc, scale=scale)
-    else:
-        # For other distributions, would need additional implementation
-        lower_bound = None
-        upper_bound = None
+                                    # Calculate prediction interval
+                                    if dist_name == "norm":
+                                        loc, scale = dist_params
+                                        lower_bound = y_pred + stats.norm.ppf((1-confidence_level)/2, loc=loc, scale=scale)
+                                        upper_bound = y_pred + stats.norm.ppf(1-(1-confidence_level)/2, loc=loc, scale=scale)
+                                    else:
+                                        # For other distributions, would need additional implementation
+                                        lower_bound = None
+                                        upper_bound = None
 
-    # Return results
-    return {{
-        "prediction": y_pred,
-        "lower_bound": lower_bound,
-        "upper_bound": upper_bound,
-        "confidence_level": confidence_level,
-        "x_value": x,
-        "model_info": {{
-            "dependent_var": "{dependent_var_name}",
-            "independent_var": "{independent_var_name}",
-            "polynomial_degree": {best_degree},
-            "residual_distribution": dist_name
-        }}
-    }}
-"""
+                                    # Return results
+                                    return {{
+                                        "prediction": y_pred,
+                                        "lower_bound": lower_bound,
+                                        "upper_bound": upper_bound,
+                                        "confidence_level": confidence_level,
+                                        "x_value": x,
+                                        "model_info": {{
+                                            "dependent_var": "{dependent_var_name}",
+                                            "independent_var": "{independent_var_name}",
+                                            "polynomial_degree": {best_degree},
+                                            "residual_distribution": dist_name
+                                        }}
+                                    }}
+                                """
 
                 st.code(python_code, language="python")
 
@@ -2786,8 +2771,9 @@ def predict_wound_healing(x, confidence_level=0.95):
             - Provides robust uncertainty quantification
             - Enables risk assessment and decision-making under uncertainty
 
-            This tab implements a two-component model approach: a deterministic component representing
-            the expected trend, and a random component representing the variability around that trend.
+            This analysis implements a two-component model approach:
+            1. A deterministic component representing the expected trend
+            2. A random component representing the variability around that trend
             """)
 
         # Parameter selection UI
@@ -2828,8 +2814,7 @@ def predict_wound_healing(x, confidence_level=0.95):
 
             # Deterministic Component Tab
             with tabs[1]:
-                self._create_deterministic_component(filtered_df, dependent_var, independent_var,
-                                                   dependent_var_name, independent_var_name)
+                self._create_deterministic_component(filtered_df, dependent_var, independent_var, dependent_var_name, independent_var_name)
 
             # Random Component Tab
             with tabs[2]:
@@ -2837,15 +2822,12 @@ def predict_wound_healing(x, confidence_level=0.95):
 
             # Complete Model Tab
             with tabs[3]:
-                self._create_complete_model(filtered_df, dependent_var, independent_var,
-                                          dependent_var_name, independent_var_name)
+                self._create_complete_model(filtered_df, dependent_var, independent_var, dependent_var_name, independent_var_name)
 
             # Advanced Statistics Tab
             with tabs[4]:
-                self._create_advanced_statistics(filtered_df, dependent_var, independent_var,
-                                               dependent_var_name, independent_var_name)
+                self._create_advanced_statistics(filtered_df, dependent_var, independent_var, dependent_var_name, independent_var_name)
 
             # Uncertainty Quantification Tools Tab
             with tabs[5]:
-                self._create_uncertainty_quantification_tools(filtered_df, dependent_var, independent_var,
-                                                           dependent_var_name, independent_var_name)
+                self._create_uncertainty_quantification_tools(filtered_df, dependent_var, independent_var, dependent_var_name, independent_var_name)

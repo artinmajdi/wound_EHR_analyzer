@@ -5,14 +5,21 @@ Main tab for stochastic modeling analysis.
 import streamlit as st
 import numpy as np
 import pandas as pd
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 
-from wound_analysis.dashboard_components.stochastic_modeling.parameter_selector import ParameterSelector
-from wound_analysis.dashboard_components.stochastic_modeling.distribution_viewer import DistributionViewer
-from wound_analysis.dashboard_components.stochastic_modeling.model_viewer import ModelViewer
-from wound_analysis.dashboard_components.stochastic_modeling.uncertainty_viewer import UncertaintyViewer
+from wound_analysis.dashboard_components.stochastic_modeling_tab.parameter_selector import ParameterSelector
+from wound_analysis.dashboard_components.stochastic_modeling_tab.distribution_viewer import DistributionViewer
+from wound_analysis.dashboard_components.stochastic_modeling_tab.model_viewer import ModelViewer
+from wound_analysis.dashboard_components.stochastic_modeling_tab.uncertainty_viewer import UncertaintyViewer
 from wound_analysis.utils.column_schema import DColumns
 from wound_analysis.utils.data_processor import WoundDataProcessor
+from wound_analysis.utils.stochastic_modeling import (
+    DistributionAnalyzer,
+    PolynomialModeler,
+    UncertaintyQuantifier,
+    DataPreprocessor,
+    AdvancedStatistics
+)
 
 
 class StochasticModelingTab:
@@ -34,19 +41,29 @@ class StochasticModelingTab:
         """
         # Store input parameters
         self.wound_data_processor = wound_data_processor
-        self.patient_id = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
-        self.df = wound_data_processor.df
-        self.CN = DColumns(df=self.df)
+        self.patient_id           = "All Patients" if selected_patient == "All Patients" else int(selected_patient.split()[1])
+        self.df                   = wound_data_processor.df
+        self.CN                   = DColumns(df=self.df)
 
         # Initialize components
-        self.parameter_selector = ParameterSelector()
+        self.parameter_selector  = ParameterSelector(CN=self.CN)
         self.distribution_viewer = DistributionViewer()
-        self.model_viewer = ModelViewer()
-        self.uncertainty_viewer = UncertaintyViewer()
+        self.model_viewer        = ModelViewer()
+        self.uncertainty_viewer  = UncertaintyViewer()
+
+        # Initialize analysis components
+        self.data_preprocessor      = DataPreprocessor(column_names=self.CN)
+        self.distribution_analyzer  = DistributionAnalyzer()
+        self.polynomial_modeler     = PolynomialModeler()
+        self.uncertainty_quantifier = UncertaintyQuantifier()
+        self.advanced_statistics    = AdvancedStatistics()
 
         # Initialize state
         if 'stochastic_results' not in st.session_state:
             st.session_state.stochastic_results = None
+
+        # Cache for storing computed results
+        self.cache: Dict[str, Any] = {}
 
     def render(self):
         """Render the stochastic modeling tab."""
@@ -149,13 +166,13 @@ class StochasticModelingTab:
         st.header("Parameter Selection")
 
         # Create variable selectors
-        dep_var, indep_var = self.parameter_selector.create_variable_selectors(df)
+        dep_var, indep_var = self.parameter_selector.create_variable_selectors(df=df)
         if not (dep_var and indep_var):
             return None
 
         # Create filter controls
-        filter_params = self.parameter_selector.create_filter_controls()
-        if not filter_params:
+        filter_params = self.parameter_selector.create_filter_controls(df=df)
+        if filter_params.empty:
             return None
 
         # Create analysis controls

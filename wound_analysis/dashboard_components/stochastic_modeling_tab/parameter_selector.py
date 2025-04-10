@@ -6,14 +6,14 @@ import streamlit as st
 import pandas as pd
 from typing import Tuple, List, Optional
 from datetime import datetime, timedelta
-
+from wound_analysis.utils.column_schema import DColumns
 
 class ParameterSelector:
     """
     Handles parameter selection UI components for stochastic modeling.
     """
 
-    def __init__(self, key_prefix: str = ""):
+    def __init__(self, key_prefix: str = "", CN: DColumns = None):
         """
         Initialize the parameter selector.
 
@@ -21,8 +21,12 @@ class ParameterSelector:
         ----------
         key_prefix : str, optional
             Prefix for Streamlit widget keys to avoid conflicts
+        CN : DColumns, optional
+            Column names object for data processing
         """
         self.key_prefix = key_prefix
+        self.CN = CN
+
 
     def create_variable_selectors(self, df: pd.DataFrame,
                                 default_dependent: str = "impedance",
@@ -111,8 +115,8 @@ class ParameterSelector:
                     ]
 
             # Patient ID filter if patient_id column exists
-            if 'patient_id' in df.columns:
-                patient_ids = sorted(df['patient_id'].unique())
+            if self.CN.RECORD_ID in df.columns:
+                patient_ids = sorted(df[self.CN.RECORD_ID].unique())
                 selected_patients = st.multiselect(
                     "Select Patient IDs",
                     options=patient_ids,
@@ -121,7 +125,7 @@ class ParameterSelector:
                 )
 
                 if selected_patients:
-                    filtered_df = filtered_df[filtered_df['patient_id'].isin(selected_patients)]
+                    filtered_df = filtered_df[filtered_df[self.CN.RECORD_ID].isin(selected_patients)]
 
             # Add minimum number of observations filter
             min_observations = st.number_input(
@@ -134,12 +138,12 @@ class ParameterSelector:
 
             if min_observations > 1:
                 # Apply minimum observations filter
-                group_counts = filtered_df.groupby('patient_id').size()
+                group_counts = filtered_df.groupby(self.CN.RECORD_ID).size()
                 valid_groups = group_counts[group_counts >= min_observations].index
-                filtered_df = filtered_df[filtered_df['patient_id'].isin(valid_groups)]
+                filtered_df = filtered_df[filtered_df[self.CN.RECORD_ID].isin(valid_groups)]
 
         # Show current filter status
-        st.info(f"Currently showing {len(filtered_df)} observations from {filtered_df['patient_id'].nunique()} patients")
+        st.info(f"Currently showing {len(filtered_df)} observations from {filtered_df[self.CN.RECORD_ID].nunique()} patients")
 
         return filtered_df
 
@@ -197,7 +201,7 @@ class ParameterSelector:
 
         run_analysis = st.button(
             "Run Analysis",
-            key=f"{self.key_prefix}run_analysis",
+            key=f"{self.key_prefix} run_analysis",
             help="Click to run the stochastic modeling analysis"
         )
 
