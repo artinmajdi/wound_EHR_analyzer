@@ -9,6 +9,10 @@ from scipy import stats
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.model_selection import KFold
 import warnings
+# import pymc3
+# import arviz
+import statsmodels.api as sm
+from statsmodels.regression.mixed_linear_model import MixedLM
 
 
 class AdvancedStatistics:
@@ -29,6 +33,7 @@ class AdvancedStatistics:
         self.pce_coefficients = None
         self.variance_function = None
         self.mixed_effects_results = None
+
 
     def polynomial_chaos_expansion(
         self,
@@ -87,6 +92,7 @@ class AdvancedStatistics:
             'sensitivity': sensitivity
         }
 
+
     def variance_function_modeling(
         self,
         x: np.ndarray,
@@ -143,6 +149,7 @@ class AdvancedStatistics:
             'r2': r2,
             'model_type': model_type
         }
+
 
     def conditional_distribution_analysis(
         self,
@@ -203,6 +210,7 @@ class AdvancedStatistics:
             'bin_edges': bins
         }
 
+
     def _hermite_basis(self, x: np.ndarray, degree: int) -> np.ndarray:
         """Generate Hermite polynomial basis functions."""
         basis = []
@@ -210,6 +218,7 @@ class AdvancedStatistics:
             hermite = stats.hermite(i)
             basis.append(hermite(x))
         return np.column_stack(basis)
+
 
     def _legendre_basis(self, x: np.ndarray, degree: int) -> np.ndarray:
         """Generate Legendre polynomial basis functions."""
@@ -221,6 +230,7 @@ class AdvancedStatistics:
             legendre = np.polynomial.legendre.Legendre.basis(i)
             basis.append(legendre(x_scaled))
         return np.column_stack(basis)
+
 
     def _calculate_sobol_indices(
         self,
@@ -239,6 +249,7 @@ class AdvancedStatistics:
             'first_order': first_order,
             'total': 1.0  # For single variable case
         }
+
 
     def cross_validate(
         self,
@@ -298,3 +309,176 @@ class AdvancedStatistics:
             'std_score': np.std(scores),
             'predictions': predictions
         }
+
+
+    def bayesian_hierarchical_modeling(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        groups: Optional[np.ndarray] = None,
+        n_samples: int = 2000,
+        n_tune: int = 1000,
+        random_seed: int = 42
+    ) -> Dict:
+        """
+        Perform Bayesian Hierarchical Modeling analysis.
+
+        Args:
+            x: Independent variable values
+            y: Dependent variable values
+            groups: Optional group labels for hierarchical structure
+            n_samples: Number of MCMC samples (default: 2000)
+            n_tune: Number of tuning steps (default: 1000)
+            random_seed: Random seed for reproducibility (default: 42)
+
+        Returns:
+            Dictionary containing:
+            - Trace of MCMC samples
+            - Model summary statistics
+            - Posterior predictions
+            - Model diagnostics
+        """
+        # Standardize variables
+        x_standardized = (x - np.mean(x)) / np.std(x)
+        y_standardized = (y - np.mean(y)) / np.std(y)
+
+        try:
+            import pymc3
+            import arviz
+
+            with pymc3.Model() as model:
+                # Priors for unknown model parameters
+                alpha = pymc3.Normal('alpha', mu=0, sd=10)
+                beta  = pymc3.Normal('beta', mu=0, sd=10)
+                sigma = pymc3.HalfNormal('sigma', sd=1)
+
+                # Expected value of outcome
+                mu = alpha + beta * x_standardized
+
+                # Add hierarchical structure if groups are provided
+                if groups is not None:
+                    # Random intercepts for groups
+                    sigma_group   = pymc3.HalfNormal('sigma_group', sd=1)
+                    group_idx     = pd.Categorical(groups).codes
+                    group_effects = pymc3.Normal('group_effects', mu=0, sd=sigma_group, shape=len(np.unique(groups)))
+                    mu            = mu + group_effects[group_idx]
+
+                # Likelihood (sampling distribution) of observations
+                Y_obs = pymc3.Normal('Y_obs', mu=mu, sd=sigma, observed=y_standardized)
+
+                # Inference
+                trace = pymc3.sample(n_samples, tune=n_tune, random_seed=random_seed, return_inferencedata=True)
+
+            # Generate posterior predictive samples
+            with model:
+                ppc = pymc3.sample_posterior_predictive(trace, samples=1000)
+
+            # Calculate summary statistics
+            summary = arviz.summary(trace, var_names=['alpha', 'beta', 'sigma'])
+            if groups is not None:
+                summary_groups = arviz.summary(trace, var_names=['group_effects', 'sigma_group'])
+                summary = pd.concat([summary, summary_groups])
+
+            # Calculate model diagnostics
+            diagnostics = {
+                'r2_score': 1 - np.sum((y_standardized - ppc['Y_obs'].mean(axis=0))**2) /
+                           np.sum((y_standardized - np.mean(y_standardized))**2),
+                'waic': arviz.waic(trace),
+                'loo' : arviz.loo(trace)
+            }
+
+            return {
+                'trace': trace,
+                'summary': summary,
+                'posterior_predictive': ppc,
+                'diagnostics': diagnostics,
+                'model': model
+            }
+
+        except Exception as e:
+            warnings.warn(f"Error in Bayesian analysis: {str(e)}")
+            return None
+
+
+    def mixed_effects_modeling(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        groups: np.ndarray,
+        random_effects: Optional[List[str]] = None,
+        fixed_effects: Optional[List[str]] = None
+    ) -> Dict:
+        """
+        Perform Mixed-Effects Modeling analysis.
+
+        Args:
+            x: Independent variable values (can be 2D for multiple predictors)
+            y: Dependent variable values
+            groups: Group labels for random effects
+            random_effects: List of column names for random effects (default: None)
+            fixed_effects: List of column names for fixed effects (default: None)
+
+        Returns:
+            Dictionary containing:
+            - Model fit results
+            - Random effects estimates
+            - Model diagnostics
+            - Variance components
+        """
+        try:
+            # Ensure x is 2D array
+            X = np.atleast_2d(x).T if x.ndim == 1 else x
+
+            # Add constant term for intercept
+            X = sm.add_constant(X)
+
+            # Create random effects design matrix
+            Z = np.ones_like(X) if random_effects is None else X[:, [0] + [i+1 for i, col in enumerate(random_effects)]]
+
+            # Fit mixed-effects model
+            model = MixedLM(y, X, groups, Z)
+            result = model.fit()
+
+            # Extract random effects
+            random_effects_pred = result.random_effects
+            random_effects_df   = pd.concat(random_effects_pred, axis=0)
+
+            # Calculate variance components
+            variance_components = {
+                'random_effects': result.cov_re.values.diagonal(),
+                'residual': result.scale
+            }
+
+            # Calculate model diagnostics
+            y_pred = result.predict()
+            residuals = y - y_pred
+            r2 = 1 - np.sum(residuals**2) / np.sum((y - np.mean(y))**2)
+
+            # Perform likelihood ratio test for random effects
+            null_model = sm.OLS(y, X).fit()
+            lr_stat = -2 * (null_model.llf - result.llf)
+            lr_pvalue = stats.chi2.sf(lr_stat, df=len(result.cov_re.values.diagonal()))
+
+            diagnostics = {
+                'r2_score': r2,
+                'aic': result.aic,
+                'bic': result.bic,
+                'log_likelihood': result.llf,
+                'lr_test': {
+                    'statistic': lr_stat,
+                    'p_value': lr_pvalue
+                }
+            }
+
+            return {
+                'model': result,
+                'random_effects': random_effects_df,
+                'variance_components': variance_components,
+                'diagnostics': diagnostics,
+                'predictions': y_pred,
+                'residuals': residuals
+            }
+
+        except Exception as e:
+            warnings.warn(f"Error in mixed-effects analysis: {str(e)}")
+            return None
