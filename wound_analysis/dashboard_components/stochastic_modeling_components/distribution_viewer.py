@@ -22,13 +22,7 @@ class DistributionViewer:
 
     def __init__(self):
         """Initialize the DistributionViewer with default settings."""
-        self.available_distributions = {
-            'Normal': stats.norm,
-            'Log-Normal': stats.lognorm,
-            'Gamma': stats.gamma,
-            'Weibull': stats.weibull_min,
-            'Exponential': stats.expon
-        }
+
 
     def create_distribution_plot(
         self,

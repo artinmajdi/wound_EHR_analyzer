@@ -1,17 +1,16 @@
 from datetime import datetime
-from io import BytesIO
 import json
-import pickle
-
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pickle
+import plotly.graph_objects as go
 from scipy import stats
-import statsmodels.api as sm
 import streamlit as st
+from typing import TYPE_CHECKING
 
-from wound_analysis.utils.column_schema import DColumns
-from wound_analysis.utils.stochastic_modeling.advanced_statistics import AdvancedStatistics
+if TYPE_CHECKING:
+    from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
+
 
 class CreateUncertaintyQuantificationTools:
 
@@ -19,15 +18,18 @@ class CreateUncertaintyQuantificationTools:
         self.parent               = parent
         self.df                   = df
         self.CN                   = parent.CN
+
+        # previously calculated variables
         self.deterministic_model  = parent.deterministic_model
         self.residuals            = parent.residuals
         self.fitted_distribution  = parent.fitted_distribution
+
+        # user defined variables
         self.patient_id           = parent.patient_id
         self.independent_var      = parent.independent_var
         self.dependent_var        = parent.dependent_var
         self.independent_var_name = parent.independent_var_name
         self.dependent_var_name   = parent.dependent_var_name
-        self.advanced_statistics  = parent.advanced_statistics
 
 
     def render(self):
@@ -72,19 +74,19 @@ class CreateUncertaintyQuantificationTools:
                 # Input for prediction value
                 prediction_x = st.number_input(
                     f"Enter {self.independent_var_name} value for prediction:",
-                    min_value=float(df[self.independent_var].min()),
-                    max_value=float(df[self.independent_var].max()),
-                    value=float(df[self.independent_var].median()),
-                    step=0.1
+                    min_value = float(df[self.independent_var].min()),
+                    max_value = float(df[self.independent_var].max()),
+                    value     = float(df[self.independent_var].median()),
+                    step      = 0.1
                 )
 
                 # Input for confidence level
                 confidence_level = st.slider(
                     "Confidence level for prediction interval:",
-                    min_value=0.5,
-                    max_value=0.99,
-                    value=0.95,
-                    step=0.01
+                    min_value = 0.5,
+                    max_value = 0.99,
+                    value     = 0.95,
+                    step      = 0.01
                 )
 
                 # Calculate prediction

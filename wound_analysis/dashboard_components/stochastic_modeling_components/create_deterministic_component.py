@@ -1,42 +1,35 @@
 import base64
-from datetime import datetime
-from io import BytesIO
-import json
-import pickle
+from typing import TYPE_CHECKING, Dict, Any
 
-import matplotlib.pyplot as plt
+if TYPE_CHECKING:
+    from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
+
 import numpy as np
 import pandas as pd
-from scipy import stats
-from sklearn.base import r2_score
-from sklearn.metrics import mean_squared_error
-import statsmodels.api as sm
 import streamlit as st
-import plotly.graph_objects as go
 
-from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
-from wound_analysis.utils.column_schema import DColumns
-from wound_analysis.utils.stochastic_modeling.advanced_statistics import AdvancedStatistics
 from wound_analysis.dashboard_components.stochastic_modeling_components.stats_utils import StatsUtils
+
 class CreateDeterministicComponent:
 
+
     def __init__(self, df: pd.DataFrame, parent: 'StochasticModelingTab'):
-        self.parent               = parent
         self.df                   = df
         self.CN                   = parent.CN
-        self.deterministic_model  = parent.deterministic_model
-        self.residuals            = parent.residuals
-        self.fitted_distribution  = parent.fitted_distribution
-        self.patient_id           = parent.patient_id
+
+        # User defined variables
         self.independent_var      = parent.independent_var
         self.dependent_var        = parent.dependent_var
         self.independent_var_name = parent.independent_var_name
         self.dependent_var_name   = parent.dependent_var_name
-        self.advanced_statistics  = parent.advanced_statistics
 
+        # Instance variables
+        self.deterministic_model  = None
+        self.residuals            = None
+        self.polynomial_degree    = None
+        self.deterministic_coefs  = None
 
-
-    def render(self):
+    def render(self) -> Dict[str, Any]:
         """
         Create and display the deterministic component analysis.
 
@@ -243,3 +236,7 @@ class CreateDeterministicComponent:
 
             st.markdown('</div>', unsafe_allow_html=True)
 
+        return {'deterministic_model': self.deterministic_model,
+                'residuals'          : self.residuals,
+                'polynomial_degree'  : self.polynomial_degree,
+                'deterministic_coefs': self.deterministic_coefs}

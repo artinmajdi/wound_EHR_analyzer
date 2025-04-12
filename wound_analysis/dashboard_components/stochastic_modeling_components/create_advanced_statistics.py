@@ -2,6 +2,12 @@ from datetime import datetime
 from io import BytesIO
 import json
 import pickle
+from typing import TYPE_CHECKING
+
+from wound_analysis.utils.stochastic_modeling.advanced_statistics import AdvancedStatistics
+
+if TYPE_CHECKING:
+    from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,24 +16,26 @@ from scipy import stats
 import statsmodels.api as sm
 import streamlit as st
 
-from wound_analysis.utils.column_schema import DColumns
-from wound_analysis.utils.stochastic_modeling.advanced_statistics import AdvancedStatistics
-
 class CreateAdvancedStatistics:
 
     def __init__(self, df: pd.DataFrame, parent: 'StochasticModelingTab'):
         self.parent               = parent
         self.df                   = df
         self.CN                   = parent.CN
+
+        # previously calculated variables
         self.deterministic_model  = parent.deterministic_model
         self.residuals            = parent.residuals
         self.fitted_distribution  = parent.fitted_distribution
+
+        # user defined variables
         self.patient_id           = parent.patient_id
         self.independent_var      = parent.independent_var
         self.dependent_var        = parent.dependent_var
         self.independent_var_name = parent.independent_var_name
         self.dependent_var_name   = parent.dependent_var_name
-        self.advanced_statistics  = parent.advanced_statistics
+
+        self.advanced_statistics  = AdvancedStatistics()
 
 
     def render(self) -> None:

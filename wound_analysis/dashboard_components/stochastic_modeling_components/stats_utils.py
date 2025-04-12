@@ -1,14 +1,14 @@
-from typing import Dict
-import numpy as np
-import matplotlib.pyplot as plt
 from io import BytesIO
+from typing import Dict
+
+import matplotlib.pyplot as plt
+import numpy as np
+import streamlit as st
 from scipy import stats
-from sklearn.base import r2_score
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import PolynomialFeatures
-import streamlit as st
 
 
 class StatsUtils:
@@ -142,8 +142,6 @@ class StatsUtils:
         k = len(params)
         log_likelihood = np.sum(distribution.logpdf(data, *params))
         return 2 * k - 2 * log_likelihood
-
-
 
 
     @staticmethod

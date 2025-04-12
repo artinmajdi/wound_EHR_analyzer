@@ -1,5 +1,9 @@
 from io import BytesIO
 import base64
+from typing import TYPE_CHECKING, Dict, Any
+
+if TYPE_CHECKING:
+    from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,21 +13,25 @@ from scipy import stats
 import streamlit as st
 
 from wound_analysis.dashboard_components.stochastic_modeling_components.stats_utils import StatsUtils
-from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
 
 class CreateRandomComponent:
+
 
     def __init__(self, parent: 'StochasticModelingTab'):
         self.parent               = parent
         self.CN                   = parent.CN
-        self.deterministic_model  = parent.deterministic_model
-        self.residuals            = parent.residuals
-        self.fitted_distribution  = parent.fitted_distribution
-        self.independent_var_name = parent.independent_var_name
+
+        # previously calculated variables
+        self.deterministic_model     = parent.deterministic_model
+        self.residuals               = parent.residuals
+        self.independent_var_name    = parent.independent_var_name
+        self.available_distributions = parent.available_distributions
+
+        # Instance variables
+        self.fitted_distribution  = None
 
 
-
-    def render(self):
+    def render(self) -> Dict[str, Any]:
         """
         Create and display the random component analysis.
 
@@ -124,7 +132,7 @@ class CreateRandomComponent:
 
             # Fit multiple distributions to residuals
             with st.spinner("Fitting distributions to residuals..."):
-                dist_results = StatsUtils.fit_distributions(data=self.residuals)
+                dist_results = StatsUtils.fit_distributions(data=self.residuals, available_distributions=self.available_distributions)
 
             if not dist_results:
                 st.error("Failed to fit distributions to the residuals.")
@@ -151,14 +159,13 @@ class CreateRandomComponent:
 
             # Store the best fit distribution
             best_dist_result = dist_results[best_dist]
-            st.session_state.fitted_distribution = {
+            self.fitted_distribution = {
                 'best_distribution': best_dist,
                 'params'           : best_dist_result['params'],
                 'aic'              : best_dist_result['aic'],
                 'ks_stat'          : best_dist_result['ks_stat'],
                 'p_value'          : best_dist_result['p_value']
             }
-            self.fitted_distribution = st.session_state.fitted_distribution
 
             # Display plot of residuals with best fit
             buf_fit = StatsUtils.plot_distribution_fit(data=self.residuals, results=dist_results, var_name="Residuals")
@@ -346,3 +353,4 @@ class CreateRandomComponent:
 
             st.markdown('</div>', unsafe_allow_html=True)
 
+        return self.fitted_distribution

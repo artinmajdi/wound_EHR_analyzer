@@ -1,18 +1,18 @@
 import pandas as pd
 import streamlit as st
-
-from typing import List, Dict, Tuple
+from typing import Dict, List, Tuple
 from scipy import stats
 
-from statsmodels.nonparametric.kernel_regression import KernelReg
-from statsmodels.distributions.empirical_distribution import ECDF
-import streamlit as st
-
-from wound_analysis.dashboard_components.stochastic_modeling_components import CreateCompleteModel, CreateAdvancedStatistics, CreateDeterministicComponent, CreateDistributionAnalysis, CreateRandomComponent, CreateUncertaintyQuantificationTools
-
+from wound_analysis.dashboard_components.stochastic_modeling_components import (
+    CreateAdvancedStatistics,
+    CreateCompleteModel,
+    CreateDeterministicComponent,
+    CreateDistributionAnalysis,
+    CreateRandomComponent
+)
+from wound_analysis.dashboard_components.stochastic_modeling_components.create_uncertainty_quantification_tools import CreateUncertaintyQuantificationTools
 from wound_analysis.utils.column_schema import DColumns
 from wound_analysis.utils.data_processor import WoundDataProcessor
-from wound_analysis.utils.stochastic_modeling.advanced_statistics import AdvancedStatistics
 
 
 # TODO: refactor this into smaller components (1st step: make the functions staticmethods. 2nd step: refactor into smaller components)
@@ -84,7 +84,6 @@ class StochasticModelingTab:
         self.independent_var_name = None
         self.dependent_var_name   = None
         self.additional_params    = None
-        self.advanced_statistics  = AdvancedStatistics()
 
 
     def _initialize_parameter_lists(self):
@@ -350,8 +349,11 @@ class StochasticModelingTab:
         filters, run_analysis = self._parameter_selection_ui()
 
         # Get display names for variables
-        self.dependent_var_name = next((name for name, col in self.dependent_variables.items() if col == self.dependent_var), self.dependent_var)
-        self.independent_var_name = next((name for name, col in self.independent_variables.items() if col == self.independent_var), self.independent_var)
+        self.dependent_var_name = next((name for name, col in self.dependent_variables.items()
+                                        if col == self.dependent_var), self.dependent_var)
+
+        self.independent_var_name = next((name for name, col in self.independent_variables.items()
+                                          if col == self.independent_var), self.independent_var)
 
         # Analysis results when the Run Analysis button is clicked
         if run_analysis or any([self.deterministic_model, self.residuals, self.fitted_distribution]):
@@ -384,11 +386,22 @@ class StochasticModelingTab:
 
             # Deterministic Component Tab
             with tabs[1]:
-                CreateDeterministicComponent(df=filtered_df, parent=self).render()
+                cdc = CreateDeterministicComponent(df=filtered_df, parent=self).render()
+                self.residuals           = cdc['residuals']
+                self.polynomial_degree   = cdc['polynomial_degree']
+                self.deterministic_coefs = cdc['deterministic_coefs']
+                self.deterministic_model = cdc['deterministic_model']
+
+                st.session_state.residuals           = self.residuals
+                st.session_state.polynomial_degree   = self.polynomial_degree
+                st.session_state.deterministic_coefs = self.deterministic_coefs
+                st.session_state.deterministic_model = self.deterministic_model
 
             # Random Component Tab
             with tabs[2]:
-                CreateRandomComponent(parent=self).render()
+                self.fitted_distribution = CreateRandomComponent(parent=self).render()
+
+                st.session_state.fitted_distribution = self.fitted_distribution
 
             # Complete Model Tab
             with tabs[3]:

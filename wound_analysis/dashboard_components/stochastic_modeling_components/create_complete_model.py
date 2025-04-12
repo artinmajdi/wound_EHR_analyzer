@@ -1,21 +1,15 @@
-from datetime import datetime
-from io import BytesIO
-import json
-import pickle
+from typing import TYPE_CHECKING
 
-import matplotlib.pyplot as plt
+if TYPE_CHECKING:
+    from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
+
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.base import r2_score
-from sklearn.metrics import mean_squared_error
-import statsmodels.api as sm
+from sklearn.metrics import mean_squared_error, r2_score
 import streamlit as st
 import plotly.graph_objects as go
 
-from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
-from wound_analysis.utils.column_schema import DColumns
-from wound_analysis.utils.stochastic_modeling.advanced_statistics import AdvancedStatistics
 
 class CreateCompleteModel:
 
@@ -24,15 +18,17 @@ class CreateCompleteModel:
         self.parent               = parent
         self.df                   = df
         self.CN                   = parent.CN
-        self.deterministic_model  = parent.deterministic_model
+
+        # previously calculated variables
         self.residuals            = parent.residuals
-        self.fitted_distribution  = parent.fitted_distribution
-        self.patient_id           = parent.patient_id
+        self.polynomial_degree    = parent.polynomial_degree
+        self.deterministic_model  = parent.deterministic_model
+
+        # user defined variables
         self.independent_var      = parent.independent_var
         self.dependent_var        = parent.dependent_var
         self.independent_var_name = parent.independent_var_name
         self.dependent_var_name   = parent.dependent_var_name
-        self.advanced_statistics  = parent.advanced_statistics
 
 
     def render(self):
@@ -99,16 +95,16 @@ class CreateCompleteModel:
 
             # Remove rows with NaN values
             mask = ~(np.isnan(X) | np.isnan(y))
-            X = X[mask]
-            y = y[mask]
+            X    = X[mask]
+            y    = y[mask]
 
             # Convert to appropriate shape for sklearn
             X_2d = X.reshape(-1, 1)
 
             # Get model and parameters
             selected_model = self.deterministic_model
-            poly = selected_model['poly']
-            model = selected_model['model']
+            poly           = selected_model['poly']
+            model          = selected_model['model']
 
             # Generate predictions from deterministic component
             X_poly = poly.transform(X_2d)
@@ -118,8 +114,8 @@ class CreateCompleteModel:
             residual_std = np.std(self.residuals)
 
             # Create new X values for smooth curve
-            X_range = np.linspace(min(X), max(X), 100)
-            X_range_2d = X_range.reshape(-1, 1)
+            X_range      = np.linspace(min(X), max(X), 100)
+            X_range_2d   = X_range.reshape(-1, 1)
             X_range_poly = poly.transform(X_range_2d)
             y_range_pred = model.predict(X_range_poly)
 
@@ -498,12 +494,12 @@ class CreateCompleteModel:
 
             # Create a dictionary with model information
             model_info = {
-                'dependent_var': self.dependent_var_name,
-                'independent_var': self.independent_var_name,
+                'dependent_var'    : self.dependent_var_name,
+                'independent_var'  : self.independent_var_name,
                 'polynomial_degree': self.polynomial_degree,
-                'intercept': float(model.intercept_),
-                'coefficients': [float(c) for c in model.coef_],
-                'residual_std': float(residual_std)
+                'intercept'        : float(model.intercept_),
+                'coefficients'     : [float(c) for c in model.coef_],
+                'residual_std'     : float(residual_std)
             }
 
             # Convert to JSON

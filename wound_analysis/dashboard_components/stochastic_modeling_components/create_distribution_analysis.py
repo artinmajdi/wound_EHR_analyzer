@@ -1,42 +1,28 @@
 import base64
-from datetime import datetime
-from io import BytesIO
-import json
-import pickle
+from typing import TYPE_CHECKING
 
-import matplotlib.pyplot as plt
+if TYPE_CHECKING:
+    from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
+
 import numpy as np
 import pandas as pd
-from scipy import stats
-from sklearn.base import r2_score
-from sklearn.metrics import mean_squared_error
-import statsmodels.api as sm
 import streamlit as st
-import plotly.graph_objects as go
 
-from wound_analysis.dashboard_components.stochastic_modeling_tab import StochasticModelingTab
-from wound_analysis.utils.column_schema import DColumns
-from wound_analysis.utils.stochastic_modeling.advanced_statistics import AdvancedStatistics
 from wound_analysis.dashboard_components.stochastic_modeling_components.stats_utils import StatsUtils
 
 
 class CreateDistributionAnalysis:
 
     def __init__(self, df: pd.DataFrame, parent: 'StochasticModelingTab'):
-        self.parent               = parent
-        self.df                   = df
-        self.CN                   = parent.CN
-        self.deterministic_model  = parent.deterministic_model
-        self.residuals            = parent.residuals
-        self.fitted_distribution  = parent.fitted_distribution
-        self.patient_id           = parent.patient_id
-        self.independent_var      = parent.independent_var
-        self.dependent_var        = parent.dependent_var
-        self.independent_var_name = parent.independent_var_name
-        self.dependent_var_name   = parent.dependent_var_name
-        self.advanced_statistics  = parent.advanced_statistics
+        self.parent                  = parent
+        self.df                      = df
+        self.CN                      = parent.CN
 
-
+        # User defined variables
+        self.independent_var         = parent.independent_var
+        self.dependent_var           = parent.dependent_var
+        self.dependent_var_name      = parent.dependent_var_name
+        self.available_distributions = parent.available_distributions
 
     def render(self):
         """
@@ -231,7 +217,7 @@ class CreateDistributionAnalysis:
 
             # Fit distributions to the data
             with st.spinner("Fitting probability distributions..."):
-                dist_results = StatsUtils.fit_distributions(data=valid_data)
+                dist_results = StatsUtils.fit_distributions(data=valid_data, available_distributions=self.available_distributions)
                 # dist_results = DistributionAnalyzer().fit_distributions(data=valid_data)
 
             if not dist_results:
