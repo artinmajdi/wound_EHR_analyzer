@@ -98,17 +98,15 @@ class ClusteringTab:
 				# Display cluster characteristics
 				self._display_cluster_characteristics(cluster_df=st.session_state.df_w_cluster_tags)
 
-
 		try:
-
-			# with st.expander("Patient Data Clustering", expanded=True):
-
 			self._cluster_settings = self.get_cluster_analysis_settings()
 
 			# Run clustering if requested
 			if self._cluster_settings["run_clustering"] and self._cluster_settings["cluster_features"]:
 
-				ca = ClusteringTab._perform_clustering(df=self.df, cluster_settings=self._cluster_settings)
+				ca = ClusteringAnalysis(df=self.df.copy(), cluster_settings=self._cluster_settings).render()
+
+				st.success(f"Successfully clustered data into {self._cluster_settings['n_clusters']} clusters using {self._cluster_settings['clustering_method']}!")
 
 				# Store clustering results in session state
 				st.session_state.cluster_tags       = ca.cluster_tags
@@ -186,21 +184,6 @@ class ClusteringTab:
 				"cluster_features" : cluster_features,
 				"clustering_method": clustering_method,
 				"run_clustering"   : run_clustering}
-
-
-	@staticmethod
-	def _perform_clustering(df: pd.DataFrame, cluster_settings: Dict[str, Union[int, str, List[str], bool]]) -> ClusteringAnalysis:
-		"""
-		Perform clustering on the data using the specified method and features.
-		"""
-
-		ca = ClusteringAnalysis(df=df.copy(), cluster_settings=cluster_settings).render()
-
-
-		# Display success message
-		st.success(f"Successfully clustered data into {cluster_settings['n_clusters']} clusters using {cluster_settings['clustering_method']}!")
-
-		return ca
 
 
 	@staticmethod
