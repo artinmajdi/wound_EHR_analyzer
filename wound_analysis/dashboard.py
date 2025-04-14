@@ -12,6 +12,7 @@ from wound_analysis.dashboard_components import (
 	ExudateTab,
 	ImpedanceTab,
 	LLMAnalysisTab,
+	ClusteringTab,
 	OverviewTab,
 	OxygenationTab,
 	RiskFactorsTab,
@@ -290,6 +291,7 @@ class Dashboard:
 		"""
 
 		tabs = st.tabs([
+			"Clustering",
 			"Overview",
 			"Impedance Analysis",
 			"Temperature",
@@ -297,27 +299,36 @@ class Dashboard:
 			"Exudate",
 			"Risk Factors",
 			"LLM Analysis",
-			"Stochastic Modeling"
+			"Stochastic Modeling",
 		])
 
-		argsv = dict(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor)
 		with tabs[0]:
-			OverviewTab(**argsv).render()
+			ct = ClusteringTab(df=self.wound_data_processor.df).render()
+			# self.wound_data_processor.df = ct.get_cluster_df()
+
+			st.write('### cluster dataframe')
+			st.dataframe(ct.get_cluster_df())
+			st.write('### original dataframe')
+			st.dataframe(self.wound_data_processor.df)
+
+		argsv = dict(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor)
 		with tabs[1]:
-			ImpedanceTab(**argsv).render()
+			OverviewTab(**argsv).render()
 		with tabs[2]:
-			TemperatureTab(**argsv).render()
+			ImpedanceTab(**argsv).render()
 		with tabs[3]:
-			OxygenationTab(**argsv).render()
+			TemperatureTab(**argsv).render()
 		with tabs[4]:
-			ExudateTab(**argsv).render()
+			OxygenationTab(**argsv).render()
 		with tabs[5]:
-			RiskFactorsTab(**argsv).render()
+			ExudateTab(**argsv).render()
 		with tabs[6]:
-			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model).render()
+			RiskFactorsTab(**argsv).render()
 		with tabs[7]:
-			# StochasticModelingTab(**argsv).render()
+			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model).render()
+		with tabs[8]:
 			StochasticModelingTab(**argsv).render()
+
 
 
 	def _get_input_user_data(self) -> None:

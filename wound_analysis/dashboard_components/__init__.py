@@ -13,6 +13,7 @@ from .llm_analysis_tab import LLMAnalysisTab
 from .risk_factors_tab import RiskFactorsTab
 from .oxygenation_tab import OxygenationTab
 from .temperature_tab import TemperatureTab
+from .clustering_tab import ClusteringTab
 from .overview_tab import OverviewTab
 from .stochastic_modeling_tab import StochasticModelingTab
 
@@ -24,5 +25,6 @@ __all__ = [ 'DashboardSettings',
             'RiskFactorsTab',
             'OxygenationTab',
             'TemperatureTab',
+            'ClusteringTab',
             'OverviewTab',
             'StochasticModelingTab']
