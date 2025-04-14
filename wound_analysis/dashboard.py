@@ -249,6 +249,7 @@ class Dashboard:
 		if self.impedance_analyzer is not None:
 			logger.debug("Initializing new wound data processor with impedance analyzer")
 			self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path, impedance_analyzer=self.impedance_analyzer )
+
 		else:
 			logger.debug("Initializing new wound data processor without impedance analyzer")
 			self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path )
@@ -302,12 +303,13 @@ class Dashboard:
 			"Stochastic Modeling",
 		])
 
-		with tabs[0]:
-			ct = ClusteringTab(df=self.wound_data_processor.df).render()
-			self.wound_data_processor.df = ct.get_cluster_df()
-
 		# Create a dictionary of arguments for the tabs
 		argsv = dict(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor)
+
+		with tabs[0]:
+			ct = ClusteringTab(**argsv).render()
+			self.wound_data_processor.df = ct.get_updated_df()
+
 
 		# Create the tabs
 		with tabs[1]:

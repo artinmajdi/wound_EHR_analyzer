@@ -19,7 +19,7 @@ def test_get_df_for_specific_cluster_all_data():
     ct = ClusteringTab(df)
     st.session_state.df_w_cluster_tags = df
     # When no specific cluster is passed, it should return all data
-    result = ct._get_df_for_specific_cluster()
+    result = ct.get_updated_df()
     pd.testing.assert_frame_equal(result, df)
     assert st.session_state.get("selected_cluster") is None
 
@@ -34,13 +34,13 @@ def test_get_df_for_specific_cluster_specific():
     ct = ClusteringTab(df)
     st.session_state.df_w_cluster_tags = df
     cluster_id = 1
-    result = ct._get_df_for_specific_cluster(_cluster_id=cluster_id)
+    result = ct.get_updated_df(_cluster_id=cluster_id)
     expected = df[df["Cluster"] == cluster_id].copy()
     pd.testing.assert_frame_equal(result, expected)
     assert st.session_state.get("selected_cluster") == cluster_id
 
 
-def test_get_cluster_df_integration(monkeypatch):
+def test_update_df_to_cluster_data_integration(monkeypatch):
     setup_session_state()
     df = pd.DataFrame({
         "value": [100, 200, 300, 400],
@@ -50,7 +50,7 @@ def test_get_cluster_df_integration(monkeypatch):
     st.session_state.df_w_cluster_tags = df.copy()
     # Monkey-patch _get_user_selected_cluster to simulate user selecting cluster 1
     monkeypatch.setattr(ct, "_get_user_selected_cluster", lambda: 1)
-    result = ct.get_cluster_df()
+    result = ct.get_updated_df()
     expected = df[df["Cluster"] == 1].copy()
     pd.testing.assert_frame_equal(result, expected)
     assert ct._cluster_id == 1
@@ -64,5 +64,5 @@ def test_get_df_for_specific_cluster_no_data():
         "Cluster": [0, 1]
     })
     ct = ClusteringTab(df)
-    result = ct._get_df_for_specific_cluster()
+    result = ct.get_updated_df()
     pd.testing.assert_frame_equal(result, pd.DataFrame())

@@ -360,3 +360,56 @@ class DColumns:
                         upper_name = field_name.upper()
                         setattr(self, upper_name, field_value)
                         self.__class__.__annotations__[upper_name] = str
+
+    def get_clean_names(self) -> Dict[str, Dict[str, str]]:
+        return {
+            "Demographics": {
+                self.AGE: "Age",
+                self.BMI: self.BMI,
+            },
+            "Lifestyle": {
+                self.SMOKING_STATUS  : self.SMOKING_STATUS,
+                self.ALCOHOL_STATUS  : self.ALCOHOL_STATUS,
+                self.ILLICIT_DRUG_USE: self.ILLICIT_DRUG_USE,
+            },
+            "Medical History": {
+                self.DIABETES        : self.DIABETES,
+                self.RESPIRATORY     : self.RESPIRATORY,
+                self.CARDIOVASCULAR  : self.CARDIOVASCULAR,
+                self.GASTROINTESTINAL: self.GASTROINTESTINAL,
+                self.MUSCULOSKELETAL : self.MUSCULOSKELETAL,
+                self.HEMATOPOIETIC   : self.HEMATOPOIETIC,
+                self.HEPATIC_RENAL   : self.HEPATIC_RENAL,
+                self.NEUROLOGIC      : self.NEUROLOGIC,
+                self.IMMUNE          : self.IMMUNE,
+                self.A1C_AVAILABLE   : self.A1C_AVAILABLE,
+                self.A1C             : self.A1C,
+            },
+            "Wound Characteristics": {
+                self.WOUND_AREA            : "Wound Area",
+                self.DAYS_SINCE_FIRST_VISIT: "Days Since First Visit",
+                self.HEALING_RATE          : "Healing Rate",
+            },
+            "Oxygenation": {
+                self.OXYGENATION: "Oxygenation",
+                self.HEMOGLOBIN : "Hemoglobin",
+            },
+            "Impedance": {
+                self.HIGHEST_FREQ_ABSOLUTE : "Absolute Impedance (high freq)",
+                self.HIGHEST_FREQ_REAL     : "Real Impedance (high freq)",
+                self.HIGHEST_FREQ_IMAGINARY: "Imaginary Impedance (high freq)",
+                self.CENTER_FREQ_ABSOLUTE  : "Absolute Impedance (center freq)",
+                self.CENTER_FREQ_REAL      : "Real Impedance (center freq)",
+                self.CENTER_FREQ_IMAGINARY : "Imaginary Impedance (center freq)",
+                self.LOWEST_FREQ_ABSOLUTE  : "Absolute Impedance (low freq)",
+                self.LOWEST_FREQ_REAL      : "Real Impedance (low freq)",
+                self.LOWEST_FREQ_IMAGINARY : "Imaginary Impedance (low freq)",
+            },
+            "Temperature": {
+                self.EDGE_TEMP           : "Edge Temperature",
+                self.PERI_TEMP           : "Peri-Wound Temperature",
+                self.CENTER_EDGE_GRADIENT: "Center-Edge Temp Gradient",
+                self.EDGE_PERI_GRADIENT  : "Edge-Peri Temp Gradient",
+                self.TOTAL_GRADIENT      : "Total Temp Gradient",
+            },
+        }
