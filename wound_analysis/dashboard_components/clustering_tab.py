@@ -65,6 +65,14 @@ class ClusteringTab:
 				try:
 					ca = ClusteringTab._perform_clustering(df=self.df, cluster_settings=self._cluster_settings)
 
+
+					# Display cluster distribution
+					ClusteringTab._display_cluster_distribution(df_w_cluster_tags=ca.df_w_cluster_tags)
+
+					# Display feature importance
+					if ca.feature_importance:
+						ClusteringTab._display_feature_importance(feature_importance=ca.feature_importance)
+
 					# Store clustering results in session state
 					st.session_state.cluster_tags       = ca.cluster_tags
 					st.session_state.df_w_cluster_tags  = ca.df_w_cluster_tags
@@ -141,26 +149,18 @@ class ClusteringTab:
 
 		return cluster_df
 
+
 	@staticmethod
 	def _perform_clustering(df: pd.DataFrame, cluster_settings: Dict[str, Union[int, str, List[str], bool]]) -> ClusteringAnalysis:
 		"""
 		Perform clustering on the data using the specified method and features.
-
-		Args:
-			cluster_settings: Dictionary containing clustering settings
 		"""
+
 		ca = ClusteringAnalysis(df=df.copy(), cluster_settings=cluster_settings).render()
 
 
 		# Display success message
 		st.success(f"Successfully clustered data into {cluster_settings['n_clusters']} clusters using {cluster_settings['clustering_method']}!")
-
-		# Display cluster distribution
-		ClusteringTab._display_cluster_distribution(df_w_cluster_tags=ca.df_w_cluster_tags)
-
-		# Display feature importance
-		if ca.feature_importance:
-			ClusteringTab._display_feature_importance(feature_importance=ca.feature_importance)
 
 		return ca
 

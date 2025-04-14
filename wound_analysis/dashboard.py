@@ -304,14 +304,12 @@ class Dashboard:
 
 		with tabs[0]:
 			ct = ClusteringTab(df=self.wound_data_processor.df).render()
-			# self.wound_data_processor.df = ct.get_cluster_df()
+			self.wound_data_processor.df = ct.get_cluster_df()
 
-			st.write('### cluster dataframe')
-			st.dataframe(ct.get_cluster_df())
-			st.write('### original dataframe')
-			st.dataframe(self.wound_data_processor.df)
-
+		# Create a dictionary of arguments for the tabs
 		argsv = dict(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor)
+
+		# Create the tabs
 		with tabs[1]:
 			OverviewTab(**argsv).render()
 		with tabs[2]:
