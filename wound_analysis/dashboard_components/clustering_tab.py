@@ -36,18 +36,50 @@ class ClusteringTab:
 		# Calculated Variables
 		self.df_w_cluster_tags = None
 		self.selected_cluster  = None
-		self._cluster_id       = None
 
 
 		# Clustering User Settings
 		self._cluster_settings    = None
 
 		# Initialize session state for clusters if not already present
-		if 'clusters' not in st.session_state:
+		if 'cluster_tags' not in st.session_state:
 			st.session_state.cluster_tags       = None
 			st.session_state.df_w_cluster_tags  = None
-			st.session_state.selected_cluster   = None
 			st.session_state.feature_importance = None
+			st.session_state.selected_cluster   = 'All Data'
+
+
+	def render(self) -> 'ClusteringTab':
+		"""
+		Render the clustering section and perform clustering if requested.
+
+		"""
+		with st.expander("Patient Data Clustering", expanded=True):
+
+			self._cluster_settings = self.get_cluster_analysis_settings()
+
+
+			# Run clustering if requested
+			if self._cluster_settings["run_clustering"] and self._cluster_settings["cluster_features"]:
+
+				try:
+					ca = ClusteringTab._perform_clustering(df=self.df, cluster_settings=self._cluster_settings)
+
+					# Store clustering results in session state
+					st.session_state.cluster_tags       = ca.cluster_tags
+					st.session_state.df_w_cluster_tags  = ca.df_w_cluster_tags
+					st.session_state.feature_importance = ca.feature_importance
+					st.session_state.selected_cluster   = 'All Data'  # Reset selected cluster
+
+					# Display cluster selection and characteristics
+					self._get_df_for_specific_cluster()
+
+				except Exception as e:
+					st.error(f"Error during clustering: {str(e)}")
+					st.error(traceback.format_exc())
+
+		return self
+
 
 	def get_cluster_analysis_settings(self) -> Dict[str, Union[int, str, List[str], bool]]:
 		"""
@@ -94,47 +126,14 @@ class ClusteringTab:
 				"run_clustering"   : run_clustering}
 
 
-	def render(self) -> 'ClusteringTab':
-		"""
-		Render the clustering section and perform clustering if requested.
-
-		"""
-		with st.expander("Patient Data Clustering", expanded=True):
-
-			self._cluster_settings = self.get_cluster_analysis_settings()
-
-
-			# Run clustering if requested
-			if self._cluster_settings["run_clustering"] and self._cluster_settings["cluster_features"]:
-
-				try:
-					ca = ClusteringTab._perform_clustering(df=self.df, cluster_settings=self._cluster_settings)
-
-					# Store clustering results in session state
-					st.session_state.cluster_tags       = ca.cluster_tags
-					st.session_state.df_w_cluster_tags  = ca.df_w_cluster_tags
-					st.session_state.feature_importance = ca.feature_importance
-					st.session_state.selected_cluster   = None  # Reset selected cluster
-
-					# Display cluster selection and characteristics
-					self._get_df_for_specific_cluster()
-
-				except Exception as e:
-					st.error(f"Error during clustering: {str(e)}")
-					st.error(traceback.format_exc())
-
-		return self
-
-
 	def get_cluster_df(self) -> pd.DataFrame:
 		"""
 		Get the DataFrame for the selected cluster.
 		"""
 		# Render cluster selection and characteristics if clustering has been performed
-		_cluster_id = self._get_user_selected_cluster()
+		self._get_user_selected_cluster()
 
-		# Get cluster data
-		cluster_df = self._get_df_for_specific_cluster(_cluster_id=_cluster_id)
+		cluster_df = self._get_df_for_specific_cluster()
 
 		# Only display cluster characteristics if we have data
 		if not cluster_df.empty:
@@ -227,23 +226,20 @@ class ClusteringTab:
 		st.plotly_chart(fig, use_container_width=True)
 
 
-	def _get_df_for_specific_cluster(self, _cluster_id: int | Literal["All Data"]) -> pd.DataFrame:
+	def _get_df_for_specific_cluster(self) -> pd.DataFrame:
 		"""
 		Get the DataFrame for the selected cluster.
 		"""
+
+		cluster_id = st.session_state.selected_cluster
+		df         = st.session_state.df_w_cluster_tags
+
 		# Check if clustering has been performed
-		if st.session_state.df_w_cluster_tags is None:
+		if df is None:
 			st.warning("Please run clustering first by selecting features and clicking 'Run Clustering'.")
 			return pd.DataFrame()  # Return empty DataFrame if no clustering data
 
-		# Update the selected cluster in session state
-		if _cluster_id == "All Data":
-			st.session_state.selected_cluster = None
-			return st.session_state.df_w_cluster_tags
-
-		st.session_state.selected_cluster = _cluster_id
-
-		return st.session_state.df_w_cluster_tags[st.session_state.df_w_cluster_tags['Cluster'] == _cluster_id].copy()
+		return df[df['Cluster'] == cluster_id].copy() if cluster_id != "All Data" else df
 
 
 	def _get_user_selected_cluster(self) -> int | Literal["All Data"]:
@@ -269,8 +265,8 @@ class ClusteringTab:
 			# Render cluster selection dropdown with formatted display options
 			selected_display = st.selectbox("Select cluster to analyze:", options=display_options, index=0)
 
-			# Return the actual value (cluster_id) for the selected display text
-			return cluster_options[selected_display]
+			# Update the selected cluster in session state
+			st.session_state.selected_cluster = cluster_options[selected_display]
 
 
 	def _display_cluster_characteristics(self, cluster_df: pd.DataFrame) -> None:
@@ -284,7 +280,7 @@ class ClusteringTab:
 		cluster_features = self._cluster_settings["cluster_features"]
 
 
-		st.markdown(f"### Characteristics of Cluster {self._cluster_id}")
+		st.markdown(f"### Characteristics of Cluster {st.session_state.selected_cluster}")
 
 		# Create summary statistics for this cluster vs. overall population
 		summary_stats = []
