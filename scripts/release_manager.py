@@ -3,6 +3,10 @@
 import re
 import subprocess
 import sys
+import os
+from dotenv import load_dotenv
+load_dotenv()
+import requests
 
 
 def get_latest_version():
@@ -54,15 +58,68 @@ def bump_version(latest_version, bump_type):
     return f"v{major}.{minor}.{patch}"
 
 
+def create_github_release(version):
+    """
+    Creates a new release in GitHub using the API.
+    Requires environment variable GITHUB_TOKEN to be set.
+    """
+    token = os.environ.get('GITHUB_TOKEN')
+    if not token or token.strip() == "":
+        print("GITHUB_TOKEN is not set. Skipping GitHub release creation.")
+        return
+
+    # Get repository info from remote URL
+    try:
+        result = subprocess.run(["git", "config", "--get", "remote.origin.url"], stdout=subprocess.PIPE, text=True, check=True)
+    except subprocess.CalledProcessError:
+        print("Failed to get remote URL from git config. Skipping GitHub release creation.")
+        return
+
+    repo_url = result.stdout.strip()
+    owner = None
+    repo = None
+    if repo_url.startswith("git@github.com:"):
+        m = re.match(r'git@github.com:(.*)/(.*)\.git', repo_url)
+        if m:
+            owner, repo = m.groups()
+    elif repo_url.startswith("https://github.com/"):
+        m = re.match(r'https://github.com/(.*)/(.*)\.git', repo_url)
+        if m:
+            owner, repo = m.groups()
+    if not owner or not repo:
+        print("Could not parse repository information from remote URL.")
+        return
+
+    release_url = f"https://api.github.com/repos/{owner}/{repo}/releases"
+    payload = {
+        "tag_name": version,
+        "name": f"Release {version}",
+        "body": "Release created by release_manager script.",
+        "draft": False,
+        "prerelease": False
+    }
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    response = requests.post(release_url, json=payload, headers=headers)
+    if response.status_code == 201:
+        print(f"GitHub release created for {version}")
+    else:
+        print(f"Failed to create GitHub release: {response.status_code} {response.text}")
+
+
 def create_new_release(version):
     """
-    Creates a new annotated git tag for the release and pushes it to origin.
+    Creates a new annotated git tag for the release, pushes it to origin,
+    and then creates a GitHub release.
     """
     tagline = f"Release {version}: New release"
     try:
         subprocess.run(["git", "tag", "-a", version, "-m", tagline], check=True)
         subprocess.run(["git", "push", "origin", version], check=True)
         print(f"Successfully created and pushed tag {version}")
+        create_github_release(version)
     except subprocess.CalledProcessError as e:
         print("Error creating or pushing the tag:", e)
         sys.exit(1)
