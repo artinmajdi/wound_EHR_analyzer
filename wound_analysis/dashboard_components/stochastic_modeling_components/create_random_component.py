@@ -26,6 +26,8 @@ class CreateRandomComponent:
         self.residuals               = parent.residuals
         self.independent_var_name    = parent.independent_var_name
         self.available_distributions = parent.available_distributions
+        self.polynomial_type         = parent.polynomial_type
+        self.independent_var         = parent.independent_var
 
         # Instance variables
         self.fitted_distribution  = None
@@ -192,28 +194,46 @@ class CreateRandomComponent:
             # Create plot to visualize residuals versus independent variable
             fig, ax = plt.subplots(figsize=(10, 6))
 
-            try:
-                # Try to get X values from the polynomial features
-                feature_names = self.deterministic_model['poly'].get_feature_names_out()
-                if len(feature_names) > 1:
-                    X = feature_names[1]  # Get the name of the original feature
-                    try:
-                        # Safely extract numeric values from feature name
-                        X_values = np.array([float(x.split('^')[0].split('_')[-1]) for x in X.split()])
-                    except (IndexError, ValueError):
-                        # If feature name parsing fails, use the original X values from the model fit
-                        X_values = self.deterministic_model['model']._fit_X[:, 0]
-                else:
-                    # If only one feature exists, use the original X values from the model fit
-                    X_values = self.deterministic_model['model']._fit_X[:, 0]
-            except Exception as e:
-                # Fallback to using the residuals' index if all else fails
-                st.warning(f"Could not retrieve X values: {str(e)}. Using index as X values.")
-                X_values = np.arange(len(self.residuals))
+            # Get X values based on polynomial type
+            is_hermite = self.polynomial_type == 'hermite' or self.deterministic_model.get('is_hermite', False)
 
-            # # Get X values from the deterministic model
-            # X = self.deterministic_model['poly'].get_feature_names_out()[1]  # Get the name of the original feature
-            # X_values = np.array([float(x.split('^')[0].split('_')[1]) for x in X.split()])
+            try:
+                if is_hermite:
+                    # For Hermite polynomials, we need to get the original X values
+                    # We can use the fit data from the model
+                    # First, try to get the original X from the parent's dataframe
+                    from_df = self.parent.df
+                    valid_mask = ~np.isnan(from_df[self.independent_var])
+                    X_values = from_df[self.independent_var].values[valid_mask]
+
+                    # Ensure we have the right number of X values
+                    if len(X_values) != len(self.residuals):
+                        # Fallback to just using indices
+                        X_values = np.arange(len(self.residuals))
+                else:
+                    # For regular polynomials
+                    try:
+                        # Try to get X values from the polynomial features
+                        feature_names = self.deterministic_model['poly'].get_feature_names_out()
+                        if len(feature_names) > 1:
+                            X = feature_names[1]  # Get the name of the original feature
+                            try:
+                                # Safely extract numeric values from feature name
+                                X_values = np.array([float(x.split('^')[0].split('_')[-1]) for x in X.split()])
+                            except (IndexError, ValueError):
+                                # If feature name parsing fails, use the original X values from the model fit
+                                X_values = self.deterministic_model['model']._fit_X[:, 0]
+                        else:
+                            # If only one feature exists, use the original X values from the model fit
+                            X_values = self.deterministic_model['model']._fit_X[:, 0]
+                    except Exception as e:
+                        # Fallback to using the residuals' index if all else fails
+                        st.warning(f"Could not retrieve X values: {str(e)}. Using index as X values.")
+                        X_values = np.arange(len(self.residuals))
+            except Exception as e:
+                # Fallback to using indices if everything else fails
+                st.warning(f"Error retrieving X values: {str(e)}. Using index as X values.")
+                X_values = np.arange(len(self.residuals))
 
             # Plot residuals versus independent variable
             ax.scatter(X_values, self.residuals, color='blue', alpha=0.6)

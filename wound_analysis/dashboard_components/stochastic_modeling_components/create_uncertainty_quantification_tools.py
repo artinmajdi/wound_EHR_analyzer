@@ -5,6 +5,7 @@ import pandas as pd
 import pickle
 import plotly.graph_objects as go
 from scipy import stats
+from scipy.special import eval_hermite
 import streamlit as st
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,8 @@ class CreateUncertaintyQuantificationTools:
         self.deterministic_model  = parent.deterministic_model
         self.residuals            = parent.residuals
         self.fitted_distribution  = parent.fitted_distribution
+        self.polynomial_type      = parent.polynomial_type
+        self.polynomial_degree    = parent.polynomial_degree
 
         # user defined variables
         self.patient_id           = parent.patient_id
@@ -40,14 +43,12 @@ class CreateUncertaintyQuantificationTools:
         st.subheader("Uncertainty Quantification Tools")
 
         # Show info about uncertainty quantification
-        st.info("""
-        This section provides tools for quantifying uncertainty in wound healing predictions and
+        st.info(""" This section provides tools for quantifying uncertainty in wound healing predictions and
         generating risk assessments based on the probabilistic model. These tools are designed to
-        support clinical decision-making under uncertainty.
-        """)
+        support clinical decision-making under uncertainty. """)
 
         # Check if complete model is available
-        if not hasattr(self, 'deterministic_model') or not hasattr(self, 'fitted_distribution'):
+        if self.deterministic_model is None or self.fitted_distribution is None:
             st.warning("Please complete the model analysis first (run the Complete Model section).")
             return
 
@@ -92,21 +93,36 @@ class CreateUncertaintyQuantificationTools:
                 # Calculate prediction
                 if st.button("Calculate Prediction Interval"):
                     try:
-                        # Get the best polynomial model
-                        best_degree = self.deterministic_model['best_degree']
-                        model = self.deterministic_model['models'][best_degree]['model']
-                        poly = self.deterministic_model['poly']
+                        # Check which polynomial type we're using
+                        is_hermite = self.polynomial_type == 'hermite' or self.deterministic_model.get('is_hermite', False)
+                        model = self.deterministic_model['model']
 
-                        # Transform input for prediction
-                        X_pred = poly.transform([[prediction_x]])
+                        # Get deterministic prediction based on polynomial type
+                        if is_hermite:
+                            # For Hermite polynomials
+                            X_mean = self.deterministic_model['X_mean']
+                            X_std = self.deterministic_model['X_std']
 
-                        # Get deterministic prediction
-                        y_pred = model.predict(X_pred)[0]
+                            # Standardize the input
+                            x_standardized = (prediction_x - X_mean) / X_std
+
+                            # Create Hermite polynomial features
+                            X_hermite = np.zeros(self.polynomial_degree + 1)
+                            for d in range(self.polynomial_degree + 1):
+                                X_hermite[d] = eval_hermite(d, x_standardized)
+
+                            # Make prediction
+                            y_pred = model.predict(X_hermite.reshape(1, -1))[0]
+                        else:
+                            # For regular polynomials
+                            poly = self.deterministic_model['poly']
+                            X_pred = poly.transform([[prediction_x]])
+                            y_pred = model.predict(X_pred)[0]
 
                         # Get residual distribution parameters
                         if self.fitted_distribution is not None:
                             dist_name = self.fitted_distribution['best_distribution']
-                            dist_params = self.fitted_distribution['params'][dist_name]
+                            dist_params = self.fitted_distribution['params']
 
                             # Calculate prediction interval based on distribution
                             if dist_name == 'norm':
@@ -193,39 +209,52 @@ class CreateUncertaintyQuantificationTools:
                     index=0
                 )
 
-                threshold_value = st.number_input(
-                    f"Threshold value for {self.dependent_var_name}:",
-                    value=float(df[self.dependent_var].median()),
-                    step=0.1
-                )
+                threshold_value = st.number_input( f"Threshold value for {self.dependent_var_name}:",
+                    value = float(df[self.dependent_var].median()),
+                    step  = 0.1 )
 
                 # Input for future X value
                 future_x = st.number_input(
                     f"Enter future {self.independent_var_name} value:",
-                    min_value=float(df[self.independent_var].min()),
-                    max_value=float(df[self.independent_var].max() * 1.5),  # Allow some extrapolation
-                    value=float(df[self.independent_var].median()),
-                    step=0.1
+                    min_value = float(df[self.independent_var].min()),
+                    max_value = float(df[self.independent_var].max() * 1.5), # Allow some extrapolation
+                    value     = float(df[self.independent_var].median()),
+                    step      = 0.1
                 )
 
                 # Calculate risk
                 if st.button("Calculate Risk Probability"):
                     try:
-                        # Get the best polynomial model
-                        best_degree = self.deterministic_model['best_degree']
-                        model = self.deterministic_model['models'][best_degree]['model']
-                        poly = self.deterministic_model['poly']
+                        # Check which polynomial type we're using
+                        is_hermite = self.polynomial_type == 'hermite' or self.deterministic_model.get('is_hermite', False)
+                        model = self.deterministic_model['model']
 
-                        # Transform input for prediction
-                        X_pred = poly.transform([[future_x]])
+                        # Get deterministic prediction based on polynomial type
+                        if is_hermite:
+                            # For Hermite polynomials
+                            X_mean = self.deterministic_model['X_mean']
+                            X_std = self.deterministic_model['X_std']
 
-                        # Get deterministic prediction
-                        y_pred = model.predict(X_pred)[0]
+                            # Standardize the input
+                            x_standardized = (future_x - X_mean) / X_std
+
+                            # Create Hermite polynomial features
+                            X_hermite = np.zeros(self.polynomial_degree + 1)
+                            for d in range(self.polynomial_degree + 1):
+                                X_hermite[d] = eval_hermite(d, x_standardized)
+
+                            # Make prediction
+                            y_pred = model.predict(X_hermite.reshape(1, -1))[0]
+                        else:
+                            # For regular polynomials
+                            poly = self.deterministic_model['poly']
+                            X_pred = poly.transform([[future_x]])
+                            y_pred = model.predict(X_pred)[0]
 
                         # Get residual distribution parameters
                         if self.fitted_distribution is not None:
                             dist_name = self.fitted_distribution['best_distribution']
-                            dist_params = self.fitted_distribution['params'][dist_name]
+                            dist_params = self.fitted_distribution['params']
 
                             # Calculate probability based on distribution and threshold type
                             if hasattr(stats, dist_name):

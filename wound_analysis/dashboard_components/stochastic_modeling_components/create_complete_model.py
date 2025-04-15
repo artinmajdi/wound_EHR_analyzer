@@ -6,6 +6,7 @@ if TYPE_CHECKING:
 import numpy as np
 import pandas as pd
 from scipy import stats
+from scipy.special import eval_hermite
 from sklearn.metrics import mean_squared_error, r2_score
 import streamlit as st
 import plotly.graph_objects as go
@@ -23,6 +24,7 @@ class CreateCompleteModel:
         self.residuals            = parent.residuals
         self.polynomial_degree    = parent.polynomial_degree
         self.deterministic_model  = parent.deterministic_model
+        self.polynomial_type      = parent.polynomial_type
 
         # user defined variables
         self.independent_var      = parent.independent_var
@@ -103,21 +105,49 @@ class CreateCompleteModel:
 
             # Get model and parameters
             selected_model = self.deterministic_model
-            poly           = selected_model['poly']
-            model          = selected_model['model']
+            model = selected_model['model']
+
+            # Check if we're using Hermite polynomials
+            is_hermite = self.polynomial_type == 'hermite' or selected_model.get('is_hermite', False)
 
             # Generate predictions from deterministic component
-            X_poly = poly.transform(X_2d)
-            y_pred = model.predict(X_poly)
+            if is_hermite:
+                # For Hermite polynomials
+                X_mean = selected_model['X_mean']
+                X_std = selected_model['X_std']
+                X_standardized = (X_2d - X_mean) / X_std
+
+                X_hermite = np.zeros((X_standardized.shape[0], self.polynomial_degree + 1))
+                for d in range(self.polynomial_degree + 1):
+                    X_hermite[:, d] = np.array([eval_hermite(d, x[0]) for x in X_standardized])
+
+                y_pred = model.predict(X_hermite)
+            else:
+                # For regular polynomials
+                poly = selected_model['poly']
+                X_poly = poly.transform(X_2d)
+                y_pred = model.predict(X_poly)
 
             # Get standard deviation of residuals for prediction intervals
             residual_std = np.std(self.residuals)
 
             # Create new X values for smooth curve
-            X_range      = np.linspace(min(X), max(X), 100)
-            X_range_2d   = X_range.reshape(-1, 1)
-            X_range_poly = poly.transform(X_range_2d)
-            y_range_pred = model.predict(X_range_poly)
+            X_range = np.linspace(min(X), max(X), 100)
+            X_range_2d = X_range.reshape(-1, 1)
+
+            # Generate predictions for the smooth curve
+            if is_hermite:
+                # For Hermite polynomials
+                X_range_std = (X_range_2d - X_mean) / X_std
+                X_range_hermite = np.zeros((X_range_std.shape[0], self.polynomial_degree + 1))
+                for d in range(self.polynomial_degree + 1):
+                    X_range_hermite[:, d] = np.array([eval_hermite(d, x[0]) for x in X_range_std])
+
+                y_range_pred = model.predict(X_range_hermite)
+            else:
+                # For regular polynomials
+                X_range_poly = poly.transform(X_range_2d)
+                y_range_pred = model.predict(X_range_poly)
 
             # Create prediction intervals (assuming normal distribution for the random component)
             # This can be adapted based on the best-fitting distribution from the random component analysis
@@ -218,15 +248,27 @@ class CreateCompleteModel:
             )
 
             # Add annotation for the model equation
-            intercept = model.intercept_
-            coef = model.coef_
-
-            equation = f"E[{self.dependent_var_name}] = {intercept:.3f}"
-            for i, c in enumerate(coef[1:]):  # Skip the first coefficient (it's just 1)
-                if c >= 0:
-                    equation += f" + {c:.3f}{self.independent_var_name}^{i+1}"
-                else:
-                    equation += f" - {abs(c):.3f}{self.independent_var_name}^{i+1}"
+            if is_hermite:
+                # For Hermite polynomials
+                coefs = selected_model['coefficients']
+                equation = f"E[{self.dependent_var_name}] = {coefs[0]:.3f}H₀(x)"
+                for i in range(1, len(coefs)):
+                    if coefs[i] >= 0:
+                        equation += f" + {coefs[i]:.3f}H₍{i}₎(x)"
+                    else:
+                        equation += f" - {abs(coefs[i]):.3f}H₍{i}₎(x)"
+                # Add standardization info
+                equation += f"\nwhere x = ({self.independent_var_name} - {X_mean:.3f}) / {X_std:.3f}"
+            else:
+                # For regular polynomials
+                intercept = model.intercept_
+                coef = model.coef_
+                equation = f"E[{self.dependent_var_name}] = {intercept:.3f}"
+                for i, c in enumerate(coef[1:]):  # Skip the first coefficient (it's just 1)
+                    if c >= 0:
+                        equation += f" + {c:.3f}{self.independent_var_name}^{i+1}"
+                    else:
+                        equation += f" - {abs(c):.3f}{self.independent_var_name}^{i+1}"
 
             fig.add_annotation(
                 xref="paper", yref="paper",
@@ -372,10 +414,23 @@ class CreateCompleteModel:
             x_pred = st.slider(f"Select {self.independent_var_name} value for prediction:",
                               float(min(X)), float(max(X)), float((min(X) + max(X)) / 2))
 
-            # Calculate deterministic prediction
-            x_pred_2d = np.array([[x_pred]])
-            x_pred_poly = poly.transform(x_pred_2d)
-            y_pred_mean = model.predict(x_pred_poly)[0]
+            # Calculate deterministic prediction based on polynomial type
+            if is_hermite:
+                # For Hermite polynomials
+                x_pred_standardized = (x_pred - X_mean) / X_std
+
+                # Create Hermite polynomial features
+                x_pred_hermite = np.zeros(self.polynomial_degree + 1)
+                for d in range(self.polynomial_degree + 1):
+                    x_pred_hermite[d] = eval_hermite(d, x_pred_standardized)
+
+                # Make prediction
+                y_pred_mean = model.predict(x_pred_hermite.reshape(1, -1))[0]
+            else:
+                # For regular polynomials
+                x_pred_2d = np.array([[x_pred]])
+                x_pred_poly = poly.transform(x_pred_2d)
+                y_pred_mean = model.predict(x_pred_poly)[0]
 
             # Calculate prediction intervals
             y_pred_lower_95 = y_pred_mean - z_95 * residual_std

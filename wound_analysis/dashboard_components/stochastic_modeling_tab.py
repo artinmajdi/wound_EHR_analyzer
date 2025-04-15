@@ -71,6 +71,8 @@ class StochasticModelingTab:
             st.session_state.residuals = None
         if 'fitted_distribution' not in st.session_state:
             st.session_state.fitted_distribution = None
+        if 'polynomial_type' not in st.session_state:
+            st.session_state.polynomial_type = 'regular'
 
         # Models for storing analysis results
         self.deterministic_model = st.session_state.deterministic_model
@@ -78,6 +80,7 @@ class StochasticModelingTab:
         self.deterministic_coefs = st.session_state.deterministic_coefs
         self.residuals           = st.session_state.residuals
         self.fitted_distribution = st.session_state.fitted_distribution
+        self.polynomial_type     = st.session_state.polynomial_type
 
         self.independent_var      = None
         self.dependent_var        = None
@@ -391,11 +394,13 @@ class StochasticModelingTab:
                 self.polynomial_degree   = cdc['polynomial_degree']
                 self.deterministic_coefs = cdc['deterministic_coefs']
                 self.deterministic_model = cdc['deterministic_model']
+                self.polynomial_type     = cdc['polynomial_type']
 
                 st.session_state.residuals           = self.residuals
                 st.session_state.polynomial_degree   = self.polynomial_degree
                 st.session_state.deterministic_coefs = self.deterministic_coefs
                 st.session_state.deterministic_model = self.deterministic_model
+                st.session_state.polynomial_type     = self.polynomial_type
 
             # Random Component Tab
             with tabs[2]:

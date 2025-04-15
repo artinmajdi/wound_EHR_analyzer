@@ -6,11 +6,9 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.preprocessing import PolynomialFeatures
+from scipy.special import hermite, eval_hermite
 from sklearn.model_selection import KFold
 import warnings
-# import pymc3
-# import arviz
 import statsmodels.api as sm
 from statsmodels.regression.mixed_linear_model import MixedLM
 
@@ -35,13 +33,7 @@ class AdvancedStatistics:
         self.mixed_effects_results = None
 
 
-    def polynomial_chaos_expansion(
-        self,
-        x: np.ndarray,
-        y: np.ndarray,
-        degree: int = 3,
-        distribution: str = 'normal'
-    ) -> Dict:
+    def polynomial_chaos_expansion( self, x: np.ndarray, y: np.ndarray, degree: int = 3, distribution: str = 'normal' ) -> Dict:
         """
         Perform Polynomial Chaos Expansion analysis.
 
@@ -93,12 +85,7 @@ class AdvancedStatistics:
         }
 
 
-    def variance_function_modeling(
-        self,
-        x: np.ndarray,
-        residuals: np.ndarray,
-        model_type: str = 'power'
-    ) -> Dict:
+    def variance_function_modeling( self, x: np.ndarray, residuals: np.ndarray, model_type: str = 'power' ) -> Dict:
         """
         Model how variance changes with predictor values.
 
@@ -151,12 +138,7 @@ class AdvancedStatistics:
         }
 
 
-    def conditional_distribution_analysis(
-        self,
-        x: np.ndarray,
-        y: np.ndarray,
-        n_bins: int = 10
-    ) -> Dict:
+    def conditional_distribution_analysis( self, x: np.ndarray, y: np.ndarray, n_bins: int = 10 ) -> Dict:
         """
         Analyze how the distribution of y changes with x.
 
@@ -212,12 +194,38 @@ class AdvancedStatistics:
 
 
     def _hermite_basis(self, x: np.ndarray, degree: int) -> np.ndarray:
-        """Generate Hermite polynomial basis functions."""
-        basis = []
+        """
+        Generate Hermite polynomial basis functions using NumPy's polynomial module.
+        This implementation is more numerically stable than using scipy.special.hermite directly.
+        """
+        from numpy.polynomial.hermite import hermval
+
+        # Ensure x is properly shaped
+        x = x.flatten()
+
+        # Normalize input to improve numerical stability
+        x_scaled = (x - np.mean(x)) / (np.std(x) + 1e-10)
+
+        # Create basis matrix using NumPy's hermval function
+        basis = np.zeros((len(x_scaled), degree + 1))
+
         for i in range(degree + 1):
-            hermite = stats.hermite(i)
-            basis.append(hermite(x))
-        return np.column_stack(basis)
+            # Create coefficient array for polynomial of degree i
+            # (1 at position i, 0 elsewhere)
+            coef = np.zeros(i + 1)
+            coef[i] = 1.0
+
+            # Evaluate Hermite polynomial at the scaled input points
+            try:
+                # More robust approach with error handling
+                basis[:, i] = hermval(x_scaled, coef)
+            except Exception:
+                # Fallback for numerical stability if hermval fails
+                warnings.warn(f"Hermite polynomial evaluation failed for degree {i}. Using fallback.")
+                # Use simple powers as fallback (less accurate but more stable)
+                basis[:, i] = x_scaled ** i if i > 0 else np.ones_like(x_scaled)
+
+        return basis
 
 
     def _legendre_basis(self, x: np.ndarray, degree: int) -> np.ndarray:
@@ -232,11 +240,7 @@ class AdvancedStatistics:
         return np.column_stack(basis)
 
 
-    def _calculate_sobol_indices(
-        self,
-        coefficients: np.ndarray,
-        degree: int
-    ) -> Dict[str, float]:
+    def _calculate_sobol_indices( self, coefficients: np.ndarray, degree: int ) -> Dict[str, float]:
         """Calculate Sobol sensitivity indices from PCE coefficients."""
         total_variance = np.sum(coefficients[1:] ** 2)  # Exclude constant term
 
@@ -251,13 +255,7 @@ class AdvancedStatistics:
         }
 
 
-    def cross_validate(
-        self,
-        x: np.ndarray,
-        y: np.ndarray,
-        n_folds: int = 5,
-        degree: int = 3
-    ) -> Dict:
+    def cross_validate( self, x: np.ndarray, y: np.ndarray, n_folds: int = 5, degree: int = 3 ) -> Dict:
         """
         Perform cross-validation for PCE model.
 
@@ -311,15 +309,7 @@ class AdvancedStatistics:
         }
 
 
-    def bayesian_hierarchical_modeling(
-        self,
-        x: np.ndarray,
-        y: np.ndarray,
-        groups: Optional[np.ndarray] = None,
-        n_samples: int = 2000,
-        n_tune: int = 1000,
-        random_seed: int = 42
-    ) -> Dict:
+    def bayesian_hierarchical_modeling( self, x: np.ndarray, y: np.ndarray, groups: Optional[np.ndarray] = None, n_samples: int = 2000, n_tune: int = 1000, random_seed: int = 42 ) -> Dict:
         """
         Perform Bayesian Hierarchical Modeling analysis.
 
@@ -400,14 +390,7 @@ class AdvancedStatistics:
             return None
 
 
-    def mixed_effects_modeling(
-        self,
-        x: np.ndarray,
-        y: np.ndarray,
-        groups: np.ndarray,
-        random_effects: Optional[List[str]] = None,
-        fixed_effects: Optional[List[str]] = None
-    ) -> Dict:
+    def mixed_effects_modeling( self, x: np.ndarray, y: np.ndarray, groups: np.ndarray, random_effects: Optional[List[str]] = None, fixed_effects: Optional[List[str]] = None ) -> Dict:
         """
         Perform Mixed-Effects Modeling analysis.
 
