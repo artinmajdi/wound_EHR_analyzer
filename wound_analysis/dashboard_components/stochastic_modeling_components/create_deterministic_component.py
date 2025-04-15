@@ -58,7 +58,7 @@ class CreateDeterministicComponent:
         self.deterministic_coefs = None
         self.polynomial_type = None  # Variable to track polynomial type
 
-    def render(self) -> DeterministicComponentResult:
+    def render(self) -> Dict[str, Any]:
         """
         Create and display the deterministic component analysis.
 
@@ -101,13 +101,14 @@ class CreateDeterministicComponent:
 
             st.markdown('</div>', unsafe_allow_html=True)
 
-        return DeterministicComponentResult(
-                                    deterministic_model = self.deterministic_model,
-                                    residuals           = self.residuals,
-                                    polynomial_degree   = self.polynomial_degree,
-                                    deterministic_coefs = self.deterministic_coefs,
-                                    polynomial_type     = self.polynomial_type
-                                    )
+        return {
+            'deterministic_model': self.deterministic_model,
+            'residuals'          : self.residuals,
+            'polynomial_degree'  : self.polynomial_degree,
+            'deterministic_coefs': self.deterministic_coefs,
+            'polynomial_type'    : self.polynomial_type
+        }
+
 
     def _empty_result(self) -> Dict[str, Any]:
         """

@@ -390,11 +390,11 @@ class StochasticModelingTab:
             # Deterministic Component Tab
             with tabs[1]:
                 cdc = CreateDeterministicComponent(df=filtered_df, parent=self).render()
-                self.residuals           = cdc.residuals
-                self.polynomial_degree   = cdc.polynomial_degree
-                self.deterministic_coefs = cdc.deterministic_coefs
-                self.deterministic_model = cdc.deterministic_model
-                self.polynomial_type     = cdc.polynomial_type
+                self.residuals           = cdc['residuals']
+                self.polynomial_degree   = cdc['polynomial_degree']
+                self.deterministic_coefs = cdc['deterministic_coefs']
+                self.deterministic_model = cdc['deterministic_model']
+                self.polynomial_type     = cdc['polynomial_type']
 
                 st.session_state.residuals           = self.residuals
                 st.session_state.polynomial_degree   = self.polynomial_degree
