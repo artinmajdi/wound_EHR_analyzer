@@ -1,13 +1,18 @@
 # Standard library imports
 import logging
 import traceback
-from typing import Dict, List, Literal, Union
+from typing import Dict, List, Literal, Union, Optional, Tuple, Any
 
 # Third-party imports
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import shap
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import io
 
 # Local application imports
 from wound_analysis.utils.column_schema import DColumns
@@ -23,8 +28,18 @@ class ClusteringTab:
 	A class for managing and rendering the Clustering tab in the wound analysis dashboard.
 
 	This class contains methods to display clustering analysis for both population-level data
-	and individual patient data, including clustering, correlation analysis, and visualization.
-	and clinical interpretations.
+	and individual patient data, including clustering, correlation analysis, visualization,
+	and clinical interpretations. It also includes SHAP (SHapley Additive exPlanations) analysis
+	for model interpretability.
+
+	Attributes:
+		df (pd.DataFrame): The input DataFrame containing wound data
+		CN (DColumns): Column name schema for the DataFrame
+		selected_patient (str): Currently selected patient ID
+		df_w_cluster_tags (Optional[pd.DataFrame]): DataFrame with cluster assignments
+		selected_cluster (Optional[int]): Currently selected cluster for analysis
+		use_cluster_data (bool): Whether to use clustered data in other tabs
+		_cluster_settings (Optional[Dict]): User-selected clustering parameters
 	"""
 
 	def __init__(self, wound_data_processor: WoundDataProcessor, selected_patient: str):
@@ -35,13 +50,10 @@ class ClusteringTab:
 		self.selected_patient = selected_patient
 
 		# Calculated Variables
-		self.df_w_cluster_tags = None
-		self.selected_cluster  = None
-
-
-		# Clustering User Settings
-		self._cluster_settings    = None
-		self.use_cluster_data     = False
+		self.df_w_cluster_tags: Optional[pd.DataFrame] = None
+		self.selected_cluster: Optional[int] = None
+		self._cluster_settings: Optional[Dict[str, Any]] = None
+		self.use_cluster_data: bool = False
 
 		# Initialize session state for clusters if not already present
 		if 'cluster_tags' not in st.session_state:
@@ -49,12 +61,44 @@ class ClusteringTab:
 			st.session_state.df_w_cluster_tags  = None
 			st.session_state.feature_importance = None
 			st.session_state.selected_cluster   = None
+			st.session_state.shap_values        = None
+			st.session_state.shap_expected_values = None
+
+
+	def _display_cluster_analysis(self) -> None:
+		cols = st.columns([1, 4])
+
+		with cols[0]:
+			self._get_user_selected_cluster()
+
+
+		tabs = st.tabs(["Cluster Distribution", "Feature Importance", "SHAP Analysis", "Cluster Characteristics"])
+
+		with tabs[0]:
+			# Display cluster distribution
+			ClusteringTab._display_cluster_distribution(df_w_cluster_tags=st.session_state.df_w_cluster_tags)
+
+
+		with tabs[1]:
+			# Display feature importance
+			if st.session_state.feature_importance:
+				ClusteringTab._display_feature_importance(feature_importance=st.session_state.feature_importance)
+
+		with tabs[2]:
+			if st.session_state.shap_values is not None:
+				self._display_shap_analysis()
+
+		with tabs[3]:
+			# Display cluster characteristics
+			self._display_cluster_characteristics(cluster_df=st.session_state.df_w_cluster_tags)
 
 
 	def render(self) -> 'ClusteringTab':
 		"""
 		Render the clustering section and perform clustering if requested.
 
+		Returns:
+			ClusteringTab: The current instance for method chaining
 		"""
 
 		def _use_cluster_data():
@@ -75,28 +119,6 @@ class ClusteringTab:
 					st.success(f"Using cluster {st.session_state.selected_cluster} subset in other tabs")
 					self.use_cluster_data = True
 
-		def _display_cluster_analysis():
-			cols = st.columns([1, 4])
-
-			with cols[0]:
-				self._get_user_selected_cluster()
-
-
-			tabs = st.tabs(["Cluster Distribution", "Feature Importance", "Cluster Characteristics"])
-
-			with tabs[0]:
-				# Display cluster distribution
-				ClusteringTab._display_cluster_distribution(df_w_cluster_tags=st.session_state.df_w_cluster_tags)
-
-
-			with tabs[1]:
-				# Display feature importance
-				if st.session_state.feature_importance:
-					ClusteringTab._display_feature_importance(feature_importance=st.session_state.feature_importance)
-
-			with tabs[2]:
-				# Display cluster characteristics
-				self._display_cluster_characteristics(cluster_df=st.session_state.df_w_cluster_tags)
 
 		try:
 			self._cluster_settings = self.get_cluster_analysis_settings()
@@ -106,16 +128,21 @@ class ClusteringTab:
 
 				ca = ClusteringAnalysis(df=self.df.copy(), cluster_settings=self._cluster_settings).render()
 
-				st.success(f"Successfully clustered data into {self._cluster_settings['n_clusters']} clusters using {self._cluster_settings['clustering_method']}!")
+				# Calculate SHAP values for the clustering results
+				shap_values, expected_values = self._calculate_shap_values( df=ca.df_w_cluster_tags, features=self._cluster_settings["cluster_features"] )
 
-				# Store clustering results in session state
-				st.session_state.cluster_tags       = ca.cluster_tags
-				st.session_state.df_w_cluster_tags  = ca.df_w_cluster_tags
-				st.session_state.feature_importance = ca.feature_importance
-				st.session_state.selected_cluster   = None # Reset selected cluster
+				st.success(f"Successfully clustered data into {self._cluster_settings['n_clusters']} clusters!")
+
+				# Store results in session state
+				st.session_state.cluster_tags         = ca.cluster_tags
+				st.session_state.df_w_cluster_tags    = ca.df_w_cluster_tags
+				st.session_state.feature_importance   = ca.feature_importance
+				st.session_state.shap_values          = shap_values
+				st.session_state.shap_expected_values = expected_values
+				st.session_state.selected_cluster     = None # Reset selected cluster
 
 			if st.session_state.df_w_cluster_tags is not None:
-				_display_cluster_analysis()
+				self._display_cluster_analysis()
 				_use_cluster_data()
 
 
@@ -355,5 +382,205 @@ class ClusteringTab:
 			# Display the styled DataFrame
 			st.table(styled_df)
 			st.info("Highlighted rows indicate features where this cluster differs from the overall population by >15%")
+
+
+	def _calculate_shap_values(
+		self,
+		df: pd.DataFrame,
+		features: List[str]
+	) -> Tuple[np.ndarray, np.ndarray]:
+		"""
+		Calculate SHAP values for the clustering results.
+
+		Args:
+			df: DataFrame containing the features used for clustering
+			features: List of feature names used in clustering
+
+		Returns:
+			Tuple containing SHAP values and expected values
+		"""
+		logger.info("Calculating SHAP values for cluster interpretation")
+
+		try:
+			# Prepare the feature matrix
+			X = df[features].copy()
+
+			# Handle missing values
+			X = X.fillna(X.mean())
+
+			# Standardize the features
+			scaler = StandardScaler()
+			X_scaled = scaler.fit_transform(X)
+
+			# Calculate number of background samples (kmeans clusters)
+			# Use min(n_samples/2, 10) to ensure we don't exceed data size
+			n_background = min(len(X) // 2, 10)
+			n_background = max(n_background, 1)  # Ensure at least 1 cluster
+
+			# Create a KernelExplainer for the clustering model
+			background = shap.kmeans(X_scaled, n_background)
+			explainer = shap.KernelExplainer(
+				lambda x: x,  # Identity function since we want to explain the features directly
+				background
+			)
+
+			# Calculate SHAP values
+			shap_values = explainer.shap_values(X_scaled)
+			expected_values = explainer.expected_value
+
+			logger.info("Successfully calculated SHAP values")
+			return shap_values, expected_values
+
+		except Exception as e:
+			logger.error(f"Error calculating SHAP values: {str(e)}")
+			logger.error(traceback.format_exc())
+			raise
+
+
+	def _ensure_2d_shap(self, shap_values):
+		"""
+		Ensure SHAP values are 2D (n_samples, n_features).
+		Handles cases where SHAP returns a list or 3D array.
+		"""
+		# If it's a list of arrays (e.g., multiclass), take the first
+		if isinstance(shap_values, list):
+			shap_values = shap_values[0]
+		# If it's 3D, reduce to 2D (e.g., take the first output)
+		if isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
+			shap_values = shap_values[:, :, 0]
+		return shap_values
+
+
+	def _display_shap_analysis(self) -> None:
+		"""Display SHAP analysis results using Streamlit."""
+		st.markdown("### SHAP Analysis")
+		st.markdown("""
+		SHAP (SHapley Additive exPlanations) values show how each feature contributes to moving a sample
+		from the expected model output to its actual prediction. This helps understand which features are
+		most important for each cluster's formation.
+		""")
+
+		# try:
+		if self._cluster_settings is None:
+			st.info("Please run clustering first to view SHAP analysis")
+			return
+
+		features = self._cluster_settings["cluster_features"]
+		df = st.session_state.df_w_cluster_tags[features]
+		shap_values = self._ensure_2d_shap(st.session_state.shap_values)
+
+		if st.session_state.selected_cluster == "All Data":
+			# For "All Data", show the overall SHAP value distribution
+			st.markdown("#### Overall SHAP Value Distribution")
+			st.markdown("""
+			This view shows the distribution of SHAP values across all clusters, helping you understand
+			how each feature contributes to cluster formation across the entire dataset.
+			""")
+
+			# Calculate mean absolute SHAP values for each feature
+			mean_abs_shap = np.mean(np.abs(shap_values), axis=0)
+
+			# Create a bar plot of overall feature importance
+			fig = go.Figure()
+			fig.add_trace(go.Bar(
+				y=features,
+				x=mean_abs_shap,
+				orientation='h'
+			))
+
+			fig.update_layout(
+				title="Overall Feature Importance (Mean |SHAP|)",
+				xaxis_title="Mean |SHAP Value|",
+				yaxis_title="Feature"
+			)
+
+			st.plotly_chart(fig, use_container_width=True)
+
+			# SHAP summary plot (beeswarm)
+			st.markdown("#### SHAP Summary Plot (Beeswarm)")
+			buf = io.BytesIO()
+			plt.figure(figsize=(8, 4))
+			shap.summary_plot(shap_values, df, feature_names=features, show=False)
+			plt.tight_layout()
+			plt.savefig(buf, format="png")
+			plt.close()
+			st.image(buf, caption="SHAP Summary Plot (Beeswarm)")
+
+			st.markdown("""
+			**Interpretation:**
+			- Larger values indicate features that have a stronger overall influence on cluster formation
+			- This view helps identify which features are most important for distinguishing between any clusters
+			- The absolute values show magnitude of impact, regardless of direction
+			- The beeswarm plot shows the distribution of SHAP values for each feature across all samples
+			""")
+
+			# Per-sample SHAP value table
+			st.markdown("#### Per-Sample SHAP Values (All Data)")
+			shap_df = pd.DataFrame(shap_values, columns=features, index=df.index)
+			st.dataframe(shap_df)
+			st.download_button("Download SHAP Values (CSV)", shap_df.to_csv().encode(), file_name="shap_values_all_data.csv")
+
+		elif st.session_state.selected_cluster is not None:
+			# For specific clusters, show cluster-specific SHAP values
+			st.markdown(f"#### SHAP Values for Cluster {st.session_state.selected_cluster}")
+			st.markdown("""
+			This view shows how each feature contributes to forming this specific cluster,
+			helping you understand what makes this cluster unique.
+			""")
+
+			cluster_mask = st.session_state.df_w_cluster_tags['Cluster'] == st.session_state.selected_cluster
+			cluster_shap = self._ensure_2d_shap(shap_values[cluster_mask])
+			cluster_df = df[cluster_mask]
+
+			# Calculate mean SHAP values for the selected cluster
+			mean_shap = np.mean(cluster_shap, axis=0)
+
+			# Create a bar plot of SHAP values
+			fig = go.Figure()
+			fig.add_trace(go.Bar(
+				y=features,
+				x=mean_shap,
+				orientation='h'
+			))
+
+			fig.update_layout(
+				title=f"Mean SHAP Values for Cluster {st.session_state.selected_cluster}",
+				xaxis_title="SHAP Value",
+				yaxis_title="Feature"
+			)
+
+			st.plotly_chart(fig, use_container_width=True)
+
+			# SHAP summary plot (beeswarm) for the cluster
+			st.markdown(f"#### SHAP Summary Plot (Beeswarm) for Cluster {st.session_state.selected_cluster}")
+			buf = io.BytesIO()
+			plt.figure(figsize=(8, 4))
+			shap.summary_plot(cluster_shap, cluster_df, feature_names=features, show=False)
+			plt.tight_layout()
+			plt.savefig(buf, format="png")
+			plt.close()
+			st.image(buf, caption=f"SHAP Summary Plot (Beeswarm) for Cluster {st.session_state.selected_cluster}")
+
+			st.markdown("""
+			**Interpretation:**
+			- Positive SHAP values (bars to the right) indicate features that push samples toward this cluster
+			- Negative values (bars to the left) indicate features that push samples away from this cluster
+			- The magnitude of the bar shows the strength of the feature's influence
+			- The beeswarm plot shows the distribution of SHAP values for each feature in this cluster
+			""")
+
+			# Per-sample SHAP value table for the cluster
+			st.markdown(f"#### Per-Sample SHAP Values (Cluster {st.session_state.selected_cluster})")
+			cluster_shap_df = pd.DataFrame(cluster_shap, columns=features, index=cluster_df.index)
+			st.dataframe(cluster_shap_df)
+			st.download_button(f"Download SHAP Values for Cluster {st.session_state.selected_cluster} (CSV)", cluster_shap_df.to_csv().encode(), file_name=f"shap_values_cluster_{st.session_state.selected_cluster}.csv")
+
+		else:
+			st.info("Please select a cluster to view SHAP analysis")
+
+		# except Exception as e:
+		#     logger.error(f"Error displaying SHAP analysis: {str(e)}")
+		#     logger.error(traceback.format_exc())
+		#     st.error("Error displaying SHAP analysis. Please check the logs for details.")
 
 
