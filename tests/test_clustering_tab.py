@@ -20,6 +20,12 @@ def sample_data():
     })
 
 @pytest.fixture
+def feature_list(sample_data):
+    """Get the list of features from the sample data (excluding non-feature columns)"""
+    # Exclude 'patient_id' and any other non-feature columns
+    return [col for col in sample_data.columns if col != 'patient_id']
+
+@pytest.fixture
 def mock_wound_processor(sample_data):
     """Create a mock WoundDataProcessor"""
     processor = MagicMock(spec=WoundDataProcessor)
@@ -40,11 +46,11 @@ def test_init(clustering_tab, sample_data):
     assert clustering_tab.selected_cluster is None
     assert clustering_tab.use_cluster_data is False
 
-def test_get_cluster_analysis_settings(clustering_tab, monkeypatch):
+def test_get_cluster_analysis_settings(clustering_tab, monkeypatch, feature_list):
     """Test cluster analysis settings with mocked streamlit inputs"""
     # Mock streamlit inputs
     def mock_multiselect(*args, **kwargs):
-        return ['wound_area', 'healing_rate']
+        return feature_list
 
     def mock_number_input(*args, **kwargs):
         return 3
@@ -64,14 +70,14 @@ def test_get_cluster_analysis_settings(clustering_tab, monkeypatch):
     assert settings["n_clusters"] == 3
     assert settings["clustering_method"] == "K-Means"
     assert settings["run_clustering"] is True
-    assert len(settings["cluster_features"]) > 0
+    assert set(settings["cluster_features"]) == set(feature_list)
 
 def test_get_updated_df_no_clustering(clustering_tab, sample_data):
     """Test get_updated_df when no clustering has been performed"""
     result = clustering_tab.get_updated_df()
     assert result.equals(sample_data)
 
-def test_get_updated_df_with_clustering(clustering_tab):
+def test_get_updated_df_with_clustering(clustering_tab, feature_list):
     """Test get_updated_df with clustering results"""
     # Mock clustering results
     clustered_df = clustering_tab.df.copy()
@@ -127,13 +133,9 @@ def test_display_cluster_distribution(mock_plotly_chart, clustering_tab):
         mock_plotly_chart.assert_called_once()
 
 @patch('streamlit.plotly_chart')
-def test_display_feature_importance(mock_plotly_chart, clustering_tab):
+def test_display_feature_importance(mock_plotly_chart, clustering_tab, feature_list):
     """Test feature importance display"""
-    feature_importance = {
-        'wound_area': 0.5,
-        'healing_rate': 0.3,
-        'highest_freq_absolute': 0.2
-    }
+    feature_importance = {f: 1.0/(i+1) for i, f in enumerate(feature_list)}
 
     # Create a mock figure that will be accepted by plotly
     mock_figure = go.Figure()
@@ -141,120 +143,92 @@ def test_display_feature_importance(mock_plotly_chart, clustering_tab):
         ClusteringTab._display_feature_importance(feature_importance)
         mock_plotly_chart.assert_called_once()
 
-def test_calculate_shap_values(clustering_tab):
+def test_calculate_shap_values(clustering_tab, feature_list):
     """Test SHAP value calculation"""
-    df = pd.DataFrame({
-        'feature1': [1, 2, 3],
-        'feature2': [4, 5, 6]
-    })
-    features = ['feature1', 'feature2']
+    df = pd.DataFrame({f: np.arange(1, 4) for f in feature_list})
+    features = feature_list
 
     with patch('shap.KernelExplainer') as mock_explainer:
-        mock_explainer.return_value.shap_values.return_value = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]])
-        mock_explainer.return_value.expected_value = np.array([0.5, 0.5])
+        mock_explainer.return_value.shap_values.return_value = np.array([[0.1]*len(features), [0.2]*len(features), [0.3]*len(features)])
+        mock_explainer.return_value.expected_value = np.array([0.5]*len(features))
 
         shap_values, expected_values = clustering_tab._calculate_shap_values(df, features)
 
         assert isinstance(shap_values, np.ndarray)
         assert isinstance(expected_values, np.ndarray)
-        assert shap_values.shape == (3, 2)  # 3 samples, 2 features
+        assert shap_values.shape == (3, len(features))
+
+def test_ensure_2d_shap(clustering_tab, feature_list):
+    """Test the _ensure_2d_shap utility for various SHAP output shapes"""
+    n_samples = 4
+    n_features = len(feature_list)
+    # 2D array
+    arr_2d = np.ones((n_samples, n_features))
+    assert clustering_tab._ensure_2d_shap(arr_2d).shape == (n_samples, n_features)
+    # 3D array
+    arr_3d = np.ones((n_samples, n_features, 2))
+    arr_2d_from_3d = clustering_tab._ensure_2d_shap(arr_3d)
+    assert arr_2d_from_3d.shape == (n_samples, n_features)
+    # List of arrays
+    arr_list = [np.ones((n_samples, n_features)), np.ones((n_samples, n_features)) * 2]
+    arr_2d_from_list = clustering_tab._ensure_2d_shap(arr_list)
+    assert arr_2d_from_list.shape == (n_samples, n_features)
 
 @patch('streamlit.plotly_chart')
 @patch('streamlit.markdown')
-def test_display_shap_analysis_all_data(mock_markdown, mock_plotly_chart, clustering_tab):
+def test_display_shap_analysis_all_data(mock_markdown, mock_plotly_chart, clustering_tab, feature_list):
     """Test SHAP analysis display for 'All Data' view"""
-    # Use real feature names from sample_data fixture
-    features = ['wound_area', 'healing_rate', 'highest_freq_absolute']
+    features = feature_list
     st.session_state.selected_cluster = "All Data"
     st.session_state.df_w_cluster_tags = clustering_tab.df.copy()
-    st.session_state.shap_values = np.array([
-        [0.1, 0.2, 0.3],
-        [0.3, 0.4, 0.5],
-        [0.5, 0.6, 0.7],
-        [0.7, 0.8, 0.9]
-    ])
+    st.session_state.shap_values = np.ones((len(clustering_tab.df), len(features)))
 
-    # Mock cluster settings
     clustering_tab._cluster_settings = {
         "cluster_features": features
     }
 
-    # Call the method
     clustering_tab._display_shap_analysis()
-
-    # Verify that plotly_chart was called with a figure
     mock_plotly_chart.assert_any_call(mock_plotly_chart.call_args[0][0], use_container_width=True)
-
-    # Verify that appropriate markdown explanations were shown
     assert any("Overall SHAP Value Distribution" in str(call)
               for call in mock_markdown.call_args_list)
 
 @patch('streamlit.plotly_chart')
 @patch('streamlit.markdown')
-def test_display_shap_analysis_specific_cluster(mock_markdown, mock_plotly_chart, clustering_tab):
+def test_display_shap_analysis_specific_cluster(mock_markdown, mock_plotly_chart, clustering_tab, feature_list):
     """Test SHAP analysis display for specific cluster view"""
-    features = ['wound_area', 'healing_rate', 'highest_freq_absolute']
+    features = feature_list
     st.session_state.selected_cluster = 0
-    st.session_state.df_w_cluster_tags = pd.DataFrame({
-        'wound_area': [10, 20, 30, 40],
-        'healing_rate': [0.1, 0.2, 0.3, 0.4],
-        'highest_freq_absolute': [100, 200, 300, 400],
-        'Cluster': [0, 0, 1, 1]
-    })
-    st.session_state.shap_values = np.array([
-        [0.1, 0.2, 0.3],
-        [0.3, 0.4, 0.5],
-        [0.5, 0.6, 0.7],
-        [0.7, 0.8, 0.9]
-    ])
+    df = clustering_tab.df.copy()
+    df['Cluster'] = [0, 0, 1, 1]
+    st.session_state.df_w_cluster_tags = df
+    st.session_state.shap_values = np.ones((len(df), len(features)))
 
-    # Mock cluster settings
     clustering_tab._cluster_settings = {
         "cluster_features": features
     }
 
-    # Call the method
     clustering_tab._display_shap_analysis()
-
-    # Verify that plotly_chart was called with a figure
     mock_plotly_chart.assert_any_call(mock_plotly_chart.call_args[0][0], use_container_width=True)
-
-    # Verify that appropriate markdown explanations were shown
     assert any(f"SHAP Values for Cluster {st.session_state.selected_cluster}" in str(call)
               for call in mock_markdown.call_args_list)
 
 @patch('streamlit.info')
 def test_display_shap_analysis_no_cluster(mock_info, clustering_tab):
     """Test SHAP analysis display when no cluster is selected"""
-    # Mock session state with no cluster selected
     st.session_state.selected_cluster = None
     clustering_tab._cluster_settings = None
-
-    # Call the method
     clustering_tab._display_shap_analysis()
-
-    # Verify that info message was shown
     mock_info.assert_called_once_with("Please run clustering first to view SHAP analysis")
 
 @patch('streamlit.info')
-def test_display_shap_analysis_no_selection(mock_info, clustering_tab):
+def test_display_shap_analysis_no_selection(mock_info, clustering_tab, feature_list):
     """Test SHAP analysis display when cluster settings exist but no cluster is selected"""
-    # Use real feature names from sample_data fixture
-    features = ['wound_area', 'healing_rate', 'highest_freq_absolute']
+    features = feature_list
     st.session_state.selected_cluster = None
     st.session_state.df_w_cluster_tags = clustering_tab.df.copy()
-    st.session_state.shap_values = np.array([
-        [0.1, 0.2, 0.3],
-        [0.3, 0.4, 0.5],
-        [0.5, 0.6, 0.7],
-        [0.7, 0.8, 0.9]
-    ])
+    st.session_state.shap_values = np.ones((len(clustering_tab.df), len(features)))
     clustering_tab._cluster_settings = {
         "cluster_features": features
     }
-
-    # Call the method
     clustering_tab._display_shap_analysis()
-
-    # Verify that info message was shown
     mock_info.assert_called_once_with("Please select a cluster to view SHAP analysis")
