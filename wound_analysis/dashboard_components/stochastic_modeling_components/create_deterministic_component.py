@@ -58,6 +58,7 @@ class CreateDeterministicComponent:
         self.deterministic_coefs = None
         self.polynomial_type = None  # Variable to track polynomial type
 
+
     def render(self) -> Dict[str, Any]:
         """
         Create and display the deterministic component analysis.
@@ -251,10 +252,22 @@ class CreateDeterministicComponent:
         """
         try:
             with st.spinner("Fitting polynomial models..."):
-                if self.polynomial_type == "Regular Polynomial":
-                    return StatsUtils.fit_polynomial_models(X=X, y=y, max_degree=max_degree)
-                else:
+                # Check for data suitability before fitting
+                if self.polynomial_type == "Hermite Polynomial":
+                    # Check if data might be suitable for Hermite polynomials
+                    # Hermite polynomials work best with data that has Gaussian-like characteristics
+                    shapiro_stat, shapiro_p = stats.shapiro(y) if len(y) <= 5000 else (None, None)
+                    if shapiro_p is not None and shapiro_p < 0.01:
+                        st.info("Note: Your data may not follow a normal distribution. Hermite polynomials work best with data that has Gaussian characteristics.")
+
+                    # Check for extreme values that might cause numerical instability
+                    if np.std(X) > 0 and np.max(np.abs(X - np.mean(X)) / np.std(X)) > 5:
+                        st.info("Your data contains extreme outliers which may affect the stability of Hermite polynomials. Consider removing outliers first.")
+
                     return StatsUtils.fit_hermite_polynomial_models(X=X, y=y, max_degree=max_degree)
+                else:
+                    return StatsUtils.fit_polynomial_models(X=X, y=y, max_degree=max_degree)
+
         except Exception as e:
             st.error(f"Error fitting polynomial models: {str(e)}")
             st.info("Try using a different polynomial type or inspect your data for irregularities.")
@@ -472,8 +485,15 @@ class CreateDeterministicComponent:
         Returns:
             Formatted equation string with HTML
         """
+        # Filter out very small coefficients for cleaner display
+        significant_threshold = 1e-4
+
         equation = f"g({self.independent_var_name}) = {coef[0]:.4f}H₀(x)"
         for i in range(1, len(coef)):
+            # Skip very small coefficients for cleaner display
+            if abs(coef[i]) < significant_threshold:
+                continue
+
             if coef[i] >= 0:
                 equation += f" + {coef[i]:.4f}H₍{i}₎(x)"
             else:
@@ -483,6 +503,9 @@ class CreateDeterministicComponent:
         X_mean = model_info['X_mean']
         X_std = model_info['X_std']
         equation += f"<br>where x = ({self.independent_var_name} - {X_mean:.4f}) / {X_std:.4f}"
+
+        # Add explanation of Hermite polynomials for reference
+        equation += f"<br><small>H₀(x) = 1, H₁(x) = 2x, H₂(x) = 4x² - 2, H₃(x) = 8x³ - 12x, ...</small>"
         return equation
 
     def _format_regular_equation(self, intercept: float, coef: np.ndarray) -> str:
@@ -535,31 +558,68 @@ class CreateDeterministicComponent:
             self.residuals = np.zeros_like(y)  # Default to zeros on error
 
     def _calculate_hermite_residuals(self, X: np.ndarray, y: np.ndarray, model_info: Dict) -> Tuple[np.ndarray, np.ndarray]:
+
+        """This method computes predictions and residuals for a Hermite polynomial model.
+        It standardizes the input data, applies the Hermite polynomial using the stored
+        coefficients, and returns both the predictions and the difference between actual
+        and predicted values.
+
+        The method includes robust error handling and fallback calculations in case
+        the vectorized approach fails. It also includes warnings for potential numerical
+        instability cases.
+
+            X (np.ndarray): Independent variable data (input features)
+            y (np.ndarray): Dependent variable data (target values)
+            model_info (Dict): Dictionary containing model parameters including:
+                - 'X_mean'      : Mean of training X values
+                - 'X_std'       : Standard deviation of training X values
+                - 'coefficients': Hermite polynomial coefficients
+
+            Tuple[np.ndarray, np.ndarray]: A tuple containing:
+                - y_pred   : Predicted values from the Hermite polynomial model
+                - residuals: Difference between actual and predicted values (y - y_pred)
+
+        Raises:
+            Exception: Caught internally with fallback to zeros arrays
+
         """
-        Calculate residuals for Hermite polynomial models.
+        try:
+            # For Hermite polynomials - using numpy's hermval for better stability
+            X_mean = model_info['X_mean']
+            X_std  = model_info['X_std']
 
-        Args:
-            X: Independent variable data
-            y: Dependent variable data
-            model_info: Model information dictionary
+            # Check for division by zero
+            if np.isclose(X_std, 0):
+                st.warning("Standard deviation of X is near zero. Using a small value to avoid division by zero.")
+                X_std = 1e-8
 
-        Returns:
-            Tuple of (predictions, residuals)
-        """
-        # For Hermite polynomials - using numpy's hermval for better stability
-        X_mean         = model_info['X_mean']
-        X_std          = model_info['X_std']
-        X_standardized = (X - X_mean) / X_std
-        coef           = model_info['coefficients']
+            X_standardized = (X - X_mean) / X_std
+            coef           = model_info['coefficients']
 
-        # More stable approach using numpy's hermval
-        y_pred = np.zeros(X_standardized.shape[0])
-        for i in range(self.polynomial_degree + 1):
-            coef_array = np.zeros(i + 1)
-            coef_array[i] = 1.0
-            y_pred += coef[i] * hermval(X_standardized.flatten(), coef_array)
+            # More stable approach using numpy's hermval directly with all coefficients at once
+            # This is more efficient and numerically stable than calculating each term separately
+            try:
+                # First try the direct vectorized approach
+                y_pred = hermval(X_standardized.flatten(), coef)
 
-        return y_pred, y - y_pred
+            except Exception:
+                # Fall back to term-by-term calculation if the vectorized approach fails
+                y_pred = np.zeros(X_standardized.shape[0])
+
+                # Check for numerical stability
+                if np.any(np.abs(X_standardized) > 10):
+                    st.warning("Some standardized values are very large. This may cause numerical instability in Hermite polynomials.")
+
+                for i in range(self.polynomial_degree + 1):
+                    coef_array = np.zeros(i + 1)
+                    coef_array[i] = 1.0
+                    y_pred += coef[i] * hermval(X_standardized.flatten(), coef_array)
+
+            return y_pred, y - y_pred
+
+        except Exception as e:
+            st.error(f"Error calculating Hermite residuals: {str(e)}")
+            return np.zeros_like(y), np.zeros_like(y)
 
     def _calculate_regular_residuals(self, X: np.ndarray, y: np.ndarray, model_info: Dict) -> Tuple[np.ndarray, np.ndarray]:
         """

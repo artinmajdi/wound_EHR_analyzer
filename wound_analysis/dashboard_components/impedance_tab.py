@@ -81,7 +81,6 @@ class PopulationImpedanceRenderer:
 		self.CN = DColumns(df=self.analysis_df)
 		self.wound_data_processor = wound_data_processor
 
-
 		# Get the selected features for analysis
 		features_to_analyze_all = [
 			self.CN.HIGHEST_FREQ_ABSOLUTE,

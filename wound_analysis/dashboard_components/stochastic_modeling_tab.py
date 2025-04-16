@@ -51,7 +51,7 @@ class StochasticModelingTab:
 		# Available probability distributions for fitting
 		self.available_distributions = {
 			'Normal'     : stats.norm,
-			'Log-Normal' : stats.lognorm,
+			# 'Log-Normal' : stats.lognorm,
 			'Gamma'      : stats.gamma,
 			'Weibull'    : stats.weibull_min,
 			'Exponential': stats.expon
@@ -313,7 +313,7 @@ class StochasticModelingTab:
 
 		with cols[0]:
 			outlier_threshold = st.number_input(
-				"Stochastic Outlier Threshold (Quantile)",
+				"Outlier Threshold (Quantile)",
 				min_value = 0.0,
 				max_value = 0.9,
 				value     = 0.0,
@@ -337,6 +337,50 @@ class StochasticModelingTab:
 
 		# Return the original dataframe but keep only the rows that survived the outlier filtering
 		return df.loc[analysis_df.index]
+
+
+	def normalize_data(self, df:pd.DataFrame) -> pd.DataFrame:
+		"""
+		Normalize the specified columns in the dataframe.
+
+		Parameters:
+		-----------
+		df : pd.DataFrame
+			The dataframe to normalize
+		cols : List[str]
+			List of column names to normalize
+		method : str
+			Normalization method to use ("zscore", "minmax", "robust")
+
+		Returns:
+		--------
+		pd.DataFrame
+			The normalized dataframe
+		"""
+		# Normalization technique selection
+		norm_method = st.selectbox(
+			"Normalization technique",
+			options = ["None", "Z-score", "Min-Max", "Robust (Median/IQR)"],
+			index   = 0,
+			help    = "Choose how to normalize your data for analysis."
+		)
+
+		cols_to_normalize = [self.dependent_var, self.independent_var]  # adjust as needed
+
+		if norm_method == "Z-score":
+			df[cols_to_normalize] = df[cols_to_normalize].apply(
+				lambda x: (x - x.mean()) / x.std() if x.std() > 0 else x )
+
+		elif norm_method == "Min-Max":
+			df[cols_to_normalize] = df[cols_to_normalize].apply(
+				lambda x: (x - x.min()) / (x.max() - x.min()) if x.max() > x.min() else x )
+
+		elif norm_method == "Robust (Median/IQR)":
+			df[cols_to_normalize] = df[cols_to_normalize].apply(
+				lambda x: (x - x.median()) / (x.quantile(0.75) - x.quantile(0.25)) if x.quantile(0.75) > x.quantile(0.25) else x )
+
+		return df
+
 
 	def render(self) -> None:
 		"""
@@ -382,8 +426,11 @@ class StochasticModelingTab:
 		self.independent_var_name = next((name for name, col in self.independent_variables.items() if col == self.independent_var), self.independent_var)
 
 		# Apply outlier threshold
-		# TODO: need to apply outlier threshold to actual variables: self.dependent_var, self.independent_var, *self.additional_params
-		self.df = self.apply_outlier_threshold(df=self.df, features_to_analyze=[self.CN.WOUND_AREA, self.CN.HIGHEST_FREQ_ABSOLUTE])
+		cols = st.columns([1,1])
+		with cols[0]:
+			self.df = self.apply_outlier_threshold(df=self.df, features_to_analyze=[self.dependent_var, self.independent_var])
+		with cols[1]:
+			self.df = self.normalize_data(df=self.df)
 
 		# Analysis results when the Run Analysis button is clicked
 		if run_analysis or any([self.deterministic_model, self.residuals, self.fitted_distribution]):

@@ -42,30 +42,28 @@ class CreateRandomComponent:
         independent_var_name : str
             Display name of independent variable
         """
-        st.subheader("Random Component Analysis")
+        st.subheader("Random Component  (η) Analysis")
 
         if self.residuals is None or self.deterministic_model is None:
             st.error("Please complete the Deterministic Component analysis first.")
             return
 
         with st.container():
-            st.markdown("""
-            <style>
-            .analysis-section {
-                border: 1px solid #e0e0e0;
-                border-radius: 5px;
-                padding: 15px;
-                background-color: #f8f9fa;
-                margin-bottom: 20px;
-            }
-            </style>
-            """, unsafe_allow_html=True)
+            # st.markdown("""
+            # <style>
+            # .analysis-section {
+            #     border: 1px solid #e0e0e0;
+            #     border-radius: 5px;
+            #     padding: 15px;
+            #     background-color: #f8f9fa;
+            #     margin-bottom: 20px;
+            # }
+            # </style>
+            # """, unsafe_allow_html=True)
 
             st.markdown('<div class="analysis-section">', unsafe_allow_html=True)
 
             st.markdown("""
-            ### Random Component (η)
-
             After fitting the deterministic component g(X), the residuals represent the random component η:
 
             Y = g(X) + η

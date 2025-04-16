@@ -10,7 +10,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import PolynomialFeatures
-
+import pandas as pd
 
 class StatsUtils:
 
@@ -103,6 +103,7 @@ class StatsUtils:
             Dictionary with distribution objects and their parameters
         """
         # Remove NaN values
+        # data = pd.to_numeric(np.array(data), errors='coerce')
         data = data[~np.isnan(data)]
 
         if len(data) == 0:
@@ -126,10 +127,10 @@ class StatsUtils:
                 # Store results
                 results[dist_name] = {
                     'distribution': distribution,
-                    'params': params,
-                    'ks_stat': ks_stat,
-                    'p_value': p_value,
-                    'aic': StatsUtils.calculate_aic(distribution, params, data)
+                    'params'      : params,
+                    'ks_stat'     : ks_stat,
+                    'p_value'     : p_value,
+                    'aic'         : StatsUtils.calculate_aic(distribution, params, data)
                 }
             except Exception as e:
                 st.warning(f"Could not fit {dist_name} distribution: {str(e)}")
@@ -244,8 +245,8 @@ class StatsUtils:
             X = X.reshape(-1, 1)
 
         # Standardize X to improve numerical stability (Hermite polynomials are defined on (-∞, ∞))
-        X_mean = np.mean(X)
-        X_std = np.std(X)
+        X_mean         = np.mean(X)
+        X_std          = np.std(X)
         X_standardized = (X - X_mean) / X_std
 
         # Split the data into training and test sets
@@ -257,12 +258,12 @@ class StatsUtils:
         for degree in range(1, max_degree + 1):
             # Create Hermite polynomial features
             X_hermite_train = np.zeros((X_train.shape[0], degree + 1))
-            X_hermite_test = np.zeros((X_test.shape[0], degree + 1))
+            X_hermite_test  = np.zeros((X_test.shape[0], degree + 1))
 
             # Compute Hermite polynomials for each degree
             for d in range(degree + 1):
                 X_hermite_train[:, d] = np.array([eval_hermite(d, x[0]) for x in X_train])
-                X_hermite_test[:, d] = np.array([eval_hermite(d, x[0]) for x in X_test])
+                X_hermite_test[:, d]  = np.array([eval_hermite(d, x[0]) for x in X_test])
 
             # Fit the model
             model = LinearRegression(fit_intercept=False)  # Hermite polynomials include a constant term
@@ -270,34 +271,34 @@ class StatsUtils:
 
             # Make predictions
             y_pred_train = model.predict(X_hermite_train)
-            y_pred_test = model.predict(X_hermite_test)
+            y_pred_test  = model.predict(X_hermite_test)
 
             # Calculate metrics
-            r2_train = r2_score(y_train, y_pred_train)
-            r2_test = r2_score(y_test, y_pred_test)
+            r2_train  = r2_score(y_train, y_pred_train)
+            r2_test   = r2_score(y_test, y_pred_test)
             mse_train = mean_squared_error(y_train, y_pred_train)
-            mse_test = mean_squared_error(y_test, y_pred_test)
+            mse_test  = mean_squared_error(y_test, y_pred_test)
 
             # Calculate AIC and BIC
             n_train = len(y_train)
-            k = degree + 1  # number of parameters
-            aic = n_train * np.log(mse_train) + 2 * k
-            bic = n_train * np.log(mse_train) + k * np.log(n_train)
+            k       = degree + 1  # number of parameters
+            aic     = n_train * np.log(mse_train) + 2 * k
+            bic     = n_train * np.log(mse_train) + k * np.log(n_train)
 
             # Store results
             results[degree] = {
-                'model': model,
-                'r2_train': r2_train,
-                'r2_test': r2_test,
-                'mse_train': mse_train,
-                'mse_test': mse_test,
-                'aic': aic,
-                'bic': bic,
+                'model'       : model,
+                'r2_train'    : r2_train,
+                'r2_test'     : r2_test,
+                'mse_train'   : mse_train,
+                'mse_test'    : mse_test,
+                'aic'         : aic,
+                'bic'         : bic,
                 'coefficients': model.coef_,
-                'intercept': 0.0,  # Since we're using fit_intercept=False
-                'X_mean': X_mean,
-                'X_std': X_std,
-                'is_hermite': True
+                'intercept'   : 0.0,         # Since we're using fit_intercept=False
+                'X_mean'      : X_mean,
+                'X_std'       : X_std,
+                'is_hermite'  : True
             }
 
         return results

@@ -10,6 +10,9 @@ maxUploadSize = 100
 # Maximum message size for WebSocket communication
 maxMessageSize = 200
 
+fileWatcherType = "watchdog"
+runOnSave = true
+
 [browser]
 gatherUsageStats = false
 serverAddress = "localhost"
@@ -30,8 +33,10 @@ postScriptGC = true
 # Python path is now configured differently in Streamlit
 
 [server.headless]
-# Headless mode for deployment
-headless = true
+# Headless mode disables browser opening when streamlit runs
+# Set to true for server deployments, false for local development
+headless = false
+
 
 # Caching options have been removed as they are no longer valid config options
 
