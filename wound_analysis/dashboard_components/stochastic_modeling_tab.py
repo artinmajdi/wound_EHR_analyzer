@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
+from datetime import datetime
 from scipy import stats
 
 from wound_analysis.dashboard_components.stochastic_modeling_components import (
@@ -8,16 +9,12 @@ from wound_analysis.dashboard_components.stochastic_modeling_components import (
     CreateCompleteModel,
     CreateDeterministicComponent,
     CreateDistributionAnalysis,
-    CreateRandomComponent
+    CreateRandomComponent,
+    CreateUncertaintyQuantificationTools
 )
-from wound_analysis.dashboard_components.stochastic_modeling_components.create_uncertainty_quantification_tools import CreateUncertaintyQuantificationTools
 from wound_analysis.utils.column_schema import DColumns
 from wound_analysis.utils.data_processor import WoundDataProcessor
 
-
-# TODO: refactor this into smaller components (1st step: make the functions staticmethods. 2nd step: refactor into smaller components)
-# TODO: Check if I have already done the hermit polynomial modeling.
-# TODO: Ask the AI to review this and tell me in text all the things that is happening here (with mathematical equations).
 
 class StochasticModelingTab:
     """
@@ -183,16 +180,13 @@ class StochasticModelingTab:
         self.polynomial_degrees = list(range(1, 6))  # Linear to 5th degree
 
 
-    def _parameter_selection_ui(self) -> Tuple[str, str, List[str], Dict, bool]:
+    def _parameter_selection_ui(self) -> Tuple[Dict[str, Union[Tuple[datetime, datetime], List[int]]], str]:
         """
         Create a visually appealing parameter selection UI.
 
         Returns:
         -------
-        Tuple[str, str, List[str], Dict, bool]:
-            - Selected dependent variable column name
-            - Selected independent variable column name
-            - List of selected additional parameter column names
+        Tuple[Dict[str, Union[str, Tuple[datetime, datetime], List[int]]], str]:
             - Dictionary of filter parameters
             - Boolean indicating if the analysis should be run
         """
@@ -234,7 +228,7 @@ class StochasticModelingTab:
 
             with col4:
                 # Filter options section
-                filters = {}
+                filters: Dict[str, Union[Tuple[datetime, datetime], List[int]]] = {}
 
                 # Patient filter
                 if self.patient_id == "All Patients":
@@ -273,14 +267,14 @@ class StochasticModelingTab:
                     filters['date_range'] = (start_date, end_date)
 
             # Run analysis button
-            run_analysis = st.button("🚀 Run Analysis", type="primary", use_container_width=True)
+            run_analysis: str = st.button("🚀 Run Analysis", type="primary", use_container_width=True)
 
             st.markdown('</div>', unsafe_allow_html=True)
 
         return filters, run_analysis
 
 
-    def _filter_data(self, df: pd.DataFrame, filters: Dict) -> pd.DataFrame:
+    def _filter_data(self, df: pd.DataFrame, filters: Dict[str, Union[str, Tuple[datetime, datetime], List[int]]]) -> pd.DataFrame:
         """
         Filter the dataframe based on user-selected filters.
 

@@ -20,6 +20,7 @@ from wound_analysis.utils.data_processor import WoundDataProcessor
 from wound_analysis.utils.statistical_analysis import ClusteringAnalysis
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("shap").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 

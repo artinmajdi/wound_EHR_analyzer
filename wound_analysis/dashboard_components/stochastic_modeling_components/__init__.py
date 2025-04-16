@@ -12,6 +12,7 @@ from .create_distribution_analysis import CreateDistributionAnalysis
 from .create_random_component import CreateRandomComponent
 from .create_deterministic_component import CreateDeterministicComponent
 from .create_complete_model import CreateCompleteModel
+from .create_uncertainty_quantification_tools import CreateUncertaintyQuantificationTools
 from .stats_utils import StatsUtils
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     'CreateRandomComponent',
     'CreateDeterministicComponent',
     'CreateCompleteModel',
+    'CreateUncertaintyQuantificationTools',
     'StatsUtils'
 ]
