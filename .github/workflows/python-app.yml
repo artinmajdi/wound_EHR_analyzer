@@ -61,7 +61,14 @@ jobs:
     - name: Test with pytest
       if: steps.check-tests.outputs.tests_exist == 'true'
       run: |
-        pytest --cov=wound_analysis
+        # First try running from the tests directory, which works locally
+        cd tests
+        PYTHONPATH=.. pytest -v --cov=wound_analysis
+        
+        # If the above fails, we'll see the error in the logs
+        # Alternatively, we could try running from the root with:
+        # cd ..
+        # PYTHONPATH=. pytest -v --cov=wound_analysis tests/
 
     - name: Validate Streamlit app
       run: |
