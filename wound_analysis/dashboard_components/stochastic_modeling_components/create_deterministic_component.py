@@ -153,7 +153,7 @@ class CreateDeterministicComponent:
             - Simple to interpret
 
             **Hermite Polynomials**:
-            - Orthogonal polynomials defined by: $H_n(x) = (-1)^n e^{x^2} \frac{d^n}{dx^n}(e^{-x^2})$
+            - Orthogonal polynomials defined by: $H_n(x) = (-1)^n e^{x^2} (d^n / dx^n)(e^{-x^2})$
             - More suitable for modeling data with Gaussian characteristics
             - Better for capturing oscillatory behavior in the data
             - Particularly useful in stochastic modeling as they relate to derivatives of the normal probability density function
@@ -174,37 +174,42 @@ class CreateDeterministicComponent:
 
         # Display the appropriate polynomial description
         if self.polynomial_type == "Regular Polynomial":
-            st.markdown("""
-            ### Deterministic Component
+            st.markdown("### Deterministic Component")
+            with st.expander("About Regular Polynomials", expanded=True):
+                st.markdown("""
+                The deterministic component represents the expected trend in the data without considering
+                the random variability. It is modeled as a polynomial function:
 
-            The deterministic component represents the expected trend in the data without considering
-            the random variability. It is modeled as a polynomial function:
+                $g(X) = β₀ + β₁X + β₂X² + ... + βₙXⁿ$
 
-            $g(X) = β₀ + β₁X + β₂X² + ... + βₙXⁿ$
-
-            where:
-            - $g(X)$ is the predicted value of the dependent variable
-            - $X$ is the independent variable
-            - $β₀, β₁, ..., βₙ$ are the polynomial coefficients
-            - $n$ is the degree of the polynomial
-            """)
+                where:
+                - $g(X)$ is the predicted value of the dependent variable
+                - $X$ is the independent variable
+                - $β₀, β₁, ..., βₙ$ are the polynomial coefficients
+                - $n$ is the degree of the polynomial
+                """)
         else:
-            st.markdown("""
-            ### Deterministic Component with Hermite Polynomials
+            st.markdown("### Deterministic Component with Hermite Polynomials")
+            with st.expander("About Hermite Polynomials", expanded=True):
+                st.markdown("""
+                The deterministic component is modeled using Hermite polynomials:
 
-            The deterministic component is modeled using Hermite polynomials:
+                $g(X) = c₀H₀(x) + c₁H₁(x) + c₂H₂(x) + ... + cₙHₙ(x)$
 
-            $g(X) = c₀H₀(x) + c₁H₁(x) + c₂H₂(x) + ... + cₙHₙ(x)$
+                where:
+                - $g(X)$ is the predicted value of the dependent variable
+                - $x$ is the standardized independent variable: $x = (X - μ_X) / σ_X$
+                - $H_n(x)$ is the $n$th Hermite polynomial
+                - $c₀, c₁, ..., cₙ$ are the coefficients
+                - $n$ is the degree of the polynomial
 
-            where:
-            - $g(X)$ is the predicted value of the dependent variable
-            - $x$ is the standardized independent variable: $x = (X - μ_X) / σ_X$
-            - $H_n(x)$ is the nth Hermite polynomial
-            - $c₀, c₁, ..., cₙ$ are the coefficients
-            - $n$ is the degree of the polynomial
+                The Hermite polynomials are defined recursively as:
+                - $H_0(x) = 1$
+                - $H_1(x) = 2x$
+                - $H_{n+1}(x) = 2xH_n(x) - 2nH_{n-1}(x)$
 
-            Hermite polynomials are particularly useful for modeling stochastic processes with Gaussian characteristics.
-            """)
+                Hermite polynomials are particularly useful for modeling stochastic processes with Gaussian characteristics.
+                """)
 
     def _prepare_data(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """

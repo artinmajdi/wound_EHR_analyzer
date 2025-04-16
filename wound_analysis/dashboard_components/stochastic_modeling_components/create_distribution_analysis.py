@@ -21,6 +21,7 @@ class CreateDistributionAnalysis:
         # User defined variables
         self.independent_var         = parent.independent_var
         self.dependent_var           = parent.dependent_var
+        self.independent_var_name    = parent.independent_var_name
         self.dependent_var_name      = parent.dependent_var_name
         self.available_distributions = parent.available_distributions
 
@@ -256,6 +257,16 @@ class CreateDistributionAnalysis:
                     - Rate controls the spread (higher β = more concentrated)
                 - **Applications:** Waiting times, insurance claims, rainfall modeling
                 """)
+
+            # Allow user to select which variable to analyze
+            # var_name = st.selectbox(
+            #     "Select Variable to Analyze",
+            #     options=[self.dependent_var_name, self.independent_var_name],
+            #     # default=self.dependent_var_name,
+            #     key="var_name",
+            #     help="Choose which variable's distribution to examine"
+            # )
+
             buf = StatsUtils.plot_distribution_fit(data=valid_data, results=dist_results, var_name=self.dependent_var_name)
 
             if buf is not None:

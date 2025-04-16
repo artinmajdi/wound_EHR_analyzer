@@ -108,6 +108,12 @@ class StochasticModelingTab:
 			'Low Freq Impedance Real'        : self.CN.LOWEST_FREQ_REAL,
 			'Low Freq Impedance Imaginary'   : self.CN.LOWEST_FREQ_IMAGINARY,
 
+			# (this is actually an independent variable) Wound characteristics
+			'Wound Area'  : self.CN.WOUND_AREA,
+			'Wound Length': self.CN.LENGTH,
+			'Wound Width' : self.CN.WIDTH,
+			'Wound Depth' : self.CN.DEPTH,
+
 			# Temperature measurements
 			'Temperature Center'  : self.CN.CENTER_TEMP,
 			'Temperature Edge'    : self.CN.EDGE_TEMP,
@@ -138,6 +144,11 @@ class StochasticModelingTab:
 
 			# Healing metrics
 			'Healing Rate': self.CN.HEALING_RATE,
+
+			# (this is actually an dependent variable) Impedance measurements at different frequencies
+			'High Freq Impedance Absolute'   : self.CN.HIGHEST_FREQ_ABSOLUTE,
+			'High Freq Impedance Real'       : self.CN.HIGHEST_FREQ_REAL,
+			'High Freq Impedance Imaginary'  : self.CN.HIGHEST_FREQ_IMAGINARY,
 		}
 
 		# Define additional parameters (control variables)
