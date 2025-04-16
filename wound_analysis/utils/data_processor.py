@@ -441,9 +441,13 @@ class WoundDataProcessor:
 		# Create derived features
 		# Temperature gradients
 		if all(col in df.columns for col in [self.CN.CENTER_TEMP, self.CN.EDGE_TEMP, self.CN.PERI_TEMP]):
-			df[self.CN.CENTER_EDGE_GRADIENT] = df[self.CN.CENTER_TEMP] - df[self.CN.EDGE_TEMP]
-			df[self.CN.EDGE_PERI_GRADIENT]   = df[self.CN.EDGE_TEMP]   - df[self.CN.PERI_TEMP]
-			df[self.CN.TOTAL_GRADIENT]       = df[self.CN.CENTER_TEMP] - df[self.CN.PERI_TEMP]
+			try:
+				df[self.CN.CENTER_EDGE_GRADIENT] = df[self.CN.CENTER_TEMP] - df[self.CN.EDGE_TEMP]
+				df[self.CN.EDGE_PERI_GRADIENT]   = df[self.CN.EDGE_TEMP]   - df[self.CN.PERI_TEMP]
+				df[self.CN.TOTAL_GRADIENT]       = df[self.CN.CENTER_TEMP] - df[self.CN.PERI_TEMP]
+			except Exception as e:
+				print(f"Error calculating temperature gradients: {e}")
+				print(f"Available columns: {df.columns.tolist()}")
 
 		# BMI categories
 		if self.CN.BMI in df.columns:
@@ -499,7 +503,7 @@ class WoundDataProcessor:
 					healing_rates.append(0)
 				else:
 					prev_visits = patient_data[patient_data[self.CN.VISIT_NUMBER] < row[self.CN.VISIT_NUMBER]]
-					prev_visit = prev_visits[prev_visits[self.CN.VISIT_NUMBER] == prev_visits[self.CN.VISIT_NUMBER].max()]
+					prev_visit  = prev_visits[prev_visits[self.CN.VISIT_NUMBER] == prev_visits[self.CN.VISIT_NUMBER].max()]
 
 					if len(prev_visit) > 0 and self.CN.WOUND_AREA in patient_data.columns:
 						prev_area = prev_visit[self.CN.WOUND_AREA].values[0]
@@ -513,9 +517,9 @@ class WoundDataProcessor:
 					else:
 						healing_rates.append(0)
 
-			valid_rates = [rate for rate in healing_rates if rate > 0]
+			valid_rates      = [rate for rate in healing_rates if rate > 0]
 			avg_healing_rate = np.mean(valid_rates) if valid_rates else 0
-			is_improving = avg_healing_rate > 0
+			is_improving     = avg_healing_rate > 0
 
 			estimated_days = np.nan
 			if is_improving and len(patient_data) > 0:
@@ -1000,9 +1004,13 @@ class DataManager:
 
 		# Temperature gradients
 		if all(col in df.columns for col in [CN.CENTER_TEMP, CN.EDGE_TEMP, CN.PERI_TEMP]):
-			df[CN.CENTER_EDGE_GRADIENT] = df[CN.CENTER_TEMP] - df[CN.EDGE_TEMP]
-			df[CN.EDGE_PERI_GRADIENT]   = df[CN.EDGE_TEMP]   - df[CN.PERI_TEMP]
-			df[CN.TOTAL_GRADIENT]       = df[CN.CENTER_TEMP] - df[CN.PERI_TEMP]
+			try:
+				df[CN.CENTER_EDGE_GRADIENT] = df[CN.CENTER_TEMP] - df[CN.EDGE_TEMP]
+				df[CN.EDGE_PERI_GRADIENT]   = df[CN.EDGE_TEMP]   - df[CN.PERI_TEMP]
+				df[CN.TOTAL_GRADIENT]       = df[CN.CENTER_TEMP] - df[CN.PERI_TEMP]
+			except Exception as e:
+				print(f"Error calculating temperature gradients: {e}")
+				print(f"Available columns: {df.columns.tolist()}")
 
 		# BMI categories
 		if CN.BMI in df.columns:
@@ -1715,8 +1723,8 @@ class ImpedanceAnalyzer:
 		low_freq  = impedance_data.get('lowest_freq', {})
 		high_freq = impedance_data.get('highest_freq', {})
 
-		low_z  = low_freq.get('Z', 0)
-		high_z = high_freq.get('Z', 0)
+		low_z  = low_freq.get('Z')
+		high_z = high_freq.get('Z')
 
 		if low_z is None or high_z is None:
 			return None, "Insufficient data for tissue health calculation"
