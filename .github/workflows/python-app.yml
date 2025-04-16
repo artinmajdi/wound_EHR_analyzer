@@ -40,6 +40,8 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         # Install the package in development mode
         pip install -e .
+        # List installed packages for debugging
+        pip list
 
     - name: Lint with flake8
       run: |
@@ -60,15 +62,20 @@ jobs:
 
     - name: Test with pytest
       if: steps.check-tests.outputs.tests_exist == 'true'
+      env:
+        PYTHONPATH: "."
+        MPLBACKEND: "Agg"
+        STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+        STREAMLIT_SERVER_HEADLESS: "true"
       run: |
-        # First try running from the tests directory, which works locally
-        cd tests
-        PYTHONPATH=.. pytest -v --cov=wound_analysis
-        
-        # If the above fails, we'll see the error in the logs
-        # Alternatively, we could try running from the root with:
-        # cd ..
-        # PYTHONPATH=. pytest -v --cov=wound_analysis tests/
+        # Print directory structure for debugging
+        find . -type d -name "wound_analysis" | sort
+        find . -type f -name "__init__.py" | sort
+
+        # Run pytest using the configuration in pytest.ini
+        # The pythonpath setting in pytest.ini and the conftest.py file will ensure
+        # imports work correctly regardless of the directory structure
+        pytest -v
 
     - name: Validate Streamlit app
       run: |
