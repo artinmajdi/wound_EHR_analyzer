@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from wound_analysis.dashboard_components.clustering_tab import ClusteringTab
 from wound_analysis.utils.data_processor import WoundDataProcessor
 from wound_analysis.utils.column_schema import DColumns
+from wound_analysis.dashboard_components.clustering_tab import SHAPAnalyzer
 
 @pytest.fixture
 def sample_data():
@@ -152,7 +153,7 @@ def test_calculate_shap_values(clustering_tab, feature_list):
         mock_explainer.return_value.shap_values.return_value = np.array([[0.1]*len(features), [0.2]*len(features), [0.3]*len(features)])
         mock_explainer.return_value.expected_value = np.array([0.5]*len(features))
 
-        shap_values, expected_values = clustering_tab._calculate_shap_values(df, features)
+        shap_values, expected_values = SHAPAnalyzer._calculate_shap_values(features, df)
 
         assert isinstance(shap_values, np.ndarray)
         assert isinstance(expected_values, np.ndarray)
@@ -164,14 +165,14 @@ def test_ensure_2d_shap(clustering_tab, feature_list):
     n_features = len(feature_list)
     # 2D array
     arr_2d = np.ones((n_samples, n_features))
-    assert clustering_tab._ensure_2d_shap(arr_2d).shape == (n_samples, n_features)
+    assert SHAPAnalyzer._ensure_2d_shap(arr_2d).shape == (n_samples, n_features)
     # 3D array
     arr_3d = np.ones((n_samples, n_features, 2))
-    arr_2d_from_3d = clustering_tab._ensure_2d_shap(arr_3d)
+    arr_2d_from_3d = SHAPAnalyzer._ensure_2d_shap(arr_3d)
     assert arr_2d_from_3d.shape == (n_samples, n_features)
     # List of arrays
     arr_list = [np.ones((n_samples, n_features)), np.ones((n_samples, n_features)) * 2]
-    arr_2d_from_list = clustering_tab._ensure_2d_shap(arr_list)
+    arr_2d_from_list = SHAPAnalyzer._ensure_2d_shap(arr_list)
     assert arr_2d_from_list.shape == (n_samples, n_features)
 
 @patch('streamlit.plotly_chart')
@@ -187,7 +188,12 @@ def test_display_shap_analysis_all_data(mock_markdown, mock_plotly_chart, cluste
         "cluster_features": features
     }
 
-    clustering_tab._display_shap_analysis()
+    SHAPAnalyzer._display_shap_analysis(
+        features=features,
+        df=st.session_state.df_w_cluster_tags[features + ["Cluster"]] if "Cluster" in st.session_state.df_w_cluster_tags.columns else st.session_state.df_w_cluster_tags,
+        shap_values=st.session_state.shap_values,
+        selected_cluster=st.session_state.selected_cluster
+    )
     mock_plotly_chart.assert_any_call(mock_plotly_chart.call_args[0][0], use_container_width=True)
     assert any("Overall SHAP Value Distribution" in str(call)
               for call in mock_markdown.call_args_list)
@@ -207,7 +213,12 @@ def test_display_shap_analysis_specific_cluster(mock_markdown, mock_plotly_chart
         "cluster_features": features
     }
 
-    clustering_tab._display_shap_analysis()
+    SHAPAnalyzer._display_shap_analysis(
+        features=features,
+        df=st.session_state.df_w_cluster_tags[features + ["Cluster"]] if "Cluster" in st.session_state.df_w_cluster_tags.columns else st.session_state.df_w_cluster_tags,
+        shap_values=st.session_state.shap_values,
+        selected_cluster=st.session_state.selected_cluster
+    )
     mock_plotly_chart.assert_any_call(mock_plotly_chart.call_args[0][0], use_container_width=True)
     assert any(f"SHAP Values for Cluster {st.session_state.selected_cluster}" in str(call)
               for call in mock_markdown.call_args_list)
@@ -217,7 +228,12 @@ def test_display_shap_analysis_no_cluster(mock_info, clustering_tab):
     """Test SHAP analysis display when no cluster is selected"""
     st.session_state.selected_cluster = None
     clustering_tab._cluster_settings = None
-    clustering_tab._display_shap_analysis()
+    SHAPAnalyzer._display_shap_analysis(
+        features=[],
+        df=pd.DataFrame(),
+        shap_values=np.array([]),
+        selected_cluster=st.session_state.selected_cluster
+    )
     mock_info.assert_called_once_with("Please run clustering first to view SHAP analysis")
 
 @patch('streamlit.info')
@@ -230,5 +246,10 @@ def test_display_shap_analysis_no_selection(mock_info, clustering_tab, feature_l
     clustering_tab._cluster_settings = {
         "cluster_features": features
     }
-    clustering_tab._display_shap_analysis()
-    mock_info.assert_called_once_with("Please select a cluster to view SHAP analysis")
+    SHAPAnalyzer._display_shap_analysis(
+        features=features,
+        df=st.session_state.df_w_cluster_tags[features + ["Cluster"]] if "Cluster" in st.session_state.df_w_cluster_tags.columns else st.session_state.df_w_cluster_tags,
+        shap_values=st.session_state.shap_values,
+        selected_cluster=st.session_state.selected_cluster
+    )
+    mock_info.assert_called_once_with("Please run clustering first to view SHAP analysis")

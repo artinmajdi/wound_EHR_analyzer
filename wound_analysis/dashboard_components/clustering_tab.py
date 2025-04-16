@@ -50,18 +50,18 @@ class ClusteringTab:
 		self.selected_patient = selected_patient
 
 		# Calculated Variables
-		self.df_w_cluster_tags: Optional[pd.DataFrame] = None
-		self.selected_cluster: Optional[int] = None
+		self.df_w_cluster_tags: Optional[pd.DataFrame]   = None
+		self.selected_cluster : Optional[int]            = None
 		self._cluster_settings: Optional[Dict[str, Any]] = None
-		self.use_cluster_data: bool = False
+		self.use_cluster_data : bool                     = False
 
 		# Initialize session state for clusters if not already present
 		if 'cluster_tags' not in st.session_state:
-			st.session_state.cluster_tags       = None
-			st.session_state.df_w_cluster_tags  = None
-			st.session_state.feature_importance = None
-			st.session_state.selected_cluster   = None
-			st.session_state.shap_values        = None
+			st.session_state.cluster_tags         = None
+			st.session_state.df_w_cluster_tags    = None
+			st.session_state.feature_importance   = None
+			st.session_state.selected_cluster     = None
+			st.session_state.shap_values          = None
 			st.session_state.shap_expected_values = None
 
 
@@ -84,9 +84,14 @@ class ClusteringTab:
 			if st.session_state.feature_importance:
 				ClusteringTab._display_feature_importance(feature_importance=st.session_state.feature_importance)
 
+
 		with tabs[2]:
 			if st.session_state.shap_values is not None:
-				self._display_shap_analysis()
+				features = self._cluster_settings["cluster_features"]
+				SHAPAnalyzer._display_shap_analysis(features         = features,
+													df               = st.session_state.df_w_cluster_tags[features + ["Cluster"]],
+													shap_values      = st.session_state.shap_values,
+													selected_cluster = st.session_state.selected_cluster)
 
 		with tabs[3]:
 			# Display cluster characteristics
@@ -129,7 +134,9 @@ class ClusteringTab:
 				ca = ClusteringAnalysis(df=self.df.copy(), cluster_settings=self._cluster_settings).render()
 
 				# Calculate SHAP values for the clustering results
-				shap_values, expected_values = self._calculate_shap_values( df=ca.df_w_cluster_tags, features=self._cluster_settings["cluster_features"] )
+				shap_values, expected_values = SHAPAnalyzer._calculate_shap_values(features=self._cluster_settings["cluster_features"], df=ca.df_w_cluster_tags)
+				st.session_state.shap_values          = shap_values
+				st.session_state.shap_expected_values = expected_values
 
 				st.success(f"Successfully clustered data into {self._cluster_settings['n_clusters']} clusters!")
 
@@ -137,14 +144,12 @@ class ClusteringTab:
 				st.session_state.cluster_tags         = ca.cluster_tags
 				st.session_state.df_w_cluster_tags    = ca.df_w_cluster_tags
 				st.session_state.feature_importance   = ca.feature_importance
-				st.session_state.shap_values          = shap_values
-				st.session_state.shap_expected_values = expected_values
+
 				st.session_state.selected_cluster     = None # Reset selected cluster
 
 			if st.session_state.df_w_cluster_tags is not None:
 				self._display_cluster_analysis()
 				_use_cluster_data()
-
 
 		except Exception as e:
 			st.error(f"Error during clustering: {str(e)}")
@@ -384,11 +389,28 @@ class ClusteringTab:
 			st.info("Highlighted rows indicate features where this cluster differs from the overall population by >15%")
 
 
-	def _calculate_shap_values(
-		self,
-		df: pd.DataFrame,
-		features: List[str]
-	) -> Tuple[np.ndarray, np.ndarray]:
+
+class SHAPAnalyzer:
+	"""
+	Handles SHAP value calculation and all SHAP-related visualizations.
+	"""
+
+	@staticmethod
+	def _ensure_2d_shap(shap_values):
+		"""
+		Handles SHAP value calculation and all SHAP-related visualizations.
+    	"""
+		# If it's a list of arrays (e.g., multiclass), take the first
+		if isinstance(shap_values, list):
+			shap_values = shap_values[0]
+		# If it's 3D, reduce to 2D (e.g., take the first output)
+		if isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
+			shap_values = shap_values[:, :, 0]
+		return shap_values
+
+
+	@staticmethod
+	def _calculate_shap_values(features: List[str], df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
 		"""
 		Calculate SHAP values for the clustering results.
 
@@ -399,6 +421,7 @@ class ClusteringTab:
 		Returns:
 			Tuple containing SHAP values and expected values
 		"""
+
 		logger.info("Calculating SHAP values for cluster interpretation")
 
 		try:
@@ -409,7 +432,7 @@ class ClusteringTab:
 			X = X.fillna(X.mean())
 
 			# Standardize the features
-			scaler = StandardScaler()
+			scaler   = StandardScaler()
 			X_scaled = scaler.fit_transform(X)
 
 			# Calculate number of background samples (kmeans clusters)
@@ -419,16 +442,14 @@ class ClusteringTab:
 
 			# Create a KernelExplainer for the clustering model
 			background = shap.kmeans(X_scaled, n_background)
-			explainer = shap.KernelExplainer(
-				lambda x: x,  # Identity function since we want to explain the features directly
-				background
-			)
+			explainer  = shap.KernelExplainer( lambda x: x, background )
 
 			# Calculate SHAP values
-			shap_values = explainer.shap_values(X_scaled)
+			shap_values     = explainer.shap_values(X_scaled)
 			expected_values = explainer.expected_value
 
 			logger.info("Successfully calculated SHAP values")
+
 			return shap_values, expected_values
 
 		except Exception as e:
@@ -437,21 +458,8 @@ class ClusteringTab:
 			raise
 
 
-	def _ensure_2d_shap(self, shap_values):
-		"""
-		Ensure SHAP values are 2D (n_samples, n_features).
-		Handles cases where SHAP returns a list or 3D array.
-		"""
-		# If it's a list of arrays (e.g., multiclass), take the first
-		if isinstance(shap_values, list):
-			shap_values = shap_values[0]
-		# If it's 3D, reduce to 2D (e.g., take the first output)
-		if isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
-			shap_values = shap_values[:, :, 0]
-		return shap_values
-
-
-	def _display_shap_analysis(self) -> None:
+	@staticmethod
+	def _display_shap_analysis(features: List[str], df: pd.DataFrame, shap_values: np.ndarray, selected_cluster: int | Literal["All Data"]) -> None:
 		"""Display SHAP analysis results using Streamlit."""
 		st.markdown("### SHAP Analysis")
 		st.markdown("""
@@ -460,16 +468,13 @@ class ClusteringTab:
 		most important for each cluster's formation.
 		""")
 
-		# try:
-		if self._cluster_settings is None:
+		if selected_cluster is None:
 			st.info("Please run clustering first to view SHAP analysis")
 			return
 
-		features = self._cluster_settings["cluster_features"]
-		df = st.session_state.df_w_cluster_tags[features]
-		shap_values = self._ensure_2d_shap(st.session_state.shap_values)
+		shap_values = SHAPAnalyzer._ensure_2d_shap(shap_values)
 
-		if st.session_state.selected_cluster == "All Data":
+		if selected_cluster == "All Data":
 			# For "All Data", show the overall SHAP value distribution
 			st.markdown("#### Overall SHAP Value Distribution")
 			st.markdown("""
@@ -500,7 +505,8 @@ class ClusteringTab:
 			st.markdown("#### SHAP Summary Plot (Beeswarm)")
 			buf = io.BytesIO()
 			plt.figure(figsize=(8, 4))
-			shap.summary_plot(shap_values, df, feature_names=features, show=False)
+			# Only pass the feature columns to shap.summary_plot
+			shap.summary_plot(shap_values, df[features], feature_names=features, show=False)
 			plt.tight_layout()
 			plt.savefig(buf, format="png")
 			plt.close()
@@ -520,31 +526,28 @@ class ClusteringTab:
 			st.dataframe(shap_df)
 			st.download_button("Download SHAP Values (CSV)", shap_df.to_csv().encode(), file_name="shap_values_all_data.csv")
 
-		elif st.session_state.selected_cluster is not None:
+		elif selected_cluster is not None:
 			# For specific clusters, show cluster-specific SHAP values
-			st.markdown(f"#### SHAP Values for Cluster {st.session_state.selected_cluster}")
+			st.markdown(f"#### SHAP Values for Cluster {selected_cluster}")
 			st.markdown("""
 			This view shows how each feature contributes to forming this specific cluster,
 			helping you understand what makes this cluster unique.
 			""")
 
-			cluster_mask = st.session_state.df_w_cluster_tags['Cluster'] == st.session_state.selected_cluster
-			cluster_shap = self._ensure_2d_shap(shap_values[cluster_mask])
-			cluster_df = df[cluster_mask]
+			# Use the full DataFrame for masking, but only select feature columns for plotting
+			cluster_mask = df['Cluster'] == selected_cluster
+			cluster_shap = SHAPAnalyzer._ensure_2d_shap(shap_values[cluster_mask])
+			cluster_df = df.loc[cluster_mask, features]
 
 			# Calculate mean SHAP values for the selected cluster
 			mean_shap = np.mean(cluster_shap, axis=0)
 
 			# Create a bar plot of SHAP values
 			fig = go.Figure()
-			fig.add_trace(go.Bar(
-				y=features,
-				x=mean_shap,
-				orientation='h'
-			))
+			fig.add_trace(go.Bar( y=features, x=mean_shap, orientation='h' ))
 
 			fig.update_layout(
-				title=f"Mean SHAP Values for Cluster {st.session_state.selected_cluster}",
+				title=f"Mean SHAP Values for Cluster {selected_cluster}",
 				xaxis_title="SHAP Value",
 				yaxis_title="Feature"
 			)
@@ -552,14 +555,14 @@ class ClusteringTab:
 			st.plotly_chart(fig, use_container_width=True)
 
 			# SHAP summary plot (beeswarm) for the cluster
-			st.markdown(f"#### SHAP Summary Plot (Beeswarm) for Cluster {st.session_state.selected_cluster}")
+			st.markdown(f"#### SHAP Summary Plot (Beeswarm) for Cluster {selected_cluster}")
 			buf = io.BytesIO()
 			plt.figure(figsize=(8, 4))
 			shap.summary_plot(cluster_shap, cluster_df, feature_names=features, show=False)
 			plt.tight_layout()
 			plt.savefig(buf, format="png")
 			plt.close()
-			st.image(buf, caption=f"SHAP Summary Plot (Beeswarm) for Cluster {st.session_state.selected_cluster}")
+			st.image(buf, caption=f"SHAP Summary Plot (Beeswarm) for Cluster {selected_cluster}")
 
 			st.markdown("""
 			**Interpretation:**
@@ -570,17 +573,12 @@ class ClusteringTab:
 			""")
 
 			# Per-sample SHAP value table for the cluster
-			st.markdown(f"#### Per-Sample SHAP Values (Cluster {st.session_state.selected_cluster})")
+			st.markdown(f"#### Per-Sample SHAP Values (Cluster {selected_cluster})")
 			cluster_shap_df = pd.DataFrame(cluster_shap, columns=features, index=cluster_df.index)
 			st.dataframe(cluster_shap_df)
-			st.download_button(f"Download SHAP Values for Cluster {st.session_state.selected_cluster} (CSV)", cluster_shap_df.to_csv().encode(), file_name=f"shap_values_cluster_{st.session_state.selected_cluster}.csv")
+			st.download_button(f"Download SHAP Values for Cluster {selected_cluster} (CSV)", cluster_shap_df.to_csv().encode(), file_name=f"shap_values_cluster_{selected_cluster}.csv")
 
 		else:
 			st.info("Please select a cluster to view SHAP analysis")
-
-		# except Exception as e:
-		#     logger.error(f"Error displaying SHAP analysis: {str(e)}")
-		#     logger.error(traceback.format_exc())
-		#     st.error("Error displaying SHAP analysis. Please check the logs for details.")
 
 
