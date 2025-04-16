@@ -72,7 +72,6 @@ class ClusteringTab:
 		with cols[0]:
 			self._get_user_selected_cluster()
 
-
 		tabs = st.tabs(["Cluster Distribution", "Feature Importance", "SHAP Analysis", "Cluster Characteristics"])
 
 		with tabs[0]:
@@ -94,9 +93,10 @@ class ClusteringTab:
 													shap_values      = st.session_state.shap_values,
 													selected_cluster = st.session_state.selected_cluster)
 
+
 		with tabs[3]:
 			# Display cluster characteristics
-			self._display_cluster_characteristics(cluster_df=st.session_state.df_w_cluster_tags)
+			self._display_cluster_characteristics()
 
 
 	def render(self) -> 'ClusteringTab':
@@ -331,7 +331,7 @@ class ClusteringTab:
 			st.session_state.selected_cluster = cluster_options[selected_display]
 
 
-	def _display_cluster_characteristics(self, cluster_df: pd.DataFrame) -> None:
+	def _display_cluster_characteristics(self) -> None:
 		"""
 		Display characteristics of the selected cluster compared to the overall population.
 
@@ -339,12 +339,17 @@ class ClusteringTab:
 			cluster_df: DataFrame filtered to the selected cluster
 		"""
 
-		if cluster_df.empty or cluster_df is None:
-			st.warning("No cluster data available. Please run clustering first.")
-			return
+		# if cluster_df.empty or cluster_df is None:
+		# 	st.warning("No cluster data available. Please run clustering first.")
+		# 	return
 
 		full_df          = st.session_state.df_w_cluster_tags
 		cluster_features = self._cluster_settings["cluster_features"]
+
+		if st.session_state.selected_cluster == "All Data":
+			cluster_df = full_df.copy()
+		else:
+			cluster_df = full_df[full_df['Cluster'] == st.session_state.selected_cluster].copy()
 
 
 		st.markdown(f"### Characteristics of Cluster {st.session_state.selected_cluster}")
