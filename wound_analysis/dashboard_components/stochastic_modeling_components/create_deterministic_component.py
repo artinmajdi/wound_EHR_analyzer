@@ -558,6 +558,33 @@ class CreateDeterministicComponent:
             # Add residual diagnostics
             self._display_residual_diagnostics(residuals, y_pred, X.flatten())
 
+            # Add explanations for residual plots
+            with st.expander("📊 How to Interpret Residual Plots", expanded=False):
+                st.markdown("""
+                ### Understanding Residual Diagnostic Plots
+
+                #### 1. Residuals vs Fitted
+                - **Purpose:** Checks for non-linearity and unequal error variances
+                - **Good sign:** Random scatter around zero
+                - **Bad sign:** Patterns or curves indicate model problems
+
+                #### 2. Normal Q-Q Plot
+                - **Purpose:** Checks if residuals are normally distributed
+                - **Good sign:** Points follow the diagonal line
+                - **Bad sign:** S-shapes or strong deviations from line
+                - **Note:** Shapiro-Wilk p-value > 0.05 suggests normality
+
+                #### 3. Scale-Location
+                - **Purpose:** Checks for constant variance (homoscedasticity)
+                - **Good sign:** Horizontal band with constant spread
+                - **Bad sign:** Funnel shapes or trends
+
+                #### 4. Residuals vs Independent Variable
+                - **Purpose:** Checks relationship with predictor
+                - **Good sign:** Random scatter
+                - **Bad sign:** Patterns suggest missing relationships
+                """)
+
         except Exception as e:
             st.error(f"Error calculating residuals: {str(e)}")
             self.residuals = np.zeros_like(y)  # Default to zeros on error
