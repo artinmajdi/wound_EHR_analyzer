@@ -10,6 +10,9 @@ import pytest
 # This helps resolve the issue where the repository name differs from the package name
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# Debugging: Confirm the paths added to sys.path
+print("Updated sys.path:", sys.path)
+
 # You can add shared fixtures here that will be available to all test modules
 # For example:
 # @pytest.fixture
