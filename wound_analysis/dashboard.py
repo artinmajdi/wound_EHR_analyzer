@@ -13,6 +13,7 @@ from wound_analysis.dashboard_components import (
 	ImpedanceTab,
 	LLMAnalysisTab,
 	ClusteringTab,
+	FilteringTab,
 	OverviewTab,
 	OxygenationTab,
 	RiskFactorsTab,
@@ -279,6 +280,7 @@ class Dashboard:
 			Notes:
 			------
 			The following tabs are created:
+			- Data Filtering & Clustering : Tools to filter data based on various criteria and cluster the results
 			- Overview          : General patient information and wound summary
 			- Impedance Analysis: Electrical measurements of wound tissue
 			- Temperature       : Thermal measurements and analysis
@@ -290,6 +292,7 @@ class Dashboard:
 		"""
 
 		tabs = st.tabs([
+			"Data Filtering",
 			"Clustering",
 			"Overview",
 			"Impedance Analysis",
@@ -305,26 +308,37 @@ class Dashboard:
 		argsv = dict(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor)
 
 		with tabs[0]:
-			ct = ClusteringTab(**argsv).render()
-			self.wound_data_processor.df = ct.get_updated_df()
+			st.markdown("## Data Filtering & Clustering")
+			# st.info(f"Number of records before filtering: {len(self.wound_data_processor.df)}")
 
+			st.markdown("### Step 1: Data Filtering")
+			self.wound_data_processor.df = FilteringTab(**argsv).render()
+
+			# st.info(f"Number of records after filtering: {len(self.wound_data_processor.df)}")
+			st.info("The filtered data will be used in all other tabs. Reset filters to view the full dataset.")
+
+		with tabs[1]:
+			st.markdown("### Step 2: Clustering Analysis")
+			self.wound_data_processor.df = ClusteringTab(**argsv).render().get_updated_df()
+
+			st.info("The filtered clustered data will be used in all other tabs. Disable clustering or select 'All Data' to view the full dataset.")
 
 		# Create the tabs
-		with tabs[1]:
-			OverviewTab(**argsv).render()
 		with tabs[2]:
-			ImpedanceTab(**argsv).render()
+			OverviewTab(**argsv).render()
 		with tabs[3]:
-			TemperatureTab(**argsv).render()
+			ImpedanceTab(**argsv).render()
 		with tabs[4]:
-			OxygenationTab(**argsv).render()
+			TemperatureTab(**argsv).render()
 		with tabs[5]:
-			ExudateTab(**argsv).render()
+			OxygenationTab(**argsv).render()
 		with tabs[6]:
-			RiskFactorsTab(**argsv).render()
+			ExudateTab(**argsv).render()
 		with tabs[7]:
-			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model).render()
+			RiskFactorsTab(**argsv).render()
 		with tabs[8]:
+			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model).render()
+		with tabs[9]:
 			StochasticModelingTab(**argsv).render()
 
 
