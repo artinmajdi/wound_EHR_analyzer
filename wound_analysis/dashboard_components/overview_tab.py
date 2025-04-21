@@ -56,9 +56,9 @@ class OverviewTab:
 		"""
 		Renders the overview dashboard for all patients in the dataset.
 
-		This method creates a population statistics section with a wound area progression
-		plot and key metrics including average days in study, estimated treatment duration,
-		average healing rate, and overall improvement rate.
+		This method creates a population statistics section with a plot for the selected
+		variable's progression and key metrics including average days in study, estimated
+		treatment duration, average healing rate, and overall improvement rate.
 
 		Parameters
 		----------
@@ -78,11 +78,57 @@ class OverviewTab:
 
 		st.subheader("Population Statistics")
 
-		# Display wound area progression for all patients
-		st.plotly_chart(
-			Visualizer.create_wound_area_plot(df=df, patient_id=None),
-			use_container_width=True
-		)
+		# Create variable selection dropdown
+		col1, col2 = st.columns([3, 1])
+
+		# with col2:
+		# Build variable options based on available columns
+		variable_options = {
+			"Wound Area": self.CN.WOUND_AREA,
+			"Length"    : self.CN.LENGTH,
+			"Width"     : self.CN.WIDTH,
+			"Depth"     : self.CN.DEPTH
+		}
+
+		# Add impedance measurements if available
+		impedance_cols = [col for col in df.columns if "impedance" in col.lower() or "freq" in col.lower()]
+		for col in impedance_cols:
+			# Create a more readable name
+			display_name = col.replace("_", " ").title()
+			if "Freq" in display_name:
+				display_name = display_name.replace("Freq", "Frequency")
+			if "Absolute" in display_name:
+				display_name = "Impedance: " + display_name
+			variable_options[display_name] = col
+
+		# Add temperature measurements if available
+		temp_cols = {
+			"Center Temperature"   : self.CN.CENTER_TEMP,
+			"Edge Temperature"     : self.CN.EDGE_TEMP,
+			"Periwound Temperature": self.CN.PERI_TEMP
+		}
+		for display_name, col in temp_cols.items():
+			if col in df.columns and not df[col].isna().all():
+				variable_options[display_name] = col
+
+		# Add additional biomarkers if available
+		biomarker_cols = {
+			"Oxygenation": self.CN.OXYGENATION,
+			"Hemoglobin" : self.CN.HEMOGLOBIN
+		}
+
+		for display_name, col in biomarker_cols.items():
+			if col in df.columns and not df[col].isna().all():
+				variable_options[display_name] = col
+
+		# Create dropdown with variable options
+		selected_variable_name = st.selectbox( "Variable to plot", options=list(variable_options.keys()), index=0 )
+
+		# Get the actual column name for the selected variable
+		selected_variable = variable_options[selected_variable_name]
+
+		# Display progression plot for all patients using the selected variable
+		Visualizer.create_wound_area_plot(df=df, patient_id=None, variable_column=selected_variable),
 
 		col1, col2, col3, col4 = st.columns(4)
 

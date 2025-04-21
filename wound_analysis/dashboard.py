@@ -34,8 +34,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# TODO: add password for the deployed streamlit app
-
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
 
