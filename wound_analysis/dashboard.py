@@ -12,12 +12,15 @@ from wound_analysis.dashboard_components import (
 	ExudateTab,
 	ImpedanceTab,
 	LLMAnalysisTab,
+	ClusteringTab,
+	FilteringTab,
 	OverviewTab,
 	OxygenationTab,
 	RiskFactorsTab,
 	TemperatureTab,
 	DashboardSettings,
-	Visualizer
+	Visualizer,
+	StochasticModelingTab
 )
 from wound_analysis.utils import (
 	CorrelationAnalysis,
@@ -31,8 +34,6 @@ from wound_analysis.utils import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-# TODO: add password for the deployed streamlit app
 
 # Debug mode disabled
 st.set_option('client.showErrorDetails', True)
@@ -247,6 +248,7 @@ class Dashboard:
 		if self.impedance_analyzer is not None:
 			logger.debug("Initializing new wound data processor with impedance analyzer")
 			self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path, impedance_analyzer=self.impedance_analyzer )
+
 		else:
 			logger.debug("Initializing new wound data processor without impedance analyzer")
 			self.wound_data_processor = WoundDataProcessor( df=self.filtered_df, impedance_freq_sweep_path=self.impedance_freq_sweep_path )
@@ -278,6 +280,7 @@ class Dashboard:
 			Notes:
 			------
 			The following tabs are created:
+			- Data Filtering & Clustering : Tools to filter data based on various criteria and cluster the results
 			- Overview          : General patient information and wound summary
 			- Impedance Analysis: Electrical measurements of wound tissue
 			- Temperature       : Thermal measurements and analysis
@@ -285,34 +288,59 @@ class Dashboard:
 			- Exudate           : Analysis of wound drainage
 			- Risk Factors      : Patient-specific risk factors for wound healing
 			- LLM Analysis      : Natural language processing analysis of wound data
+			- Stochastic Modeling: Probabilistic modeling of wound healing parameters
 		"""
 
 		tabs = st.tabs([
+			"Data Filtering",
+			"Clustering",
 			"Overview",
 			"Impedance Analysis",
 			"Temperature",
 			"Oxygenation",
 			"Exudate",
 			"Risk Factors",
-			"LLM Analysis"
+			"LLM Analysis",
+			"Stochastic Modeling",
 		])
 
+		# Create a dictionary of arguments for the tabs
 		argsv = dict(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor)
+
 		with tabs[0]:
-			OverviewTab(**argsv).render()
+			st.markdown("## Data Filtering & Clustering")
+			# st.info(f"Number of records before filtering: {len(self.wound_data_processor.df)}")
+
+			st.markdown("### Step 1: Data Filtering")
+			self.wound_data_processor.df = FilteringTab(**argsv).render()
+
+			# st.info(f"Number of records after filtering: {len(self.wound_data_processor.df)}")
+			st.info("The filtered data will be used in all other tabs. Reset filters to view the full dataset.")
+
 		with tabs[1]:
-			ImpedanceTab(**argsv).render()
-			# ImpedanceTabOriginal(**argsv).render()
+			st.markdown("### Step 2: Clustering Analysis")
+			self.wound_data_processor.df = ClusteringTab(**argsv).render().get_updated_df()
+
+			st.info("The filtered clustered data will be used in all other tabs. Disable clustering or select 'All Data' to view the full dataset.")
+
+		# Create the tabs
 		with tabs[2]:
-			TemperatureTab(**argsv).render()
+			OverviewTab(**argsv).render()
 		with tabs[3]:
-			OxygenationTab(**argsv).render()
+			ImpedanceTab(**argsv).render()
 		with tabs[4]:
-			ExudateTab(**argsv).render()
+			TemperatureTab(**argsv).render()
 		with tabs[5]:
-			RiskFactorsTab(**argsv).render()
+			OxygenationTab(**argsv).render()
 		with tabs[6]:
+			ExudateTab(**argsv).render()
+		with tabs[7]:
+			RiskFactorsTab(**argsv).render()
+		with tabs[8]:
 			LLMAnalysisTab(selected_patient=selected_patient, wound_data_processor=self.wound_data_processor, llm_platform=self.llm_platform, llm_model=self.llm_model).render()
+		with tabs[9]:
+			StochasticModelingTab(**argsv).render()
+
 
 
 	def _get_input_user_data(self) -> None:

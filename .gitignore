@@ -26,6 +26,7 @@ wound_analysis/utils/logs/*.log
 # Public Branch Stuff
 dataset/csv_files
 .env
+.pypirc
 *.code-workspace
 documentation/sync_repos_guide.md
 

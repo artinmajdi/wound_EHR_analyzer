@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger('wound_ehr_analyzer')
+logger = logging.getLogger('wound_analysis')
 
 try:
     # Add the project root to the Python path
