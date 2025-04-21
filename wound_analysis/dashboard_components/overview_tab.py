@@ -127,8 +127,47 @@ class OverviewTab:
 		# Get the actual column name for the selected variable
 		selected_variable = variable_options[selected_variable_name]
 
+		# Add normalization option
+		normalize_values = st.checkbox("Normalize values to first non-null visit per patient", value=False)
+
+		# Create a copy of the dataframe for visualization to avoid affecting the original data
+		plot_df = df.copy()
+
+		# Apply normalization if selected
+		if normalize_values:
+			# Function to normalize values for a patient group
+			def normalize_patient_values(patient_group):
+				# Find the first non-null value for this patient
+				first_valid_value = patient_group[selected_variable].dropna().iloc[0] if not patient_group[selected_variable].dropna().empty else 1
+
+				# Avoid division by zero
+				if first_valid_value == 0:
+					first_valid_value = 1
+
+				# Create a new column with normalized values
+				patient_group['normalized_value'] = patient_group[selected_variable] / first_valid_value
+				return patient_group
+
+			# Apply the normalization function to each patient group
+			plot_df = pd.DataFrame()
+			for patient_id, group in df.groupby(self.CN.RECORD_ID):
+				normalized_group = normalize_patient_values(group.sort_values(self.CN.DAYS_SINCE_FIRST_VISIT))
+				plot_df = pd.concat([plot_df, normalized_group])
+
+			# Update the selected variable to use the normalized column
+			selected_var_for_plot = 'normalized_value'
+			# Update plot title to indicate normalization
+			plot_title = f"Normalized {selected_variable_name} Over Time (Relative to First Value)"
+		else:
+			selected_var_for_plot = selected_variable
+			plot_title = f"{selected_variable_name} Over Time"
+
 		# Display progression plot for all patients using the selected variable
-		Visualizer.create_wound_area_plot(df=df, patient_id=None, variable_column=selected_variable),
+		fig = Visualizer.create_wound_area_plot(
+			df=plot_df,
+			patient_id=None,
+			variable_column=selected_var_for_plot,
+		)
 
 		col1, col2, col3, col4 = st.columns(4)
 
