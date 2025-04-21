@@ -67,7 +67,7 @@ class ClusteringTab:
 
 
 	def _display_cluster_analysis(self) -> None:
-		cols = st.columns([1, 4])
+		cols = st.columns([1, 2])
 
 		with cols[0]:
 			self._get_user_selected_cluster()

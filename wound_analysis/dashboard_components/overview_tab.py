@@ -35,6 +35,7 @@ class OverviewTab:
 		self.df = wound_data_processor.df
 		self.CN = DColumns(df=self.df)
 
+
 	def render(self) -> None:
 
 		st.header("Overview")
@@ -133,6 +134,7 @@ class OverviewTab:
 			except Exception as e:
 				st.metric("Improvement Rate", "N/A")
 				print(f"Error calculating improvement rate: {e}")
+
 
 	def _render_patient_overview(self, df_patient: pd.DataFrame, visits: list) -> None:
 		"""
