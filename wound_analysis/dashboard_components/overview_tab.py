@@ -35,6 +35,7 @@ class OverviewTab:
 		self.df = wound_data_processor.df
 		self.CN = DColumns(df=self.df)
 
+
 	def render(self) -> None:
 
 		st.header("Overview")
@@ -55,9 +56,9 @@ class OverviewTab:
 		"""
 		Renders the overview dashboard for all patients in the dataset.
 
-		This method creates a population statistics section with a wound area progression
-		plot and key metrics including average days in study, estimated treatment duration,
-		average healing rate, and overall improvement rate.
+		This method creates a population statistics section with a plot for the selected
+		variable's progression and key metrics including average days in study, estimated
+		treatment duration, average healing rate, and overall improvement rate.
 
 		Parameters
 		----------
@@ -77,10 +78,95 @@ class OverviewTab:
 
 		st.subheader("Population Statistics")
 
-		# Display wound area progression for all patients
-		st.plotly_chart(
-			Visualizer.create_wound_area_plot(df=df, patient_id=None),
-			use_container_width=True
+		# Create variable selection dropdown
+		col1, col2 = st.columns([3, 1])
+
+		# with col2:
+		# Build variable options based on available columns
+		variable_options = {
+			"Wound Area": self.CN.WOUND_AREA,
+			"Length"    : self.CN.LENGTH,
+			"Width"     : self.CN.WIDTH,
+			"Depth"     : self.CN.DEPTH
+		}
+
+		# Add impedance measurements if available
+		impedance_cols = [col for col in df.columns if "impedance" in col.lower() or "freq" in col.lower()]
+		for col in impedance_cols:
+			# Create a more readable name
+			display_name = col.replace("_", " ").title()
+			if "Freq" in display_name:
+				display_name = display_name.replace("Freq", "Frequency")
+			if "Absolute" in display_name:
+				display_name = "Impedance: " + display_name
+			variable_options[display_name] = col
+
+		# Add temperature measurements if available
+		temp_cols = {
+			"Center Temperature"   : self.CN.CENTER_TEMP,
+			"Edge Temperature"     : self.CN.EDGE_TEMP,
+			"Periwound Temperature": self.CN.PERI_TEMP
+		}
+		for display_name, col in temp_cols.items():
+			if col in df.columns and not df[col].isna().all():
+				variable_options[display_name] = col
+
+		# Add additional biomarkers if available
+		biomarker_cols = {
+			"Oxygenation": self.CN.OXYGENATION,
+			"Hemoglobin" : self.CN.HEMOGLOBIN
+		}
+
+		for display_name, col in biomarker_cols.items():
+			if col in df.columns and not df[col].isna().all():
+				variable_options[display_name] = col
+
+		# Create dropdown with variable options
+		selected_variable_name = st.selectbox( "Variable to plot", options=list(variable_options.keys()), index=0 )
+
+		# Get the actual column name for the selected variable
+		selected_variable = variable_options[selected_variable_name]
+
+		# Add normalization option
+		normalize_values = st.checkbox("Normalize values to first non-null visit per patient", value=False)
+
+		# Create a copy of the dataframe for visualization to avoid affecting the original data
+		plot_df = df.copy()
+
+		# Apply normalization if selected
+		if normalize_values:
+			# Function to normalize values for a patient group
+			def normalize_patient_values(patient_group):
+				# Find the first non-null value for this patient
+				first_valid_value = patient_group[selected_variable].dropna().iloc[0] if not patient_group[selected_variable].dropna().empty else 1
+
+				# Avoid division by zero
+				if first_valid_value == 0:
+					first_valid_value = 1
+
+				# Create a new column with normalized values
+				patient_group['normalized_value'] = patient_group[selected_variable] / first_valid_value
+				return patient_group
+
+			# Apply the normalization function to each patient group
+			plot_df = pd.DataFrame()
+			for patient_id, group in df.groupby(self.CN.RECORD_ID):
+				normalized_group = normalize_patient_values(group.sort_values(self.CN.DAYS_SINCE_FIRST_VISIT))
+				plot_df = pd.concat([plot_df, normalized_group])
+
+			# Update the selected variable to use the normalized column
+			selected_var_for_plot = 'normalized_value'
+			# Update plot title to indicate normalization
+			plot_title = f"Normalized {selected_variable_name} Over Time (Relative to First Value)"
+		else:
+			selected_var_for_plot = selected_variable
+			plot_title = f"{selected_variable_name} Over Time"
+
+		# Display progression plot for all patients using the selected variable
+		fig = Visualizer.create_wound_area_plot(
+			df=plot_df,
+			patient_id=None,
+			variable_column=selected_var_for_plot,
 		)
 
 		col1, col2, col3, col4 = st.columns(4)
@@ -133,6 +219,7 @@ class OverviewTab:
 			except Exception as e:
 				st.metric("Improvement Rate", "N/A")
 				print(f"Error calculating improvement rate: {e}")
+
 
 	def _render_patient_overview(self, df_patient: pd.DataFrame, visits: list) -> None:
 		"""

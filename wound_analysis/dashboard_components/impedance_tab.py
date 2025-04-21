@@ -8,17 +8,13 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from scipy import stats
-from scipy.cluster.hierarchy import linkage, fcluster
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.metrics import silhouette_score
-from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import StandardScaler
 import plotly.express as px
 import plotly.graph_objects as go
 
 # Local application imports
 from wound_analysis.utils.data_processor import WoundDataProcessor, VisitsDataType, VisitsMetadataType
 from wound_analysis.utils.column_schema import DColumns, ExcelSheetColumns
+from wound_analysis.dashboard_components.clustering_tab import ClusteringTab
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,7 +46,7 @@ class ImpedanceTab:
 
 		if self.patient_id == "All Patients":
 			logger.debug("Rendering population-level impedance analysis")
-			PopulationImpedanceRenderer(df=self.df, wound_data_processor=self.wound_data_processor).render()
+			PopulationImpedanceRenderer(wound_data_processor=self.wound_data_processor).render()
 
 		else:
 			logger.debug(f"Rendering patient-level impedance analysis for patient {self.patient_id}")
@@ -74,16 +70,30 @@ class PopulationImpedanceRenderer:
 		CN (DColumns): Column name accessor for the DataFrame
 	"""
 
-	def __init__(self, df: pd.DataFrame, wound_data_processor: WoundDataProcessor):
+	def __init__(self, wound_data_processor: WoundDataProcessor):
 		"""
 		Initialize the PopulationImpedanceRenderer with patient data.
 
 		Args:
-			df: DataFrame containing all patient data
+			wound_data_processor: WoundDataProcessor instance containing patient data
 		"""
-		self.df = df
-		self.CN = DColumns(df=df)
+		self.analysis_df = wound_data_processor.df.copy()
+		self.CN = DColumns(df=self.analysis_df)
 		self.wound_data_processor = wound_data_processor
+
+		# Get the selected features for analysis
+		features_to_analyze_all = [
+			self.CN.HIGHEST_FREQ_ABSOLUTE,
+			self.CN.WOUND_AREA,
+			self.CN.CENTER_TEMP,
+			self.CN.OXYGENATION,
+			self.CN.HEMOGLOBIN,
+			self.CN.HEALING_RATE
+		]
+
+		# Filter features that exist in the dataframe
+		self.features_to_analyze = [f for f in features_to_analyze_all if f in self.analysis_df.columns]
+
 
 	def render(self) -> None:
 		"""
@@ -92,404 +102,30 @@ class PopulationImpedanceRenderer:
 		This method orchestrates the rendering of the population-level analysis,
 		including clustering, correlation analysis, and visualization.
 		"""
-		# Create a copy of the dataframe for analysis
-		analysis_df = self.df.copy()
 
-		# Render clustering options and perform clustering if requested
-		working_df = self._render_clustering_section(analysis_df)
+		# Only proceed with analysis if we have cluster data
+		if not self.analysis_df.empty:
 
-		# Add outlier threshold control and calculate correlation
-		filtered_df = self._display_correlation_controls(working_df)
 
-		# Create scatter plot if we have valid data
-		if not filtered_df.empty:
-			self._render_scatter_plot(df=filtered_df)
-		else:
-			st.warning("No valid data available for the scatter plot.")
 
-		# Create additional visualizations in a two-column layout
-		self._render_population_charts(df=working_df)
+			filtered_df = self.apply_outlier_threshold(df=self.analysis_df)
 
-	def _render_clustering_section(self, analysis_df: pd.DataFrame) -> pd.DataFrame:
-		"""
-		Render the clustering section and perform clustering if requested.
 
-		Args:
-			analysis_df: DataFrame to perform clustering on
+			# Add outlier threshold control and calculate correlation
+			self._display_correlation_controls(df=filtered_df)
 
-		Returns:
-			DataFrame to use for further analysis (either clustered or original)
-		"""
-		with st.expander("Patient Data Clustering", expanded=True):
-			st.markdown("### Cluster Analysis Settings")
-
-			# Create columns for clustering controls
-			col1, col2, col3 = st.columns([1, 2, 1])
-
-			with col1:
-				n_clusters = st.number_input(
-					"Number of Clusters",
-					min_value=2,
-					max_value=10,
-					value=3,
-					help="Select the number of clusters to divide patient data into"
-				)
-
-			with col2:
-				cluster_features = st.multiselect(
-					"Features for Clustering",
-					options=[
-						self.CN.HIGHEST_FREQ_ABSOLUTE,
-						self.CN.WOUND_AREA,
-						self.CN.CENTER_TEMP,
-						self.CN.OXYGENATION,
-						self.CN.HEMOGLOBIN,
-						self.CN.AGE,
-						self.CN.BMI,
-						self.CN.DAYS_SINCE_FIRST_VISIT,
-						self.CN.HEALING_RATE
-					],
-					default=[self.CN.HIGHEST_FREQ_ABSOLUTE, self.CN.WOUND_AREA, self.CN.HEALING_RATE],
-					help="Select features to be used for clustering patients"
-				)
-
-			with col3:
-				clustering_method = st.selectbox(
-					"Clustering Method",
-					options=["K-Means", "Hierarchical", "DBSCAN"],
-					index=0,
-					help="Select the clustering algorithm to use"
-				)
-
-				run_clustering = st.button("Run Clustering")
-
-			# Initialize session state for clusters if not already present
-			if 'clusters' not in st.session_state:
-				st.session_state.clusters = None
-				st.session_state.cluster_df = None
-				st.session_state.selected_cluster = None
-				st.session_state.feature_importance = None
-
-			# Run clustering if requested
-			if run_clustering and cluster_features:
-				try:
-					self._perform_clustering(
-						analysis_df=analysis_df,
-						cluster_features=cluster_features,
-						n_clusters=n_clusters,
-						clustering_method=clustering_method
-					)
-				except Exception as e:
-					st.error(f"Error during clustering: {str(e)}")
-					st.error(traceback.format_exc())
-
-			# Render cluster selection and characteristics if clustering has been performed
-			working_df = self._render_cluster_selection(analysis_df, cluster_features)
-
-		return working_df
-
-	def _perform_clustering(self, analysis_df: pd.DataFrame, cluster_features: List[str],
-							n_clusters: int, clustering_method: str) -> None:
-		"""
-		Perform clustering on the data using the specified method and features.
-
-		Args:
-			analysis_df: DataFrame to perform clustering on
-			cluster_features: List of features to use for clustering
-			n_clusters: Number of clusters to create
-			clustering_method: Method to use for clustering (K-Means, Hierarchical, or DBSCAN)
-		"""
-		# Create a feature dataframe for clustering
-		clustering_df = analysis_df[cluster_features].copy()
-
-		# Handle missing values
-		clustering_df = clustering_df.fillna(clustering_df.mean())
-
-		# Drop rows with any remaining NaN values
-		clustering_df = clustering_df.dropna()
-
-		if len(clustering_df) <= n_clusters:
-			st.error("Not enough valid data points for clustering. Try selecting different features or reducing the number of clusters.")
-			return
-
-		# Get indices of valid rows to map back to original dataframe
-		valid_indices = clustering_df.index
-
-		# Standardize the data
-		scaler = StandardScaler()
-		scaled_features = scaler.fit_transform(clustering_df)
-
-		# Perform clustering based on selected method
-		cluster_labels, feature_importance = self._apply_clustering_algorithm(
-			scaled_features=scaled_features,
-			cluster_features=cluster_features,
-			n_clusters=n_clusters,
-			clustering_method=clustering_method
-		)
-
-		# Create a new column in the original dataframe with cluster labels
-		cluster_mapping = pd.Series(cluster_labels, index=valid_indices)
-		analysis_df.loc[valid_indices, 'Cluster'] = cluster_mapping
-
-		# Handle any NaN in cluster column (rows that were dropped during clustering)
-		analysis_df['Cluster'] = analysis_df['Cluster'].fillna(-1).astype(int)
-
-		# Store clustering results in session state
-		st.session_state.clusters = sorted(analysis_df['Cluster'].unique())
-		st.session_state.cluster_df = analysis_df
-		st.session_state.feature_importance = feature_importance
-		st.session_state.selected_cluster = None  # Reset selected cluster
-
-		# Display success message
-		st.success(f"Successfully clustered data into {n_clusters} clusters using {clustering_method}!")
-
-		# Display cluster distribution
-		self._display_cluster_distribution(analysis_df)
-
-		# Display feature importance
-		if feature_importance:
-			self._display_feature_importance(feature_importance)
-
-	def _apply_clustering_algorithm(self, scaled_features: np.ndarray, cluster_features: List[str],
-									n_clusters: int, clustering_method: str) -> Tuple[np.ndarray, Dict[str, float]]:
-		"""
-		Apply the specified clustering algorithm to the data.
-
-		Args:
-			scaled_features: Standardized features to cluster
-			cluster_features: Names of the features being clustered
-			n_clusters: Number of clusters to create
-			clustering_method: Method to use for clustering
-
-		Returns:
-			Tuple of (cluster_labels, feature_importance)
-		"""
-		feature_importance = {}
-
-		if clustering_method == "K-Means":
-			clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-			cluster_labels = clusterer.fit_predict(scaled_features)
-
-			# Calculate feature importance for K-Means
-			centers = clusterer.cluster_centers_
-			for i, feature in enumerate(cluster_features):
-				# Calculate the variance of this feature across cluster centers
-				variance = np.var([center[i] for center in centers])
-				feature_importance[feature] = variance
-
-		elif clustering_method == "Hierarchical":
-			# Perform hierarchical clustering
-			Z = linkage(scaled_features, 'ward')
-			cluster_labels = fcluster(Z, n_clusters, criterion='maxclust') - 1  # Adjust to 0-based
-
-			# For hierarchical clustering, use silhouette coefficients for feature importance
-			for i, feature in enumerate(cluster_features):
-				# Create single-feature clustering and measure its quality
-				single_feature = scaled_features[:, i:i+1]
-				if len(np.unique(single_feature)) > 1:  # Only if feature has variation
-					temp_clusters = fcluster(linkage(single_feature, 'ward'), n_clusters, criterion='maxclust')
-					try:
-						score = silhouette_score(single_feature, temp_clusters)
-						feature_importance[feature] = max(0, score)  # Ensure non-negative
-					except Exception as e:
-						st.error(f"Error calculating silhouette score: {str(e)}")
-						feature_importance[feature] = 0.01  # Fallback value
-				else:
-					feature_importance[feature] = 0.01
-
-		else:  # DBSCAN
-			# Calculate epsilon based on data
-			neigh = NearestNeighbors(n_neighbors=3)
-			neigh.fit(scaled_features)
-			distances, _ = neigh.kneighbors(scaled_features)
-			distances = np.sort(distances[:, 2], axis=0)  # Distance to 3rd nearest neighbor
-			epsilon = np.percentile(distances, 90)  # Use 90th percentile as epsilon
-
-			clusterer = DBSCAN(eps=epsilon, min_samples=max(3, len(scaled_features)//30))
-			cluster_labels = clusterer.fit_predict(scaled_features)
-
-			# For DBSCAN, calculate feature importance using variance within clusters
-			for i, feature in enumerate(cluster_features):
-				variances = []
-				for label in set(cluster_labels):
-					if label >= 0:  # Exclude noise points
-						cluster_data = scaled_features[cluster_labels == label, i]
-						if len(cluster_data) > 1:
-							variances.append(np.var(cluster_data))
-				if variances:
-					feature_importance[feature] = 1.0 - min(1.0, np.mean(variances)/np.var(scaled_features[:, i]))
-				else:
-					feature_importance[feature] = 0.01
-
-		# Normalize feature importance
-		if feature_importance and max(feature_importance.values()) > 0:
-			max_importance = max(feature_importance.values())
-			feature_importance = {k: v/max_importance for k, v in feature_importance.items()}
-
-		return cluster_labels, feature_importance
-
-	def _display_cluster_distribution(self, analysis_df: pd.DataFrame) -> None:
-		"""
-		Display the distribution of data points across clusters.
-
-		Args:
-			analysis_df: DataFrame with cluster assignments
-		"""
-		cluster_counts = analysis_df['Cluster'].value_counts().sort_index()
-
-		# Filter out noise points (label -1) for visualization
-		if -1 in cluster_counts:
-			noise_count = cluster_counts[-1]
-			cluster_counts = cluster_counts[cluster_counts.index >= 0]
-			st.info(f"Note: {noise_count} points were classified as noise (only applies to DBSCAN)")
-
-		# Create a bar chart for cluster sizes
-		fig = px.bar(
-			x=cluster_counts.index,
-			y=cluster_counts.values,
-			labels={'x': 'Cluster', 'y': 'Number of Patients/Visits'},
-			title="Cluster Distribution",
-			color=cluster_counts.index,
-			text=cluster_counts.values
-		)
-
-		fig.update_traces(textposition='outside')
-		fig.update_layout(showlegend=False)
-		st.plotly_chart(fig, use_container_width=True)
-
-	def _display_feature_importance(self, feature_importance: Dict[str, float]) -> None:
-		"""
-		Display a radar chart showing feature importance in clustering.
-
-		Args:
-			feature_importance: Dictionary mapping feature names to importance values
-		"""
-		categories = list(feature_importance.keys())
-		values = list(feature_importance.values())
-
-		fig = go.Figure()
-		fig.add_trace(go.Scatterpolar(
-			r=values,
-			theta=categories,
-			fill='toself',
-			name='Feature Importance'
-		))
-
-		fig.update_layout(
-			title="Feature Importance in Clustering",
-			polar=dict(
-				radialaxis=dict(visible=True, range=[0, 1]),
-			),
-			showlegend=False
-		)
-
-		st.plotly_chart(fig, use_container_width=True)
-
-	def _render_cluster_selection(self, analysis_df: pd.DataFrame, cluster_features: List[str]) -> pd.DataFrame:
-		"""
-		Render the cluster selection dropdown and display cluster characteristics.
-
-		Args:
-			analysis_df: Original DataFrame
-			cluster_features: Features used for clustering
-
-		Returns:
-			DataFrame to use for further analysis (either filtered by cluster or original)
-		"""
-		if st.session_state.clusters is not None and st.session_state.cluster_df is not None:
-			# Create selection for which cluster to analyze
-			st.markdown("### Cluster Selection")
-
-			cluster_options = ["All Data"]
-			for cluster_id in sorted([c for c in st.session_state.clusters if c >= 0]):
-				cluster_count = len(st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id])
-				cluster_options.append(f"Cluster {cluster_id} (n={cluster_count})")
-
-			selected_option = st.selectbox(
-				"Select cluster to analyze:",
-				options=cluster_options,
-				index=0
-			)
-
-			# Update the selected cluster in session state
-			if selected_option == "All Data":
-				st.session_state.selected_cluster = None
-				working_df = analysis_df
+			# Create scatter plot if we have valid data
+			if not filtered_df.empty:
+				self._render_scatter_plot(df=filtered_df)
 			else:
-				cluster_id = int(selected_option.split(" ")[1].split("(")[0])
-				st.session_state.selected_cluster = cluster_id
-				working_df = st.session_state.cluster_df[st.session_state.cluster_df['Cluster'] == cluster_id].copy()
+				st.warning("No valid data available for the scatter plot.")
 
-				# Display cluster characteristics
-				self._display_cluster_characteristics(cluster_id, working_df, analysis_df, cluster_features)
+			# Create additional visualizations in a two-column layout
+			self._render_population_charts(df=self.analysis_df)
 
-			return working_df
-		else:
-			return analysis_df
 
-	def _display_cluster_characteristics(self, cluster_id: int, cluster_df: pd.DataFrame,
-										full_df: pd.DataFrame, features: List[str]) -> None:
-		"""
-		Display characteristics of the selected cluster compared to the overall population.
+	def apply_outlier_threshold(self, df: pd.DataFrame) -> pd.DataFrame:
 
-		Args:
-			cluster_id: ID of the selected cluster
-			cluster_df: DataFrame filtered to the selected cluster
-			full_df: Full DataFrame with all data
-			features: Features to compare
-		"""
-		st.markdown(f"### Characteristics of Cluster {cluster_id}")
-
-		# Create summary statistics for this cluster vs. overall population
-		summary_stats = []
-
-		for feature in features:
-			if feature in cluster_df.columns:
-				try:
-					cluster_mean = cluster_df[feature].mean()
-					overall_mean = full_df[feature].mean()
-					diff_pct = ((cluster_mean - overall_mean) / overall_mean * 100) if overall_mean != 0 else 0
-
-					summary_stats.append({
-						"Feature"        : feature,
-						"Cluster Mean"   : f"{cluster_mean:.2f}",
-						"Population Mean": f"{overall_mean:.2f}",
-						"Difference"     : f"{diff_pct:+.1f}%",
-						"Significant"    : abs(diff_pct) > 15
-					})
-				except Exception as e:
-					st.error(f"Error calculating summary statistics: {str(e)}")
-
-		if summary_stats:
-			summary_df = pd.DataFrame(summary_stats)
-
-			# Create a copy of the styling DataFrame to avoid the KeyError
-			styled_df = summary_df.copy()
-
-			# Define the highlight function that uses a custom attribute instead of accessing the DataFrame
-			def highlight_significant(row):
-				is_significant = row['Significant'] if 'Significant' in row else False
-				# Return styling for all columns except 'Significant'
-				return ['background-color: yellow' if is_significant else '' for _ in range(len(row))]
-
-			# Apply styling to all columns, then drop the 'Significant' column for display
-			styled_df = styled_df.style.apply(highlight_significant, axis=1)
-			styled_df.hide(axis="columns", names=["Significant"])
-
-			# Display the styled DataFrame
-			st.table(styled_df)
-			st.info("Highlighted rows indicate features where this cluster differs from the overall population by >15%")
-
-	def _display_correlation_controls(self, df_for_cluster: pd.DataFrame) -> pd.DataFrame:
-		"""
-		Display controls for correlation analysis and perform the analysis.
-
-		Args:
-			df_for_cluster: DataFrame to analyze
-
-		Returns:
-			Filtered DataFrame with outliers removed
-		"""
 		cols = st.columns([2, 3])
 
 		with cols[0]:
@@ -502,21 +138,8 @@ class PopulationImpedanceRenderer:
 				help      = "Quantile threshold for outlier detection (0 = no outliers removed, 0.1 = using 10th and 90th percentiles)"
 			)
 
-		# Get the selected features for analysis
-		features_to_analyze = [
-			self.CN.HIGHEST_FREQ_ABSOLUTE,
-			self.CN.WOUND_AREA,
-			self.CN.CENTER_TEMP,
-			self.CN.OXYGENATION,
-			self.CN.HEMOGLOBIN,
-			self.CN.HEALING_RATE
-		]
-
-		# Filter features that exist in the dataframe
-		features_to_analyze = [f for f in features_to_analyze if f in df_for_cluster.columns]
-
 		# Create a copy of the dataframe with only the features we want to analyze
-		analysis_df = df_for_cluster[features_to_analyze].copy().dropna()
+		analysis_df = df[self.features_to_analyze].copy().dropna()
 
 		# Remove outliers if threshold is set
 		if outlier_threshold > 0:
@@ -529,11 +152,26 @@ class PopulationImpedanceRenderer:
 			st.warning("Not enough data after outlier removal for correlation analysis.")
 			return pd.DataFrame()
 
+		return analysis_df
+
+
+	def _display_correlation_controls(self, df: pd.DataFrame) -> None:
+		"""
+		Display controls for correlation analysis and perform the analysis.
+
+		Args:
+			df_for_cluster: DataFrame to analyze
+
+		Returns:
+			Filtered DataFrame with outliers removed
+		"""
+
+
 		# Calculate correlation matrix
-		corr_matrix = analysis_df.corr()
+		corr_matrix = df.corr()
 
 		# Calculate p-values for correlations
-		p_values = self._calculate_correlation_pvalues(analysis_df)
+		p_values = self._calculate_correlation_pvalues(df)
 
 		# Create correlation heatmap
 		fig = px.imshow(
@@ -554,15 +192,14 @@ class PopulationImpedanceRenderer:
 		tab1, tab2, tab3 = st.tabs(["Correlation Details", "Descriptive Stats", "Effect Sizes"])
 
 		with tab1:
-			self._display_significant_correlations(features_to_analyze, corr_matrix, p_values)
+			self._display_significant_correlations(features=self.features_to_analyze, corr_matrix=corr_matrix, p_values=p_values)
 
 		with tab2:
-			self._display_descriptive_statistics(analysis_df)
+			self._display_descriptive_statistics(df)
 
 		with tab3:
-			self._display_effect_sizes(analysis_df, features_to_analyze)
+			self._display_effect_sizes(df=df, features=self.features_to_analyze)
 
-		return analysis_df
 
 	def _calculate_correlation_pvalues(self, df: pd.DataFrame) -> pd.DataFrame:
 		"""

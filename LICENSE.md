@@ -39,7 +39,7 @@ No warranties are given. The license may not give you all of the permissions nec
 When using this software for research purposes, please cite as:
 
 ```
-Majdi, MS. (2025). Wound Management Interpreter LLM. GitHub Repository. https://github.com/artinmajdi/Wound_management_interpreter_LLM
+Majdi, MS. (2025). Wound Management Interpreter LLM. GitHub Repository. https://github.com/artinmajdi/wound_EHR_analyzer
 ```
 
 ## Contact

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name        = "wound_analysis"
-version     = "1.0.0"
+version     = "1.5.0"
 description = "Wound Care Analysis System using LLMs and sensor data"
 readme      = "README.md"
 authors     = [ {name = "Artin Majdi", email = "artinmajdi@example.com"} ]
